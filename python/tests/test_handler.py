@@ -55,6 +55,57 @@ class TestConstructor:
         assert handler is not None
 
 
+class TestModeValidation:
+    def test_accepts_native_mode_with_connector(self):
+        handler = _make_handler(mode="native", connector=MagicMock())
+        assert handler is not None
+
+    def test_accepts_default_native_mode(self):
+        handler = _make_handler()
+        assert handler is not None
+
+    def test_accepts_injected_mode_with_fetch_and_ws_factory(self):
+        mock_fetch = AsyncMock()
+        mock_ws_factory = AsyncMock()
+        handler = _make_handler(mode="injected", fetch=mock_fetch, web_socket_factory=mock_ws_factory)
+        assert handler is not None
+
+    def test_rejects_injected_mode_missing_fetch(self):
+        mock_ws_factory = AsyncMock()
+        with pytest.raises(ValueError, match='Injected mode requires both "fetch" and "web_socket_factory"'):
+            _make_handler(mode="injected", web_socket_factory=mock_ws_factory)
+
+    def test_rejects_injected_mode_missing_ws_factory(self):
+        mock_fetch = AsyncMock()
+        with pytest.raises(ValueError, match='Injected mode requires both "fetch" and "web_socket_factory"'):
+            _make_handler(mode="injected", fetch=mock_fetch)
+
+    def test_rejects_injected_mode_with_connector(self):
+        mock_fetch = AsyncMock()
+        mock_ws_factory = AsyncMock()
+        with pytest.raises(ValueError, match="Cannot use native proxy parameters.*connector.*in injected mode"):
+            _make_handler(mode="injected", fetch=mock_fetch, web_socket_factory=mock_ws_factory, connector=MagicMock())
+
+    def test_rejects_native_mode_with_fetch(self):
+        mock_fetch = AsyncMock()
+        with pytest.raises(ValueError, match='Cannot provide fetch/web_socket_factory in native mode'):
+            _make_handler(mode="native", fetch=mock_fetch)
+
+    def test_rejects_native_mode_with_ws_factory(self):
+        mock_ws_factory = AsyncMock()
+        with pytest.raises(ValueError, match='Cannot provide fetch/web_socket_factory in native mode'):
+            _make_handler(mode="native", web_socket_factory=mock_ws_factory)
+
+    def test_rejects_default_mode_with_fetch(self):
+        mock_fetch = AsyncMock()
+        with pytest.raises(ValueError, match='Cannot provide fetch/web_socket_factory in native mode'):
+            _make_handler(fetch=mock_fetch)
+
+    def test_rejects_invalid_mode_string(self):
+        with pytest.raises(ValueError, match='Invalid mode.*must be "native" or "injected"'):
+            _make_handler(mode="invalid")
+
+
 class TestConnect:
     @patch("webex_message_handler.handler.MessageDecryptor")
     @patch("webex_message_handler.handler.KmsClient")

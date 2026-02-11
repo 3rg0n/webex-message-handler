@@ -10,6 +10,7 @@
 
 use crate::errors::WebexError;
 use crate::jwe;
+use crate::types::{FetchFn, FetchRequest};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use p256::elliptic_curve::sec1::ToEncodedPoint;
@@ -86,7 +87,7 @@ pub struct KmsClient {
     device_url: String,
     user_id: String,
     encryption_service_url: String,
-    client: reqwest::Client,
+    http_do: FetchFn,
 
     kms_cluster: String,
     /// The 256-bit symmetric key derived from ECDH, used as CEK for dir+A256GCM.
@@ -104,7 +105,7 @@ pub struct KmsClient {
 
 impl KmsClient {
     pub fn new(
-        client: reqwest::Client,
+        http_do: FetchFn,
         token: &str,
         device_url: &str,
         user_id: &str,
@@ -115,7 +116,7 @@ impl KmsClient {
             device_url: device_url.to_string(),
             user_id: user_id.to_string(),
             encryption_service_url: encryption_service_url.to_string(),
-            client,
+            http_do,
             kms_cluster: String::new(),
             ephemeral_key: None,
             ephemeral_key_kid: String::new(),
@@ -142,24 +143,27 @@ impl KmsClient {
 
         // Step 1: Fetch KMS details
         let kms_details_url = format!("{}/kms/{}", self.encryption_service_url, self.user_id);
-        let response = self
-            .client
-            .get(&kms_details_url)
-            .header("Authorization", format!("Bearer {}", self.token))
-            .send()
-            .await
-            .map_err(|e| WebexError::kms(format!("Failed to fetch KMS details: {e}")))?;
 
-        if !response.status().is_success() {
+        let mut headers = HashMap::new();
+        headers.insert("Authorization".to_string(), format!("Bearer {}", self.token));
+
+        let response = (self.http_do)(FetchRequest {
+            url: kms_details_url,
+            method: "GET".to_string(),
+            headers,
+            body: None,
+        })
+        .await
+        .map_err(|e| WebexError::kms(format!("Failed to fetch KMS details: {e}")))?;
+
+        if !response.ok {
             return Err(WebexError::kms(format!(
                 "Failed to fetch KMS details: {}",
-                response.status()
+                response.status
             )));
         }
 
-        let kms_details: Value = response
-            .json()
-            .await
+        let kms_details: Value = serde_json::from_slice(&response.body)
             .map_err(|e| WebexError::kms(format!("Failed to parse KMS details: {e}")))?;
 
         self.kms_cluster = kms_details["kmsCluster"]
@@ -367,22 +371,28 @@ impl KmsClient {
         }
 
         // POST the request
-        let http_response = self
-            .client
-            .post(format!("{}/kms/messages", self.encryption_service_url))
-            .header("Authorization", format!("Bearer {}", self.token))
-            .header("Content-Type", "application/json")
-            .json(&serde_json::json!({
-                "destination": self.kms_cluster,
-                "kmsMessages": [wrapped],
-            }))
-            .send()
-            .await;
+        let mut headers = HashMap::new();
+        headers.insert("Authorization".to_string(), format!("Bearer {}", self.token));
+        headers.insert("Content-Type".to_string(), "application/json".to_string());
+
+        let body = serde_json::to_string(&serde_json::json!({
+            "destination": self.kms_cluster,
+            "kmsMessages": [wrapped],
+        }))
+        .map_err(|e| WebexError::kms(format!("Failed to serialize KMS request: {e}")))?;
+
+        let http_response = (self.http_do)(FetchRequest {
+            url: format!("{}/kms/messages", self.encryption_service_url),
+            method: "POST".to_string(),
+            headers,
+            body: Some(body),
+        })
+        .await;
 
         match http_response {
-            Ok(resp) if !resp.status().is_success() => {
-                let status = resp.status();
-                let body = resp.text().await.unwrap_or_default();
+            Ok(resp) if !resp.ok => {
+                let status = resp.status;
+                let body = String::from_utf8_lossy(&resp.body);
                 let mut pending = self.pending_requests.lock().await;
                 pending.retain(|(id, _)| id != request_id);
                 return Err(WebexError::kms(format!(
@@ -397,7 +407,7 @@ impl KmsClient {
             Ok(resp) => {
                 debug!(
                     "KMS request {request_id} sent (HTTP {}), waiting for Mercury response...",
-                    resp.status()
+                    resp.status
                 );
             }
         }

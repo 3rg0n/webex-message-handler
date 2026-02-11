@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import type * as http from 'http';
 import type * as https from 'https';
+import WebSocket from 'ws';
 import type {
   WebexMessageHandlerConfig,
   WebexMessageHandlerEvents,
@@ -9,6 +10,8 @@ import type {
   DecryptedMessage,
   HandlerStatus,
   ConnectionStatus,
+  FetchRequest,
+  FetchResponse,
 } from './types.js';
 import { DeviceManager } from './device-manager.js';
 import { MercurySocket } from './mercury-socket.js';
@@ -16,6 +19,10 @@ import { KmsClient } from './kms-client.js';
 import { MessageDecryptor } from './message-decryptor.js';
 import type { Logger } from './logger.js';
 import { noopLogger } from './logger.js';
+
+// Internal adapter types
+type HttpDoFn = (request: FetchRequest) => Promise<FetchResponse>;
+type WsFactoryFn = (url: string) => WebSocket;
 
 export interface TypedEventEmitter<T> {
   on<K extends keyof T>(event: K, listener: T[K]): this;
@@ -32,6 +39,8 @@ export class WebexMessageHandler
   private token: string;
   private logger: Logger;
   private agent: http.Agent | https.Agent | undefined;
+  private httpDo: HttpDoFn;
+  private wsFactory: WsFactoryFn;
   private deviceManager: DeviceManager;
   private mercurySocket: MercurySocket;
   private kmsClient: KmsClient | null = null;
@@ -47,17 +56,44 @@ export class WebexMessageHandler
       throw new Error('WebexMessageHandler requires a non-empty token string');
     }
 
+    // Validate networking mode configuration
+    const mode = config.mode ?? 'native';
+    if (mode === 'injected') {
+      if (!config.fetch || !config.webSocketFactory) {
+        throw new Error('Injected mode requires both "fetch" and "webSocketFactory"');
+      }
+      if (config.agent) {
+        throw new Error('Cannot use native proxy parameters (agent) in injected mode');
+      }
+    } else if (mode === 'native') {
+      if (config.fetch || config.webSocketFactory) {
+        throw new Error('Cannot provide fetch/webSocketFactory in native mode — set mode to "injected"');
+      }
+    } else {
+      throw new Error(`Invalid mode "${mode}" — must be "native" or "injected"`);
+    }
+
     this.token = config.token;
     this.logger = config.logger ?? noopLogger;
     this.agent = config.agent;
 
+    // Create adapters based on mode
+    if (mode === 'native') {
+      this.httpDo = this._createNativeHttpAdapter(config.agent);
+      this.wsFactory = this._createNativeWsAdapter(config.agent);
+    } else {
+      // injected mode - use provided fetch and webSocketFactory
+      this.httpDo = config.fetch!; // Already validated in mode check
+      this.wsFactory = config.webSocketFactory!; // Already validated in mode check
+    }
+
     this.deviceManager = new DeviceManager({
       logger: this.logger,
-      agent: this.agent,
+      httpDo: this.httpDo,
     });
     this.mercurySocket = new MercurySocket({
       logger: this.logger,
-      agent: this.agent,
+      wsFactory: this.wsFactory,
       pingInterval: config.pingInterval,
       pongTimeout: config.pongTimeout,
       reconnectBackoffMax: config.reconnectBackoffMax,
@@ -65,6 +101,31 @@ export class WebexMessageHandler
     });
 
     this._setupMercuryListeners();
+  }
+
+  private _createNativeHttpAdapter(agent?: http.Agent | https.Agent): HttpDoFn {
+    return async (request: FetchRequest): Promise<FetchResponse> => {
+      const response = await fetch(request.url, {
+        method: request.method,
+        headers: request.headers,
+        body: request.body,
+        // @ts-expect-error - dispatcher is an undici option for Node.js fetch
+        dispatcher: agent,
+      });
+
+      return {
+        status: response.status,
+        ok: response.ok,
+        json: () => response.json(),
+        text: () => response.text(),
+      };
+    };
+  }
+
+  private _createNativeWsAdapter(agent?: http.Agent | https.Agent): WsFactoryFn {
+    return (url: string): WebSocket => {
+      return new WebSocket(url, { agent });
+    };
   }
 
   async connect(): Promise<void> {
@@ -90,7 +151,7 @@ export class WebexMessageHandler
         userId: this.registration.userId,
         encryptionServiceUrl: this.registration.encryptionServiceUrl,
         logger: this.logger,
-        agent: this.agent,
+        httpDo: this.httpDo,
       });
 
       // Step 3: Connect Mercury WebSocket FIRST (KMS responses arrive here)

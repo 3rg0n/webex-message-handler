@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+import aiohttp
 
 from .device_manager import DeviceManager
 from .kms_client import KmsClient
@@ -16,10 +18,18 @@ from .types import (
     DecryptedMessage,
     DeletedMessage,
     DeviceRegistration,
+    FetchFunction,
+    FetchRequest,
+    FetchResponse,
     HandlerStatus,
+    InjectedWebSocket,
     MercuryActivity,
     WebexMessageHandlerConfig,
+    WebSocketFactory,
 )
+
+if TYPE_CHECKING:
+    pass
 
 # Type alias for event callbacks
 EventCallback = Callable[..., Any]
@@ -43,17 +53,39 @@ class WebexMessageHandler:
         if not config.token or not isinstance(config.token, str):
             raise ValueError("WebexMessageHandler requires a non-empty token string")
 
+        # Validate networking mode configuration
+        mode = config.mode
+        if mode == "injected":
+            if not config.fetch or not config.web_socket_factory:
+                raise ValueError('Injected mode requires both "fetch" and "web_socket_factory"')
+            if config.connector:
+                raise ValueError("Cannot use native proxy parameters (connector) in injected mode")
+        elif mode == "native":
+            if config.fetch or config.web_socket_factory:
+                raise ValueError('Cannot provide fetch/web_socket_factory in native mode — set mode to "injected"')
+        else:
+            raise ValueError(f'Invalid mode "{mode}" — must be "native" or "injected"')
+
         self._token = config.token
         self._logger: Logger = config.logger or noop_logger  # type: ignore[assignment]
         self._connector = config.connector
 
+        # Create adapters based on mode
+        if mode == "native":
+            self._http_do = self._create_native_http_adapter(config.connector)
+            self._ws_factory = self._create_native_ws_adapter(config.connector)
+        else:
+            # injected mode - use provided functions
+            self._http_do = config.fetch  # type: ignore[assignment]
+            self._ws_factory = config.web_socket_factory  # type: ignore[assignment]
+
         self._device_manager = DeviceManager(
             logger=self._logger,
-            connector=self._connector,
+            http_do=self._http_do,
         )
         self._mercury_socket = MercurySocket(
             logger=self._logger,
-            connector=self._connector,
+            ws_factory=self._ws_factory,
             ping_interval=config.ping_interval,
             pong_timeout=config.pong_timeout,
             reconnect_backoff_max=config.reconnect_backoff_max,
@@ -77,6 +109,50 @@ class WebexMessageHandler:
         }
 
         self._setup_mercury_listeners()
+
+    def _create_native_http_adapter(
+        self, connector: aiohttp.BaseConnector | None
+    ) -> FetchFunction:
+        """Create HTTP adapter using native aiohttp."""
+        async def http_do(request: FetchRequest) -> FetchResponse:
+            async with aiohttp.ClientSession(connector=connector) as session:
+                async with session.request(
+                    request.method,
+                    request.url,
+                    headers=request.headers,
+                    data=request.body,
+                ) as response:
+                    # Create a simple response wrapper
+                    class NativeFetchResponse:
+                        def __init__(self, resp: aiohttp.ClientResponse):
+                            self.status = resp.status
+                            self.ok = 200 <= resp.status < 300
+                            self._response = resp
+
+                        async def json(self) -> Any:
+                            return await self._response.json()
+
+                        async def text(self) -> str:
+                            return await self._response.text()
+
+                    return NativeFetchResponse(response)  # type: ignore[return-value]
+
+        return http_do
+
+    def _create_native_ws_adapter(
+        self, connector: aiohttp.BaseConnector | None
+    ) -> WebSocketFactory:
+        """Create WebSocket adapter using native aiohttp."""
+        async def ws_factory(url: str) -> InjectedWebSocket:
+            session = aiohttp.ClientSession(connector=connector)
+            ws = await session.ws_connect(url)
+
+            # Attach session for cleanup
+            ws._session = session  # type: ignore[attr-defined]
+
+            return ws  # type: ignore[return-value]
+
+        return ws_factory
 
     def on(self, event: str, callback: EventCallback | None = None) -> Any:
         """Register an event listener. Can be used as a decorator.
@@ -150,7 +226,7 @@ class WebexMessageHandler:
                 user_id=self._registration.user_id,
                 encryption_service_url=self._registration.encryption_service_url,
                 logger=self._logger,
-                connector=self._connector,
+                http_do=self._http_do,
             )
 
             # Step 3: Connect Mercury WebSocket FIRST (KMS responses arrive here)

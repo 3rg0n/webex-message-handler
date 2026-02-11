@@ -3,10 +3,68 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal, Protocol
 
 if TYPE_CHECKING:
     import aiohttp
+
+
+# --- Networking Types ---
+
+NetworkMode = Literal["native", "injected"]
+
+
+@dataclass
+class FetchRequest:
+    """HTTP request for injected fetch function."""
+
+    url: str
+    method: Literal["GET", "POST", "PUT", "DELETE"]
+    headers: dict[str, str]
+    body: str | None = None
+
+
+@dataclass
+class FetchResponse:
+    """HTTP response from injected fetch function."""
+
+    status: int
+    ok: bool
+
+    async def json(self) -> Any:
+        """Parse response as JSON."""
+        ...
+
+    async def text(self) -> str:
+        """Get response body as text."""
+        ...
+
+
+FetchFunction = Callable[[FetchRequest], Awaitable[FetchResponse]]
+
+
+class InjectedWebSocket(Protocol):
+    """Protocol for injected WebSocket implementations."""
+
+    async def send(self, data: str) -> None:
+        """Send text data over the WebSocket."""
+        ...
+
+    async def close(self, code: int = 1000) -> None:
+        """Close the WebSocket connection."""
+        ...
+
+    @property
+    def closed(self) -> bool:
+        """Whether the WebSocket is closed."""
+        ...
+
+    def __aiter__(self):
+        """Async iterator for receiving messages."""
+        ...
+
+
+WebSocketFactory = Callable[[str], Awaitable[InjectedWebSocket]]
 
 
 # --- Configuration ---
@@ -18,11 +76,20 @@ class WebexMessageHandlerConfig:
     token: str
     """Webex bot or user access token."""
 
+    mode: NetworkMode = "native"
+    """Networking mode: 'native' uses built-in libraries, 'injected' uses provided functions."""
+
     logger: Any = None
     """Logger implementation (noop_logger by default)."""
 
     connector: aiohttp.BaseConnector | None = None
-    """Optional aiohttp connector for proxy support or custom connection handling."""
+    """Optional aiohttp connector for proxy support (native mode only)."""
+
+    fetch: FetchFunction | None = None
+    """Custom fetch function for all HTTP requests (injected mode)."""
+
+    web_socket_factory: WebSocketFactory | None = None
+    """Custom WebSocket factory (injected mode)."""
 
     ping_interval: float = 15.0
     """Mercury ping interval in seconds (default: 15)."""

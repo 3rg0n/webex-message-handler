@@ -3,6 +3,7 @@
 import pytest
 from aioresponses import aioresponses
 
+from tests.conftest import create_test_http_do
 from webex_message_handler.device_manager import WDM_API_BASE, DeviceManager
 from webex_message_handler.errors import AuthError, DeviceRegistrationError
 
@@ -24,7 +25,8 @@ MOCK_WDM_RESPONSE = {
 
 class TestRegister:
     async def test_successful_registration(self):
-        dm = DeviceManager()
+        http_do = await create_test_http_do()
+        dm = DeviceManager(http_do=http_do)
         with aioresponses() as m:
             m.post(WDM_API_BASE, payload=MOCK_WDM_RESPONSE)
             result = await dm.register(MOCK_TOKEN)
@@ -36,21 +38,24 @@ class TestRegister:
         assert result.services["messenger"] == "https://messenger.example.com"
 
     async def test_auth_error_on_401(self):
-        dm = DeviceManager()
+        http_do = await create_test_http_do()
+        dm = DeviceManager(http_do=http_do)
         with aioresponses() as m:
             m.post(WDM_API_BASE, status=401)
             with pytest.raises(AuthError):
                 await dm.register(MOCK_TOKEN)
 
     async def test_device_registration_error_on_non_2xx(self):
-        dm = DeviceManager()
+        http_do = await create_test_http_do()
+        dm = DeviceManager(http_do=http_do)
         with aioresponses() as m:
             m.post(WDM_API_BASE, status=400)
             with pytest.raises(DeviceRegistrationError, match="Failed to register device"):
                 await dm.register(MOCK_TOKEN)
 
     async def test_device_registration_error_on_network_failure(self):
-        dm = DeviceManager()
+        http_do = await create_test_http_do()
+        dm = DeviceManager(http_do=http_do)
         with aioresponses() as m:
             m.post(WDM_API_BASE, exception=ConnectionError("Network error"))
             with pytest.raises(DeviceRegistrationError):
@@ -59,7 +64,8 @@ class TestRegister:
 
 class TestRefresh:
     async def test_successful_refresh(self):
-        dm = DeviceManager()
+        http_do = await create_test_http_do()
+        dm = DeviceManager(http_do=http_do)
         with aioresponses() as m:
             m.post(WDM_API_BASE, payload=MOCK_WDM_RESPONSE)
             await dm.register(MOCK_TOKEN)
@@ -71,12 +77,14 @@ class TestRefresh:
         assert result.web_socket_url == "wss://mercury-new.example.com/socket"
 
     async def test_error_if_not_registered(self):
-        dm = DeviceManager()
+        http_do = await create_test_http_do()
+        dm = DeviceManager(http_do=http_do)
         with pytest.raises(DeviceRegistrationError, match="Device not registered"):
             await dm.refresh(MOCK_TOKEN)
 
     async def test_auth_error_on_401_during_refresh(self):
-        dm = DeviceManager()
+        http_do = await create_test_http_do()
+        dm = DeviceManager(http_do=http_do)
         with aioresponses() as m:
             m.post(WDM_API_BASE, payload=MOCK_WDM_RESPONSE)
             await dm.register(MOCK_TOKEN)
@@ -85,7 +93,8 @@ class TestRefresh:
                 await dm.refresh(MOCK_TOKEN)
 
     async def test_device_registration_error_on_refresh_failure(self):
-        dm = DeviceManager()
+        http_do = await create_test_http_do()
+        dm = DeviceManager(http_do=http_do)
         with aioresponses() as m:
             m.post(WDM_API_BASE, payload=MOCK_WDM_RESPONSE)
             await dm.register(MOCK_TOKEN)
@@ -96,7 +105,8 @@ class TestRefresh:
 
 class TestUnregister:
     async def test_successful_unregister(self):
-        dm = DeviceManager()
+        http_do = await create_test_http_do()
+        dm = DeviceManager(http_do=http_do)
         with aioresponses() as m:
             m.post(WDM_API_BASE, payload=MOCK_WDM_RESPONSE)
             await dm.register(MOCK_TOKEN)
@@ -104,12 +114,14 @@ class TestUnregister:
             await dm.unregister(MOCK_TOKEN)
 
     async def test_error_if_not_registered(self):
-        dm = DeviceManager()
+        http_do = await create_test_http_do()
+        dm = DeviceManager(http_do=http_do)
         with pytest.raises(DeviceRegistrationError, match="Device not registered"):
             await dm.unregister(MOCK_TOKEN)
 
     async def test_auth_error_on_401_during_unregister(self):
-        dm = DeviceManager()
+        http_do = await create_test_http_do()
+        dm = DeviceManager(http_do=http_do)
         with aioresponses() as m:
             m.post(WDM_API_BASE, payload=MOCK_WDM_RESPONSE)
             await dm.register(MOCK_TOKEN)
@@ -118,7 +130,8 @@ class TestUnregister:
                 await dm.unregister(MOCK_TOKEN)
 
     async def test_device_registration_error_on_unregister_failure(self):
-        dm = DeviceManager()
+        http_do = await create_test_http_do()
+        dm = DeviceManager(http_do=http_do)
         with aioresponses() as m:
             m.post(WDM_API_BASE, payload=MOCK_WDM_RESPONSE)
             await dm.register(MOCK_TOKEN)
@@ -129,7 +142,8 @@ class TestUnregister:
 
 class TestServiceParsing:
     async def test_empty_services(self):
-        dm = DeviceManager()
+        http_do = await create_test_http_do()
+        dm = DeviceManager(http_do=http_do)
         response = {**MOCK_WDM_RESPONSE, "services": {}}
         with aioresponses() as m:
             m.post(WDM_API_BASE, payload=response)
@@ -139,7 +153,8 @@ class TestServiceParsing:
         assert result.encryption_service_url == ""
 
     async def test_missing_encryption_service_url(self):
-        dm = DeviceManager()
+        http_do = await create_test_http_do()
+        dm = DeviceManager(http_do=http_do)
         response = {**MOCK_WDM_RESPONSE, "services": {"messenger": "https://messenger.example.com"}}
         with aioresponses() as m:
             m.post(WDM_API_BASE, payload=response)

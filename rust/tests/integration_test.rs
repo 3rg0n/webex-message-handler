@@ -5,8 +5,9 @@
 
 use webex_message_handler::{
     Config, ConnectionStatus, DeletedMessage, HandlerStatus,
-    MercuryActivity, WebexError, WebexMessageHandler,
+    MercuryActivity, NetworkMode, WebexError, WebexMessageHandler,
 };
+use std::sync::Arc;
 
 #[test]
 fn test_config_defaults() {
@@ -159,4 +160,125 @@ fn test_handler_status_construction() {
     };
     assert_eq!(status.status, ConnectionStatus::Connected);
     assert!(status.web_socket_open);
+}
+
+// Networking mode validation tests
+
+#[test]
+fn test_accepts_native_mode_with_client() {
+    let result = WebexMessageHandler::new(Config {
+        token: "test-token".to_string(),
+        mode: NetworkMode::Native,
+        client: Some(reqwest::Client::new()),
+        ..Default::default()
+    });
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_accepts_default_native_mode() {
+    let result = WebexMessageHandler::new(Config {
+        token: "test-token".to_string(),
+        ..Default::default()
+    });
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_rejects_injected_mode_missing_fetch() {
+    let result = WebexMessageHandler::new(Config {
+        token: "test-token".to_string(),
+        mode: NetworkMode::Injected,
+        web_socket_factory: Some(Arc::new(|_url| {
+            Box::pin(async { Err("not implemented".into()) })
+        })),
+        ..Default::default()
+    });
+    assert!(result.is_err());
+    if let Err(e) = result {
+        assert!(e.to_string().contains("Injected mode requires both"));
+    }
+}
+
+#[test]
+fn test_rejects_injected_mode_missing_ws_factory() {
+    let result = WebexMessageHandler::new(Config {
+        token: "test-token".to_string(),
+        mode: NetworkMode::Injected,
+        fetch: Some(Arc::new(|_req| {
+            Box::pin(async { Err("not implemented".into()) })
+        })),
+        ..Default::default()
+    });
+    assert!(result.is_err());
+    if let Err(e) = result {
+        assert!(e.to_string().contains("Injected mode requires both"));
+    }
+}
+
+#[test]
+fn test_rejects_injected_mode_with_client() {
+    let result = WebexMessageHandler::new(Config {
+        token: "test-token".to_string(),
+        mode: NetworkMode::Injected,
+        client: Some(reqwest::Client::new()),
+        fetch: Some(Arc::new(|_req| {
+            Box::pin(async { Err("not implemented".into()) })
+        })),
+        web_socket_factory: Some(Arc::new(|_url| {
+            Box::pin(async { Err("not implemented".into()) })
+        })),
+        ..Default::default()
+    });
+    assert!(result.is_err());
+    if let Err(e) = result {
+        assert!(e.to_string().contains("Cannot use native proxy parameters"));
+    }
+}
+
+#[test]
+fn test_rejects_native_mode_with_fetch() {
+    let result = WebexMessageHandler::new(Config {
+        token: "test-token".to_string(),
+        mode: NetworkMode::Native,
+        fetch: Some(Arc::new(|_req| {
+            Box::pin(async { Err("not implemented".into()) })
+        })),
+        ..Default::default()
+    });
+    assert!(result.is_err());
+    if let Err(e) = result {
+        assert!(e.to_string().contains("Cannot provide fetch/web_socket_factory in native mode"));
+    }
+}
+
+#[test]
+fn test_rejects_native_mode_with_ws_factory() {
+    let result = WebexMessageHandler::new(Config {
+        token: "test-token".to_string(),
+        mode: NetworkMode::Native,
+        web_socket_factory: Some(Arc::new(|_url| {
+            Box::pin(async { Err("not implemented".into()) })
+        })),
+        ..Default::default()
+    });
+    assert!(result.is_err());
+    if let Err(e) = result {
+        assert!(e.to_string().contains("Cannot provide fetch/web_socket_factory in native mode"));
+    }
+}
+
+#[test]
+fn test_rejects_default_mode_with_fetch() {
+    let result = WebexMessageHandler::new(Config {
+        token: "test-token".to_string(),
+        fetch: Some(Arc::new(|_req| {
+            Box::pin(async { Err("not implemented".into()) })
+        })),
+        ..Default::default()
+    });
+    assert!(result.is_err());
+    if let Err(e) = result {
+        assert!(e.to_string().contains("Cannot provide fetch/web_socket_factory in native mode"));
+    }
 }

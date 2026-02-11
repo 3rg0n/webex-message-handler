@@ -10,11 +10,9 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
-import aiohttp
-
 from .errors import AuthError, MercuryConnectionError
 from .logger import Logger, noop_logger
-from .types import MercuryActivity, MercuryActor, MercuryObject, MercuryTarget
+from .types import InjectedWebSocket, MercuryActivity, MercuryActor, MercuryObject, MercuryTarget, WebSocketFactory
 
 
 class MercurySocket:
@@ -28,21 +26,20 @@ class MercurySocket:
         self,
         *,
         logger: Logger | None = None,
-        connector: aiohttp.BaseConnector | None = None,
+        ws_factory: WebSocketFactory,
         ping_interval: float = 15.0,
         pong_timeout: float = 14.0,
         reconnect_backoff_max: float = 32.0,
         max_reconnect_attempts: int = 10,
     ) -> None:
         self._logger: Logger = logger or noop_logger  # type: ignore[assignment]
-        self._connector = connector
+        self._ws_factory = ws_factory
         self._ping_interval = ping_interval
         self._pong_timeout = pong_timeout
         self._reconnect_backoff_max = reconnect_backoff_max
         self._max_reconnect_attempts = max_reconnect_attempts
 
-        self._ws: aiohttp.ClientWebSocketResponse | None = None
-        self._session: aiohttp.ClientSession | None = None
+        self._ws: InjectedWebSocket | None = None
         self._token: str | None = None
         self._base_url: str | None = None
         self._connection_ready = False
@@ -95,12 +92,9 @@ class MercurySocket:
         ready_event = asyncio.Event()
         connect_error: list[Exception] = []
 
-        self._session = aiohttp.ClientSession(connector=self._connector)
         try:
-            self._ws = await self._session.ws_connect(prepared_url)
+            self._ws = await self._ws_factory(prepared_url)
         except Exception as exc:
-            await self._session.close()
-            self._session = None
             raise MercuryConnectionError("Failed to connect to Mercury socket") from exc
 
         # Send authorization
@@ -110,7 +104,7 @@ class MercurySocket:
             "type": "authorization",
             "data": {"token": f"Bearer {self._token}"},
         })
-        await self._ws.send_str(auth_message)
+        await self._ws.send(auth_message)
 
         # Start read loop in background
         async def _read_loop() -> None:
@@ -199,7 +193,7 @@ class MercurySocket:
                         "type": "ping",
                     })
                     try:
-                        await self._ws.send_str(ping_message)
+                        await self._ws.send(ping_message)
                     except Exception:
                         break
                     self._logger.debug(f"Sent ping: {self._pending_pong_id}")
@@ -346,10 +340,7 @@ class MercurySocket:
             except asyncio.CancelledError:
                 pass
         await self._close_websocket()
-        if self._session and not self._session.closed:
-            await self._session.close()
         self._ws = None
-        self._session = None
 
     async def disconnect(self) -> None:
         """Disconnect from Mercury."""
@@ -363,10 +354,7 @@ class MercurySocket:
             except asyncio.CancelledError:
                 pass
         await self._close_websocket()
-        if self._session and not self._session.closed:
-            await self._session.close()
         self._ws = None
-        self._session = None
         self._connection_ready = False
         self._emit("disconnected", "client")
 

@@ -1,18 +1,70 @@
 package webexmessagehandler
 
-import "net/http"
+import (
+	"context"
+	"io"
+	"net/http"
+)
+
+// NetworkMode defines the networking mode for the handler.
+type NetworkMode string
+
+const (
+	// NetworkModeNative uses built-in HTTP and WebSocket libraries.
+	NetworkModeNative NetworkMode = "native"
+	// NetworkModeInjected uses provided fetch and WebSocket factory functions.
+	NetworkModeInjected NetworkMode = "injected"
+)
+
+// FetchRequest represents an HTTP request for injected fetch function.
+type FetchRequest struct {
+	URL     string
+	Method  string
+	Headers map[string]string
+	Body    string
+}
+
+// FetchResponse represents an HTTP response from injected fetch function.
+type FetchResponse struct {
+	Status int
+	OK     bool
+	Body   io.ReadCloser
+}
+
+// FetchFunc is a custom fetch function for injected mode.
+type FetchFunc func(ctx context.Context, req FetchRequest) (*FetchResponse, error)
+
+// WebSocket represents a WebSocket connection interface.
+type WebSocket interface {
+	Send(data string) error
+	Receive() (string, error)
+	Close() error
+	Done() <-chan struct{}
+}
+
+// WebSocketFactory creates WebSocket connections for injected mode.
+type WebSocketFactory func(ctx context.Context, url string) (WebSocket, error)
 
 // Config holds configuration for WebexMessageHandler.
 type Config struct {
 	// Token is the Webex bot or user access token (required).
 	Token string
 
+	// Mode is the networking mode: "native" or "injected" (default: "native").
+	Mode NetworkMode
+
 	// Logger is an optional logger implementation (silent by default).
 	Logger Logger
 
-	// HTTPClient is an optional HTTP client for proxy support or custom connection handling.
+	// HTTPClient is an optional HTTP client for proxy support (native mode only).
 	// If nil, http.DefaultClient is used.
 	HTTPClient *http.Client
+
+	// Fetch is a custom fetch function for all HTTP requests (injected mode).
+	Fetch FetchFunc
+
+	// WebSocketFactory is a custom WebSocket factory (injected mode).
+	WebSocketFactory WebSocketFactory
 
 	// PingInterval is the Mercury ping interval in seconds (default: 15).
 	PingInterval float64

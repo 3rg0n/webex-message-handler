@@ -19,13 +19,19 @@ from .types import (
     DecryptedMessage,
     DeletedMessage,
     DeviceRegistration,
+    FetchFunction,
+    FetchRequest,
+    FetchResponse,
     HandlerStatus,
+    InjectedWebSocket,
     MercuryActivity,
     MercuryActor,
     MercuryEnvelope,
     MercuryObject,
     MercuryTarget,
+    NetworkMode,
     WebexMessageHandlerConfig,
+    WebSocketFactory,
 )
 
 __all__ = [
@@ -59,4 +65,11 @@ __all__ = [
     "DeletedMessage",
     "HandlerStatus",
     "ConnectionStatus",
+    # Networking types
+    "NetworkMode",
+    "FetchRequest",
+    "FetchResponse",
+    "FetchFunction",
+    "InjectedWebSocket",
+    "WebSocketFactory",
 ]

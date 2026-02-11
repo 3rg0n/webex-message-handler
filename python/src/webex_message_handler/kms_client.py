@@ -17,12 +17,12 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-import aiohttp
 from jwcrypto import jwe, jwk
 from jwcrypto.common import base64url_decode, base64url_encode
 
 from .errors import KmsError
 from .logger import Logger, noop_logger
+from .types import FetchFunction, FetchRequest
 
 KMS_RESPONSE_TIMEOUT = 30.0  # seconds
 
@@ -42,12 +42,13 @@ class KmsClient:
         user_id: str,
         encryption_service_url: str,
         logger: Logger | None = None,
-        connector: aiohttp.BaseConnector | None = None,
+        http_do: FetchFunction,
     ) -> None:
         self._token = token
         self._device_url = device_url
         self._user_id = user_id
         self._encryption_service_url = encryption_service_url
+        self._http_do = http_do
         self._logger: Logger = logger or noop_logger  # type: ignore[assignment]
         self._connector = connector
 
@@ -90,15 +91,16 @@ class KmsClient:
 
             # Step 1: Fetch KMS details
             kms_details_url = f"{self._encryption_service_url}/kms/{self._user_id}"
-            async with aiohttp.ClientSession(connector=self._connector) as session, session.get(
-                kms_details_url,
-                headers={"Authorization": f"Bearer {self._token}"},
-            ) as response:
-                if not response.ok:
-                    raise KmsError(
-                        f"Failed to fetch KMS details: {response.status} {response.reason}"
-                    )
-                kms_details = await response.json()
+            response = await self._http_do(
+                FetchRequest(
+                    url=kms_details_url,
+                    method="GET",
+                    headers={"Authorization": f"Bearer {self._token}"},
+                )
+            )
+            if not response.ok:
+                raise KmsError(f"Failed to fetch KMS details: {response.status}")
+            kms_details = await response.json()
 
             self._kms_cluster = kms_details["kmsCluster"]
             rsa_public_key_raw = kms_details["rsaPublicKey"]
@@ -281,23 +283,26 @@ class KmsClient:
 
         # POST the request
         try:
-            async with aiohttp.ClientSession(connector=self._connector) as session, session.post(
-                f"{self._encryption_service_url}/kms/messages",
-                headers={
-                    "Authorization": f"Bearer {self._token}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "destination": self._kms_cluster,
-                    "kmsMessages": [wrapped],
-                },
-            ) as response:
-                self._logger.debug(f"KMS HTTP POST response: {response.status}")
-                if not response.ok:
-                    self._pending_requests.pop(request_id, None)
-                    timeout_handle.cancel()
-                    error_body = await response.text()
-                    raise KmsError(f"KMS HTTP request failed: {response.status} {error_body}")
+            response = await self._http_do(
+                FetchRequest(
+                    url=f"{self._encryption_service_url}/kms/messages",
+                    method="POST",
+                    headers={
+                        "Authorization": f"Bearer {self._token}",
+                        "Content-Type": "application/json",
+                    },
+                    body=json.dumps({
+                        "destination": self._kms_cluster,
+                        "kmsMessages": [wrapped],
+                    }),
+                )
+            )
+            self._logger.debug(f"KMS HTTP POST response: {response.status}")
+            if not response.ok:
+                self._pending_requests.pop(request_id, None)
+                timeout_handle.cancel()
+                error_body = await response.text()
+                raise KmsError(f"KMS HTTP request failed: {response.status} {error_body}")
         except KmsError:
             raise
         except Exception as exc:

@@ -1,10 +1,11 @@
-import type * as http from 'http';
-import type * as https from 'https';
 import * as KMS from 'node-kms';
 import * as jose from 'node-jose';
 import type { JWK } from 'node-jose';
 import { KmsError } from './errors.js';
 import { Logger, noopLogger } from './logger.js';
+import type { FetchRequest, FetchResponse } from './types.js';
+
+type HttpDoFn = (request: FetchRequest) => Promise<FetchResponse>;
 
 interface KmsClientConfig {
   token: string;
@@ -12,7 +13,7 @@ interface KmsClientConfig {
   userId: string;
   encryptionServiceUrl: string;
   logger?: Logger;
-  agent?: http.Agent | https.Agent;
+  httpDo: HttpDoFn;
 }
 
 interface KmsDetailsResponse {
@@ -34,7 +35,7 @@ export class KmsClient {
   private userId: string;
   private encryptionServiceUrl: string;
   private logger: Logger;
-  private agent: http.Agent | https.Agent | undefined;
+  private httpDo: HttpDoFn;
 
   private context: KMS.Context | null = null;
   private kmsCluster: string = '';
@@ -50,7 +51,7 @@ export class KmsClient {
     this.userId = config.userId;
     this.encryptionServiceUrl = config.encryptionServiceUrl;
     this.logger = config.logger ?? noopLogger;
-    this.agent = config.agent;
+    this.httpDo = config.httpDo;
   }
 
   /**
@@ -95,18 +96,17 @@ export class KmsClient {
 
       // Step 1: Fetch KMS details
       const kmsDetailsUrl = `${this.encryptionServiceUrl}/kms/${this.userId}`;
-      const kmsDetailsResponse = await fetch(kmsDetailsUrl, {
+      const kmsDetailsResponse = await this.httpDo({
+        url: kmsDetailsUrl,
         method: 'GET',
         headers: {
           Authorization: `Bearer ${this.token}`,
         },
-        // @ts-expect-error - dispatcher is an undici option for Node.js fetch
-        dispatcher: this.agent,
       });
 
       if (!kmsDetailsResponse.ok) {
         throw new KmsError(
-          `Failed to fetch KMS details: ${kmsDetailsResponse.status} ${kmsDetailsResponse.statusText}`
+          `Failed to fetch KMS details: ${kmsDetailsResponse.status}`
         );
       }
 
@@ -251,22 +251,18 @@ export class KmsClient {
     });
 
     // POST the request
-    const httpResponse = await fetch(
-      `${this.encryptionServiceUrl}/kms/messages`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          destination: this.kmsCluster,
-          kmsMessages: [wrapped],
-        }),
-        // @ts-expect-error - dispatcher is an undici option for Node.js fetch
-        dispatcher: this.agent,
-      }
-    );
+    const httpResponse = await this.httpDo({
+      url: `${this.encryptionServiceUrl}/kms/messages`,
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        destination: this.kmsCluster,
+        kmsMessages: [wrapped],
+      }),
+    });
 
     if (!httpResponse.ok) {
       this.pendingRequests.delete(requestId);

@@ -6,13 +6,22 @@ use crate::kms_client::{KmsClient, KmsResponseHandler};
 use crate::mercury_socket::{MercuryEvent, MercurySocket};
 use crate::message_decryptor::MessageDecryptor;
 use crate::types::{
-    Config, ConnectionStatus, DecryptedMessage, DeletedMessage, DeviceRegistration, HandlerStatus,
-    MercuryActivity,
+    Config, ConnectionStatus, DecryptedMessage, DeletedMessage, DeviceRegistration, FetchRequest,
+    FetchResponse, HandlerStatus, MercuryActivity, NetworkMode,
 };
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, Mutex};
 use tracing::{error, info, warn};
+
+// Internal adapter type (alias for public type)
+type HttpDoFn = Arc<
+    dyn Fn(FetchRequest) -> Pin<Box<dyn Future<Output = Result<FetchResponse, Box<dyn std::error::Error + Send + Sync>>> + Send>>
+        + Send
+        + Sync,
+>;
 
 /// Events emitted by WebexMessageHandler.
 #[derive(Debug, Clone)]
@@ -31,10 +40,53 @@ pub enum HandlerEvent {
     Error(String),
 }
 
+/// Create a native HTTP adapter that wraps reqwest::Client.
+fn create_native_http_adapter(client: reqwest::Client) -> HttpDoFn {
+    Arc::new(move |req: FetchRequest| {
+        let client = client.clone();
+        Box::pin(async move {
+            let mut request_builder = match req.method.as_str() {
+                "GET" => client.get(&req.url),
+                "POST" => client.post(&req.url),
+                "PUT" => client.put(&req.url),
+                "DELETE" => client.delete(&req.url),
+                _ => return Err(format!("Unsupported HTTP method: {}", req.method).into()),
+            };
+
+            for (key, value) in req.headers {
+                request_builder = request_builder.header(key, value);
+            }
+
+            if let Some(body) = req.body {
+                request_builder = request_builder.body(body);
+            }
+
+            let response = request_builder
+                .send()
+                .await
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+
+            let status = response.status().as_u16();
+            let ok = response.status().is_success();
+            let body_bytes = response
+                .bytes()
+                .await
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?
+                .to_vec();
+
+            Ok(FetchResponse {
+                status,
+                ok,
+                body: body_bytes,
+            })
+        })
+    })
+}
+
 /// Receives and decrypts Webex messages over Mercury WebSocket.
 pub struct WebexMessageHandler {
     token: Arc<Mutex<String>>,
-    client: reqwest::Client,
+    http_do: HttpDoFn,
     device_manager: Arc<Mutex<DeviceManager>>,
     mercury_socket: Arc<MercurySocket>,
     kms_client: Arc<Mutex<Option<KmsClient>>>,
@@ -59,10 +111,47 @@ impl WebexMessageHandler {
             ));
         }
 
+        // Validate networking mode configuration
+        match config.mode {
+            NetworkMode::Injected => {
+                if config.fetch.is_none() || config.web_socket_factory.is_none() {
+                    return Err(WebexError::Internal(
+                        "Injected mode requires both fetch and web_socket_factory".into(),
+                    ));
+                }
+                if config.client.is_some() {
+                    return Err(WebexError::Internal(
+                        "Cannot use native proxy parameters (client) in injected mode".into(),
+                    ));
+                }
+            }
+            NetworkMode::Native => {
+                if config.fetch.is_some() || config.web_socket_factory.is_some() {
+                    return Err(WebexError::Internal(
+                        "Cannot provide fetch/web_socket_factory in native mode — set mode to Injected".into(),
+                    ));
+                }
+            }
+        }
+
+        // Create adapters based on mode
+        let (http_do, ws_factory) = match config.mode {
+            NetworkMode::Native => {
+                let client = config.client.clone().unwrap_or_else(|| reqwest::Client::new());
+                let http_adapter = create_native_http_adapter(client.clone());
+                (http_adapter, None)
+            }
+            NetworkMode::Injected => {
+                let http_adapter = config.fetch.clone().unwrap();
+                let ws_factory = config.web_socket_factory.clone();
+                (http_adapter, ws_factory)
+            }
+        };
+
         let client = config.client.clone().unwrap_or_else(|| reqwest::Client::new());
 
         let mercury_socket = MercurySocket::new(
-            client.clone(),
+            ws_factory,
             Duration::from_secs_f64(config.ping_interval),
             Duration::from_secs_f64(config.pong_timeout),
             Duration::from_secs_f64(config.reconnect_backoff_max),
@@ -73,8 +162,8 @@ impl WebexMessageHandler {
 
         Ok(Self {
             token: Arc::new(Mutex::new(config.token.clone())),
-            client: client.clone(),
-            device_manager: Arc::new(Mutex::new(DeviceManager::new(client.clone()))),
+            http_do: http_do.clone(),
+            device_manager: Arc::new(Mutex::new(DeviceManager::new(http_do.clone()))),
             mercury_socket: Arc::new(mercury_socket),
             kms_client: Arc::new(Mutex::new(None)),
             kms_response_handler: Arc::new(Mutex::new(None)),
@@ -139,7 +228,7 @@ impl WebexMessageHandler {
 
         // Step 2: Create KMS client
         let kms = KmsClient::new(
-            self.client.clone(),
+            self.http_do.clone(),
             &token,
             &reg.device_url,
             &reg.user_id,

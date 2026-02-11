@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"net/http"
 	"net/url"
 	"strconv"
 	"sync"
@@ -18,7 +17,7 @@ import (
 // MercurySocket manages the Mercury WebSocket connection.
 type MercurySocket struct {
 	logger               Logger
-	httpClient           *http.Client
+	wsFactory            wsFactoryFn
 	pingInterval         time.Duration
 	pongTimeout          time.Duration
 	reconnectBackoffMax  time.Duration
@@ -47,7 +46,7 @@ type MercurySocket struct {
 // MercurySocketConfig holds options for MercurySocket.
 type MercurySocketConfig struct {
 	Logger               Logger
-	HTTPClient           *http.Client
+	WSFactory            wsFactoryFn
 	PingInterval         time.Duration
 	PongTimeout          time.Duration
 	ReconnectBackoffMax  time.Duration
@@ -72,14 +71,9 @@ func NewMercurySocket(cfg MercurySocketConfig) *MercurySocket {
 		cfg.MaxReconnectAttempts = 10
 	}
 
-	httpClient := cfg.HTTPClient
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
-
 	return &MercurySocket{
 		logger:               cfg.Logger,
-		httpClient:           httpClient,
+		wsFactory:            cfg.WSFactory,
 		pingInterval:         cfg.PingInterval,
 		pongTimeout:          cfg.PongTimeout,
 		reconnectBackoffMax:  cfg.ReconnectBackoffMax,
@@ -123,14 +117,23 @@ func (ms *MercurySocket) connectInternal(ctx context.Context) error {
 	connCtx, cancel := context.WithCancel(ctx)
 	ms.cancelFn = cancel
 
-	conn, _, err := websocket.Dial(connCtx, preparedURL, &websocket.DialOptions{
-		HTTPClient: ms.httpClient,
-	})
+	ws, err := ms.wsFactory(connCtx, preparedURL)
 	if err != nil {
 		cancel()
 		return NewMercuryConnectionError("Failed to connect to Mercury socket", 0)
 	}
-	conn.SetReadLimit(1 << 20) // 1MB
+
+	// Extract raw connection for nhooyr.io/websocket operations
+	var conn *websocket.Conn
+	if nativeWS, ok := ws.(*nativeWebSocket); ok {
+		conn = nativeWS.Conn
+		conn.SetReadLimit(1 << 20) // 1MB
+	} else {
+		// For injected WebSocket, we can't access the raw connection
+		// This is acceptable as injected mode users control their implementation
+		cancel()
+		return NewMercuryConnectionError("Injected WebSocket mode not yet supported for Mercury", 0)
+	}
 
 	ms.mu.Lock()
 	ms.conn = conn

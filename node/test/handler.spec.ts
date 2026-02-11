@@ -859,4 +859,124 @@ describe('WebexMessageHandler', () => {
       expect(logger.warn).toHaveBeenCalled();
     });
   });
+
+  describe('mode validation', () => {
+    it('should accept native mode with agent', () => {
+      const agent = { keepAlive: true } as any;
+
+      expect(() => {
+        new WebexMessageHandler({
+          token: mockToken,
+          mode: 'native',
+          agent,
+        });
+      }).not.toThrow();
+    });
+
+    it('should accept default (native) mode without mode specified', () => {
+      expect(() => {
+        new WebexMessageHandler({
+          token: mockToken,
+        });
+      }).not.toThrow();
+    });
+
+    it('should accept injected mode with fetch and webSocketFactory', () => {
+      const mockFetch = jest.fn();
+      const mockWsFactory = jest.fn();
+
+      expect(() => {
+        new WebexMessageHandler({
+          token: mockToken,
+          mode: 'injected',
+          fetch: mockFetch as any,
+          webSocketFactory: mockWsFactory as any,
+        });
+      }).not.toThrow();
+    });
+
+    it('should throw if injected mode is missing fetch', () => {
+      const mockWsFactory = jest.fn();
+
+      expect(() => {
+        new WebexMessageHandler({
+          token: mockToken,
+          mode: 'injected',
+          webSocketFactory: mockWsFactory,
+        } as any);
+      }).toThrow('Injected mode requires both "fetch" and "webSocketFactory"');
+    });
+
+    it('should throw if injected mode is missing webSocketFactory', () => {
+      const mockFetch = jest.fn();
+
+      expect(() => {
+        new WebexMessageHandler({
+          token: mockToken,
+          mode: 'injected',
+          fetch: mockFetch,
+        } as any);
+      }).toThrow('Injected mode requires both "fetch" and "webSocketFactory"');
+    });
+
+    it('should throw if injected mode has agent parameter', () => {
+      const mockFetch = jest.fn();
+      const mockWsFactory = jest.fn();
+      const agent = { keepAlive: true } as any;
+
+      expect(() => {
+        new WebexMessageHandler({
+          token: mockToken,
+          mode: 'injected',
+          fetch: mockFetch,
+          webSocketFactory: mockWsFactory,
+          agent,
+        });
+      }).toThrow('Cannot use native proxy parameters (agent) in injected mode');
+    });
+
+    it('should throw if native mode has fetch parameter', () => {
+      const mockFetch = jest.fn();
+
+      expect(() => {
+        new WebexMessageHandler({
+          token: mockToken,
+          mode: 'native',
+          fetch: mockFetch,
+        } as any);
+      }).toThrow('Cannot provide fetch/webSocketFactory in native mode — set mode to "injected"');
+    });
+
+    it('should throw if native mode has webSocketFactory parameter', () => {
+      const mockWsFactory = jest.fn();
+
+      expect(() => {
+        new WebexMessageHandler({
+          token: mockToken,
+          mode: 'native',
+          webSocketFactory: mockWsFactory,
+        } as any);
+      }).toThrow('Cannot provide fetch/webSocketFactory in native mode — set mode to "injected"');
+    });
+
+    it('should throw if default mode has fetch parameter', () => {
+      const mockFetch = jest.fn();
+
+      expect(() => {
+        new WebexMessageHandler({
+          token: mockToken,
+          fetch: mockFetch,
+        } as any);
+      }).toThrow('Cannot provide fetch/webSocketFactory in native mode — set mode to "injected"');
+    });
+
+    it('should throw for invalid mode string', () => {
+      expect(() => {
+        new WebexMessageHandler({
+          token: mockToken,
+          mode: 'invalid' as any,
+        });
+      }).toThrow('Invalid mode "invalid" — must be "native" or "injected"');
+    });
+  });
 });

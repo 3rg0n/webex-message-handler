@@ -26,4 +26,10 @@ export type {
   DeletedMessage,
   HandlerStatus,
   ConnectionStatus,
+  NetworkMode,
+  FetchRequest,
+  FetchResponse,
+  FetchFunction,
+  InjectedWebSocket,
+  WebSocketFactory,
 } from './types.js';

@@ -57,11 +57,157 @@ new WebexMessageHandler(config: WebexMessageHandlerConfig)
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `token` | `string` | Yes | — | Webex bot or user access token. |
+| `mode` | `NetworkMode` | No | `'native'` | Networking mode: `'native'` or `'injected'`. See [Networking Modes](#networking-modes). |
+| `agent` | `http.Agent \| https.Agent` | No | — | **Native mode only**: Proxy agent for HTTP/HTTPS requests (e.g., `HttpsProxyAgent`). |
+| `fetch` | `FetchFunction` | Required for injected | — | **Injected mode only**: Custom fetch function for all HTTP requests. |
+| `webSocketFactory` | `WebSocketFactory` | Required for injected | — | **Injected mode only**: Custom WebSocket factory function. |
 | `logger` | `Logger` | No | silent | Logger implementation (`consoleLogger` provided). |
 | `pingInterval` | `number` | No | `15000` | WebSocket heartbeat ping interval in ms. |
 | `pongTimeout` | `number` | No | `14000` | How long to wait for pong before triggering reconnect. |
 | `reconnectBackoffMax` | `number` | No | `32000` | Max backoff delay between reconnection attempts. |
 | `maxReconnectAttempts` | `number` | No | `10` | Max consecutive reconnection attempts before giving up. |
+
+### Networking Modes
+
+The handler supports two networking modes controlled by the `mode` configuration field. The mode determines how the library makes HTTP requests and creates WebSocket connections.
+
+#### Native Mode (Default)
+
+Uses Node.js built-in `fetch` and `ws` library directly. Supports proxy configuration via the `agent` parameter.
+
+**Basic usage:**
+```typescript
+const handler = new WebexMessageHandler({
+  token: process.env.WEBEX_BOT_TOKEN!,
+});
+```
+
+**With proxy:**
+```typescript
+import { HttpsProxyAgent } from 'https-proxy-agent';
+
+const handler = new WebexMessageHandler({
+  token: process.env.WEBEX_BOT_TOKEN!,
+  agent: new HttpsProxyAgent('http://proxy.example.com:8080'),
+});
+```
+
+#### Injected Mode
+
+Provides complete control over networking by injecting custom fetch and WebSocket factory functions. Useful for:
+- Mocking network calls in tests
+- Logging/monitoring all requests
+- Custom routing or load balancing
+- Integration with non-standard networking layers
+
+**Configuration validation:**
+- When `mode: 'injected'`, BOTH `fetch` and `webSocketFactory` are required
+- The `agent` parameter cannot be used with injected mode (conflict error)
+- When `mode: 'native'`, `fetch` and `webSocketFactory` cannot be provided (conflict error)
+
+**Type signatures:**
+```typescript
+type NetworkMode = 'native' | 'injected';
+
+interface FetchRequest {
+  url: string;
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  headers: Record<string, string>;
+  body?: string;
+}
+
+interface FetchResponse {
+  status: number;
+  ok: boolean;
+  json(): Promise<unknown>;
+  text(): Promise<string>;
+}
+
+type FetchFunction = (request: FetchRequest) => Promise<FetchResponse>;
+
+interface InjectedWebSocket {
+  send(data: string): void;
+  close(code?: number): void;
+  readonly readyState: number;
+  on(event: 'message', listener: (data: string) => void): void;
+  on(event: 'open', listener: () => void): void;
+  on(event: 'close', listener: (code: number, reason: string) => void): void;
+  on(event: 'error', listener: (error: Error) => void): void;
+}
+
+type WebSocketFactory = (url: string) => InjectedWebSocket;
+```
+
+**Example with logging:**
+```typescript
+import WebSocket from 'ws';
+
+const handler = new WebexMessageHandler({
+  token: process.env.WEBEX_BOT_TOKEN!,
+  mode: 'injected',
+  fetch: async (request) => {
+    console.log(`[HTTP] ${request.method} ${request.url}`);
+    const response = await fetch(request.url, {
+      method: request.method,
+      headers: request.headers,
+      body: request.body,
+    });
+    return {
+      status: response.status,
+      ok: response.ok,
+      json: () => response.json(),
+      text: () => response.text(),
+    };
+  },
+  webSocketFactory: (url) => {
+    console.log(`[WS] Connecting to ${url}`);
+    return new WebSocket(url) as any;
+  },
+});
+```
+
+**Example for testing:**
+```typescript
+// Mock fetch that returns canned responses
+const mockFetch: FetchFunction = async (request) => {
+  if (request.url.includes('/devices')) {
+    return {
+      status: 200,
+      ok: true,
+      json: async () => ({ deviceUrl: 'mock-device', userId: 'mock-user', ... }),
+      text: async () => '',
+    };
+  }
+  // ... handle other endpoints
+};
+
+// Mock WebSocket that doesn't actually connect
+class MockWebSocket extends EventEmitter {
+  send(data: string) { /* no-op */ }
+  close() { /* no-op */ }
+  readyState = 1;
+}
+
+const handler = new WebexMessageHandler({
+  token: 'mock-token',
+  mode: 'injected',
+  fetch: mockFetch,
+  webSocketFactory: (url) => new MockWebSocket() as any,
+});
+```
+
+**Network call inventory:**
+
+The library makes exactly 6 types of network calls:
+
+| Component | Method | URL | Purpose |
+|-----------|--------|-----|---------|
+| DeviceManager | POST | `wdm-a.wbx2.com/wdm/api/v1/devices` | Register virtual device |
+| DeviceManager | PUT | `{deviceUrl}` | Refresh device registration |
+| DeviceManager | DELETE | `{deviceUrl}` | Unregister device |
+| KmsClient | GET | `{encryptionServiceUrl}/kms/{userId}` | Fetch KMS cluster details |
+| KmsClient | POST | `{encryptionServiceUrl}/kms/messages` | ECDH key exchange and key requests |
+| MercurySocket | WebSocket | Mercury URL from device | Persistent message stream |
 
 ### Methods
 
@@ -365,6 +511,13 @@ import type {
   // Config & events
   WebexMessageHandlerConfig,
   WebexMessageHandlerEvents,
+  // Networking types (v0.3.0+)
+  NetworkMode,
+  FetchRequest,
+  FetchResponse,
+  FetchFunction,
+  InjectedWebSocket,
+  WebSocketFactory,
   // Status
   HandlerStatus,
   ConnectionStatus,

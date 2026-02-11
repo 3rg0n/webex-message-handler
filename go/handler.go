@@ -3,7 +3,9 @@ package webexmessagehandler
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -12,6 +14,8 @@ type WebexMessageHandler struct {
 	token      string
 	logger     Logger
 	httpClient *http.Client
+	httpDo     fetchDoFn
+	wsFactory  wsFactoryFn
 
 	deviceManager    *DeviceManager
 	mercurySocket    *MercurySocket
@@ -31,10 +35,34 @@ type WebexMessageHandler struct {
 	onError          func(err error)
 }
 
+// Internal adapter types (aliases for public types)
+type fetchDoFn = FetchFunc
+type wsFactoryFn = WebSocketFactory
+
 // New creates a new WebexMessageHandler.
 func New(cfg Config) (*WebexMessageHandler, error) {
 	if cfg.Token == "" {
 		return nil, fmt.Errorf("WebexMessageHandler requires a non-empty token string")
+	}
+
+	// Validate networking mode configuration
+	mode := cfg.Mode
+	if mode == "" {
+		mode = NetworkModeNative
+	}
+	if mode == NetworkModeInjected {
+		if cfg.Fetch == nil || cfg.WebSocketFactory == nil {
+			return nil, fmt.Errorf("injected mode requires both Fetch and WebSocketFactory")
+		}
+		if cfg.HTTPClient != nil {
+			return nil, fmt.Errorf("cannot use native proxy parameters (HTTPClient) in injected mode")
+		}
+	} else if mode == NetworkModeNative {
+		if cfg.Fetch != nil || cfg.WebSocketFactory != nil {
+			return nil, fmt.Errorf("cannot provide Fetch/WebSocketFactory in native mode — set Mode to injected")
+		}
+	} else {
+		return nil, fmt.Errorf("invalid mode %q — must be \"native\" or \"injected\"", mode)
 	}
 
 	logger := cfg.Logger
@@ -65,22 +93,70 @@ func New(cfg Config) (*WebexMessageHandler, error) {
 	}
 
 	h := &WebexMessageHandler{
-		token:         cfg.Token,
-		logger:        logger,
-		httpClient:    httpClient,
-		deviceManager: NewDeviceManager(logger, httpClient),
-		mercurySocket: NewMercurySocket(MercurySocketConfig{
-			Logger:               logger,
-			HTTPClient:           httpClient,
-			PingInterval:         pingInterval,
-			PongTimeout:          pongTimeout,
-			ReconnectBackoffMax:  reconnectBackoffMax,
-			MaxReconnectAttempts: maxReconnectAttempts,
-		}),
+		token:      cfg.Token,
+		logger:     logger,
+		httpClient: httpClient,
 	}
+
+	// Create adapters based on mode
+	if mode == NetworkModeNative {
+		h.httpDo = createNativeHTTPAdapter(httpClient)
+		h.wsFactory = createNativeWSAdapter(httpClient)
+	} else {
+		// injected mode
+		h.httpDo = cfg.Fetch
+		h.wsFactory = cfg.WebSocketFactory
+	}
+
+	h.deviceManager = NewDeviceManager(logger, h.httpDo)
+	h.mercurySocket = NewMercurySocket(MercurySocketConfig{
+		Logger:               logger,
+		WSFactory:            h.wsFactory,
+		PingInterval:         pingInterval,
+		PongTimeout:          pongTimeout,
+		ReconnectBackoffMax:  reconnectBackoffMax,
+		MaxReconnectAttempts: maxReconnectAttempts,
+	})
 
 	h.setupMercuryListeners()
 	return h, nil
+}
+
+// createNativeHTTPAdapter creates an HTTP adapter using native net/http.
+func createNativeHTTPAdapter(client *http.Client) fetchDoFn {
+	return func(ctx context.Context, req FetchRequest) (*FetchResponse, error) {
+		var body io.Reader
+		if req.Body != "" {
+			body = strings.NewReader(req.Body)
+		}
+
+		httpReq, err := http.NewRequestWithContext(ctx, req.Method, req.URL, body)
+		if err != nil {
+			return nil, err
+		}
+		for k, v := range req.Headers {
+			httpReq.Header.Set(k, v)
+		}
+
+		resp, err := client.Do(httpReq)
+		if err != nil {
+			return nil, err
+		}
+
+		return &FetchResponse{
+			Status: resp.StatusCode,
+			OK:     resp.StatusCode >= 200 && resp.StatusCode < 300,
+			Body:   resp.Body,
+		}, nil
+	}
+}
+
+// createNativeWSAdapter creates a WebSocket adapter using gorilla/websocket.
+func createNativeWSAdapter(client *http.Client) wsFactoryFn {
+	return func(ctx context.Context, url string) (WebSocket, error) {
+		// Will be implemented when refactoring MercurySocket
+		return newNativeWebSocket(ctx, url, client)
+	}
 }
 
 // OnMessageCreated sets the callback for new messages.
@@ -141,7 +217,7 @@ func (h *WebexMessageHandler) Connect(ctx context.Context) error {
 		UserID:               reg.UserID,
 		EncryptionServiceURL: reg.EncryptionServiceURL,
 		Logger:               h.logger,
-		HTTPClient:           h.httpClient,
+		HTTPDo:               h.httpDo,
 	})
 
 	// Step 3: Connect Mercury (KMS responses arrive here)

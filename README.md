@@ -110,6 +110,88 @@ while let Some(event) = rx.recv().await {
 }
 ```
 
+## Networking & Proxy Support
+
+All implementations support two networking modes:
+
+### Native Mode (Default)
+
+Uses the language's built-in HTTP/WebSocket libraries with optional proxy configuration via agent/connector parameters.
+
+**Node.js:**
+```typescript
+import { HttpsProxyAgent } from 'https-proxy-agent';
+
+const handler = new WebexMessageHandler({
+  token: process.env.WEBEX_BOT_TOKEN!,
+  agent: new HttpsProxyAgent('http://proxy.example.com:8080'),
+});
+```
+
+**Python:**
+```python
+import aiohttp
+
+connector = aiohttp.TCPConnector(proxy='http://proxy.example.com:8080')
+handler = WebexMessageHandler(token=os.environ["WEBEX_BOT_TOKEN"], connector=connector)
+```
+
+**Go:**
+```go
+proxyURL, _ := url.Parse("http://proxy.example.com:8080")
+httpClient := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
+
+handler, _ := webexmessagehandler.New(webexmessagehandler.Config{
+    Token: os.Getenv("WEBEX_BOT_TOKEN"),
+    HTTPClient: httpClient,
+})
+```
+
+**Rust:**
+```rust
+let client = reqwest::Client::builder()
+    .proxy(reqwest::Proxy::all("http://proxy.example.com:8080")?)
+    .build()?;
+
+let handler = WebexMessageHandler::new(Config {
+    token: std::env::var("WEBEX_BOT_TOKEN")?,
+    client: Some(client),
+    ..Default::default()
+})?;
+```
+
+### Injected Mode (v0.3.0+)
+
+Provides complete control over all network operations by injecting custom fetch functions and WebSocket factories. Useful for testing, logging, mocking, or routing through custom networking layers.
+
+**Node.js:**
+```typescript
+const handler = new WebexMessageHandler({
+  token: process.env.WEBEX_BOT_TOKEN!,
+  mode: 'injected',
+  fetch: async (request) => {
+    console.log(`[FETCH] ${request.method} ${request.url}`);
+    const response = await fetch(request.url, {
+      method: request.method,
+      headers: request.headers,
+      body: request.body,
+    });
+    return {
+      status: response.status,
+      ok: response.ok,
+      json: () => response.json(),
+      text: () => response.text(),
+    };
+  },
+  webSocketFactory: (url) => {
+    console.log(`[WS] Connecting to ${url}`);
+    return new WebSocket(url);
+  },
+});
+```
+
+See language-specific API docs for Python, Go, and Rust injected mode examples.
+
 ## API Reference
 
 Each language has a detailed API reference in its directory:

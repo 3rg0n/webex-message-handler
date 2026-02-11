@@ -1,7 +1,6 @@
 package webexmessagehandler
 
 import (
-	"bytes"
 	"context"
 	"crypto/ecdh"
 	"crypto/ecdsa"
@@ -32,7 +31,7 @@ type KmsClient struct {
 	userID               string
 	encryptionServiceURL string
 	logger               Logger
-	httpClient           *http.Client
+	httpDo               fetchDoFn
 
 	kmsCluster        string
 	ephemeralKey      *jose.JSONWebKey
@@ -56,7 +55,7 @@ type KmsClientConfig struct {
 	UserID               string
 	EncryptionServiceURL string
 	Logger               Logger
-	HTTPClient           *http.Client
+	HTTPDo               fetchDoFn
 }
 
 // NewKmsClient creates a new KmsClient.
@@ -64,17 +63,13 @@ func NewKmsClient(cfg KmsClientConfig) *KmsClient {
 	if cfg.Logger == nil {
 		cfg.Logger = NoopLogger()
 	}
-	httpClient := cfg.HTTPClient
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
 	return &KmsClient{
 		token:                cfg.Token,
 		deviceURL:            cfg.DeviceURL,
 		userID:               cfg.UserID,
 		encryptionServiceURL: cfg.EncryptionServiceURL,
 		logger:               cfg.Logger,
-		httpClient:           httpClient,
+		httpDo:               cfg.HTTPDo,
 		keyCache:             make(map[string]*jose.JSONWebKey),
 		pendingRequests:      make(map[string]*pendingRequest),
 	}
@@ -126,20 +121,21 @@ func (kc *KmsClient) Initialize(ctx context.Context) error {
 
 	// Step 1: Fetch KMS details
 	kmsDetailsURL := fmt.Sprintf("%s/kms/%s", kc.encryptionServiceURL, kc.userID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, kmsDetailsURL, nil)
-	if err != nil {
-		return NewKmsErrorWithCause("Failed to create KMS details request", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+kc.token)
 
-	resp, err := kc.httpClient.Do(req)
+	resp, err := kc.httpDo(ctx, FetchRequest{
+		URL:    kmsDetailsURL,
+		Method: http.MethodGet,
+		Headers: map[string]string{
+			"Authorization": "Bearer " + kc.token,
+		},
+	})
 	if err != nil {
 		return NewKmsErrorWithCause("Failed to fetch KMS details", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return NewKmsError(fmt.Sprintf("Failed to fetch KMS details: %d %s", resp.StatusCode, resp.Status))
+	if !resp.OK {
+		return NewKmsError(fmt.Sprintf("Failed to fetch KMS details: %d", resp.Status))
 	}
 
 	var kmsDetails struct {
@@ -369,18 +365,15 @@ func (kc *KmsClient) sendKmsRequest(ctx context.Context, requestID, wrapped stri
 		"kmsMessages": []string{wrapped},
 	})
 
-	httpReq, err := http.NewRequestWithContext(reqCtx, http.MethodPost, kc.encryptionServiceURL+"/kms/messages", bytes.NewReader(body))
-	if err != nil {
-		cancel()
-		kc.mu.Lock()
-		delete(kc.pendingRequests, requestID)
-		kc.mu.Unlock()
-		return "", NewKmsErrorWithCause("Failed to create KMS request", err)
-	}
-	httpReq.Header.Set("Authorization", "Bearer "+kc.token)
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	httpResp, err := kc.httpClient.Do(httpReq)
+	httpResp, err := kc.httpDo(reqCtx, FetchRequest{
+		URL:    kc.encryptionServiceURL + "/kms/messages",
+		Method: http.MethodPost,
+		Headers: map[string]string{
+			"Authorization": "Bearer " + kc.token,
+			"Content-Type":  "application/json",
+		},
+		Body: string(body),
+	})
 	if err != nil {
 		cancel()
 		kc.mu.Lock()
@@ -391,15 +384,15 @@ func (kc *KmsClient) sendKmsRequest(ctx context.Context, requestID, wrapped stri
 	io.Copy(io.Discard, httpResp.Body)
 	httpResp.Body.Close()
 
-	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
+	if !httpResp.OK {
 		cancel()
 		kc.mu.Lock()
 		delete(kc.pendingRequests, requestID)
 		kc.mu.Unlock()
-		return "", NewKmsError(fmt.Sprintf("KMS HTTP request failed: %d", httpResp.StatusCode))
+		return "", NewKmsError(fmt.Sprintf("KMS HTTP request failed: %d", httpResp.Status))
 	}
 
-	kc.logger.Debug(fmt.Sprintf("KMS request %s sent (HTTP %d), waiting for Mercury response...", requestID, httpResp.StatusCode))
+	kc.logger.Debug(fmt.Sprintf("KMS request %s sent (HTTP %d), waiting for Mercury response...", requestID, httpResp.Status))
 
 	// Wait for Mercury response
 	select {

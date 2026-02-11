@@ -1,12 +1,12 @@
-import type * as http from 'http';
-import type * as https from 'https';
-import { DeviceRegistration } from './types.js';
+import { DeviceRegistration, FetchRequest, FetchResponse } from './types.js';
 import { AuthError, DeviceRegistrationError } from './errors.js';
 import { Logger, noopLogger } from './logger.js';
 
+type HttpDoFn = (request: FetchRequest) => Promise<FetchResponse>;
+
 interface DeviceManagerOptions {
   logger?: Logger;
-  agent?: http.Agent | https.Agent;
+  httpDo: HttpDoFn;
 }
 
 interface WDMDeviceResponse {
@@ -20,12 +20,12 @@ const WDM_API_BASE = 'https://wdm-a.wbx2.com/wdm/api/v1/devices';
 
 export class DeviceManager {
   private logger: Logger;
-  private agent: http.Agent | https.Agent | undefined;
+  private httpDo: HttpDoFn;
   private deviceUrl: string | undefined;
 
-  constructor(options?: DeviceManagerOptions) {
-    this.logger = options?.logger ?? noopLogger;
-    this.agent = options?.agent;
+  constructor(options: DeviceManagerOptions) {
+    this.logger = options.logger ?? noopLogger;
+    this.httpDo = options.httpDo;
   }
 
   async register(token: string): Promise<DeviceRegistration> {
@@ -42,15 +42,14 @@ export class DeviceManager {
     };
 
     try {
-      const response = await fetch(WDM_API_BASE, {
+      const response = await this.httpDo({
+        url: WDM_API_BASE,
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),
-        // @ts-expect-error - dispatcher is an undici option for Node.js fetch
-        dispatcher: this.agent,
       });
 
       if (response.status === 401) {
@@ -103,15 +102,14 @@ export class DeviceManager {
     };
 
     try {
-      const response = await fetch(this.deviceUrl, {
+      const response = await this.httpDo({
+        url: this.deviceUrl,
         method: 'PUT',
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),
-        // @ts-expect-error - dispatcher is an undici option for Node.js fetch
-        dispatcher: this.agent,
       });
 
       if (response.status === 401) {
@@ -151,14 +149,13 @@ export class DeviceManager {
     this.logger.debug('Unregistering device');
 
     try {
-      const response = await fetch(this.deviceUrl, {
+      const response = await this.httpDo({
+        url: this.deviceUrl,
         method: 'DELETE',
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        // @ts-expect-error - dispatcher is an undici option for Node.js fetch
-        dispatcher: this.agent,
       });
 
       if (response.status === 401) {

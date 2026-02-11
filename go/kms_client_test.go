@@ -25,14 +25,14 @@ func TestNewKmsClient(t *testing.T) {
 }
 
 func TestKmsClientHandleKmsMessageEmpty(t *testing.T) {
-	kc := NewKmsClient(KmsClientConfig{Logger: NoopLogger()})
+	kc := NewKmsClient(KmsClientConfig{Logger: NoopLogger(), HTTPDo: createTestHTTPAdapter(nil)})
 
 	// No kmsMessages → no panic, no-op
 	kc.HandleKmsMessage(map[string]interface{}{})
 }
 
 func TestKmsClientHandleKmsMessageFromEncryptionField(t *testing.T) {
-	kc := NewKmsClient(KmsClientConfig{Logger: NoopLogger()})
+	kc := NewKmsClient(KmsClientConfig{Logger: NoopLogger(), HTTPDo: createTestHTTPAdapter(nil)})
 
 	ch := make(chan string, 1)
 	kc.mu.Lock()
@@ -57,7 +57,7 @@ func TestKmsClientHandleKmsMessageFromEncryptionField(t *testing.T) {
 }
 
 func TestKmsClientHandleKmsMessageDirectField(t *testing.T) {
-	kc := NewKmsClient(KmsClientConfig{Logger: NoopLogger()})
+	kc := NewKmsClient(KmsClientConfig{Logger: NoopLogger(), HTTPDo: createTestHTTPAdapter(nil)})
 
 	ch := make(chan string, 1)
 	kc.mu.Lock()
@@ -80,7 +80,7 @@ func TestKmsClientHandleKmsMessageDirectField(t *testing.T) {
 }
 
 func TestKmsClientHandleKmsMessageNoPending(t *testing.T) {
-	kc := NewKmsClient(KmsClientConfig{Logger: NoopLogger()})
+	kc := NewKmsClient(KmsClientConfig{Logger: NoopLogger(), HTTPDo: createTestHTTPAdapter(nil)})
 
 	// No pending requests — should not panic
 	data := map[string]interface{}{
@@ -212,14 +212,14 @@ func TestUnwrapKmsResponseInvalidParts(t *testing.T) {
 }
 
 func TestIsContextExpiredWhenNotInitialized(t *testing.T) {
-	kc := NewKmsClient(KmsClientConfig{})
+	kc := NewKmsClient(KmsClientConfig{HTTPDo: createTestHTTPAdapter(nil)})
 	if !kc.isContextExpired() {
 		t.Error("expected expired when not initialized")
 	}
 }
 
 func TestKmsClientKeyCache(t *testing.T) {
-	kc := NewKmsClient(KmsClientConfig{Logger: NoopLogger()})
+	kc := NewKmsClient(KmsClientConfig{Logger: NoopLogger(), HTTPDo: createTestHTTPAdapter(nil)})
 	if len(kc.keyCache) != 0 {
 		t.Errorf("expected empty key cache, got %d entries", len(kc.keyCache))
 	}

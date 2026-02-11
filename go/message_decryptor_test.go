@@ -8,7 +8,10 @@ import (
 // uninitializedKmsClient returns a KmsClient that isn't initialized,
 // so GetKey will return a KmsError rather than nil-pointer panic.
 func uninitializedKmsClient() *KmsClient {
-	return NewKmsClient(KmsClientConfig{Logger: NoopLogger()})
+	return NewKmsClient(KmsClientConfig{
+		Logger: NoopLogger(),
+		HTTPDo: createTestHTTPAdapter(nil),
+	})
 }
 
 func TestDecryptActivityPassthroughNoEncryptionKeyURL(t *testing.T) {

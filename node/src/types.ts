@@ -4,11 +4,47 @@ import type * as https from 'https';
 
 // --- Configuration ---
 
+export type NetworkMode = 'native' | 'injected';
+
+export interface FetchRequest {
+  url: string;
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  headers: Record<string, string>;
+  body?: string;
+}
+
+export interface FetchResponse {
+  status: number;
+  ok: boolean;
+  json(): Promise<unknown>;
+  text(): Promise<string>;
+}
+
+export type FetchFunction = (request: FetchRequest) => Promise<FetchResponse>;
+
+export interface InjectedWebSocket {
+  send(data: string): void;
+  close(code?: number): void;
+  readonly readyState: number;
+  on(event: 'message', listener: (data: string) => void): void;
+  on(event: 'open', listener: () => void): void;
+  on(event: 'close', listener: (code: number, reason: string) => void): void;
+  on(event: 'error', listener: (error: Error) => void): void;
+}
+
+export type WebSocketFactory = (url: string) => InjectedWebSocket;
+
 export interface WebexMessageHandlerConfig {
   token: string;
   logger?: Logger;
-  /** Optional HTTP/HTTPS agent for proxy support or custom connection handling */
+  /** Networking mode: 'native' uses built-in fetch/WebSocket, 'injected' uses provided functions */
+  mode?: NetworkMode;
+  /** Optional HTTP/HTTPS agent for proxy support (native mode only) */
   agent?: http.Agent | https.Agent;
+  /** Custom fetch function for all HTTP requests (injected mode) */
+  fetch?: FetchFunction;
+  /** Custom WebSocket factory (injected mode) */
+  webSocketFactory?: WebSocketFactory;
   /** Ping interval in ms (default: 15000) */
   pingInterval?: number;
   /** Pong timeout in ms (default: 14000) */

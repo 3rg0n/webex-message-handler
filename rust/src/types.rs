@@ -2,6 +2,61 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
+
+/// Networking mode for the handler.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetworkMode {
+    /// Use built-in HTTP and WebSocket libraries (default).
+    Native,
+    /// Use provided fetch and WebSocket factory functions.
+    Injected,
+}
+
+impl Default for NetworkMode {
+    fn default() -> Self {
+        Self::Native
+    }
+}
+
+/// HTTP request for injected fetch function.
+#[derive(Debug, Clone)]
+pub struct FetchRequest {
+    pub url: String,
+    pub method: String,
+    pub headers: HashMap<String, String>,
+    pub body: Option<String>,
+}
+
+/// HTTP response from injected fetch function.
+pub struct FetchResponse {
+    pub status: u16,
+    pub ok: bool,
+    pub body: Vec<u8>,
+}
+
+/// Custom fetch function for injected mode.
+pub type FetchFn = Arc<
+    dyn Fn(FetchRequest) -> Pin<Box<dyn Future<Output = Result<FetchResponse, Box<dyn std::error::Error + Send + Sync>>> + Send>>
+        + Send
+        + Sync,
+>;
+
+/// WebSocket interface for injected mode.
+pub trait InjectedWebSocket: Send + Sync {
+    fn send(&self, data: String) -> Pin<Box<dyn Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>> + Send + '_>>;
+    fn receive(&self) -> Pin<Box<dyn Future<Output = Result<String, Box<dyn std::error::Error + Send + Sync>>> + Send + '_>>;
+    fn close(&self) -> Pin<Box<dyn Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>> + Send + '_>>;
+}
+
+/// WebSocket factory for injected mode.
+pub type WebSocketFactory = Arc<
+    dyn Fn(String) -> Pin<Box<dyn Future<Output = Result<Box<dyn InjectedWebSocket>, Box<dyn std::error::Error + Send + Sync>>> + Send>>
+        + Send
+        + Sync,
+>;
 
 /// Configuration for WebexMessageHandler.
 #[derive(Clone)]
@@ -9,9 +64,18 @@ pub struct Config {
     /// Webex bot or user access token (required).
     pub token: String,
 
-    /// Optional HTTP client for proxy support or custom connection handling.
+    /// Networking mode: Native or Injected (default: Native).
+    pub mode: NetworkMode,
+
+    /// Optional HTTP client for proxy support (native mode only).
     /// If None, a default client will be created.
     pub client: Option<reqwest::Client>,
+
+    /// Custom fetch function for all HTTP requests (injected mode).
+    pub fetch: Option<FetchFn>,
+
+    /// Custom WebSocket factory (injected mode).
+    pub web_socket_factory: Option<WebSocketFactory>,
 
     /// Mercury ping interval in seconds (default: 15).
     pub ping_interval: f64,
@@ -30,7 +94,10 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             token: String::new(),
+            mode: NetworkMode::Native,
             client: None,
+            fetch: None,
+            web_socket_factory: None,
             ping_interval: 15.0,
             pong_timeout: 14.0,
             reconnect_backoff_max: 32.0,

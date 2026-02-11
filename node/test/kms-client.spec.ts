@@ -1,5 +1,8 @@
 import { KmsClient } from '../src/kms-client';
 import { KmsError } from '../src/errors';
+import type { FetchRequest, FetchResponse } from '../src/types';
+
+type HttpDoFn = (request: FetchRequest) => Promise<FetchResponse>;
 
 // Mock jose JWK Key returned by asKey()
 const mockJoseKey = {
@@ -80,26 +83,43 @@ describe('KmsClient', () => {
     rsaPublicKey: JSON.stringify({ kty: 'RSA', e: 'AQAB', n: 'test-modulus' }),
   };
 
+  const createMockHttpDo = (responses: Array<Partial<FetchResponse>>): jest.MockedFunction<HttpDoFn> => {
+    const mockFn = jest.fn() as jest.MockedFunction<HttpDoFn>;
+    responses.forEach((response) => {
+      mockFn.mockResolvedValueOnce({
+        status: response.status ?? 200,
+        ok: response.ok ?? true,
+        json: response.json ?? (async () => ({})),
+        text: response.text ?? (async () => ''),
+      });
+    });
+    return mockFn;
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockRequestId = 'mock-request-id';
   });
 
   /**
-   * Helper: create a KmsClient, mock fetch for init, call initialize(),
+   * Helper: create a KmsClient, mock httpDo for init, call initialize(),
    * and simulate the Mercury KMS response arriving.
    */
-  async function initializeClient(kmsClient: KmsClient, mockFetch: jest.Mock): Promise<void> {
+  async function initializeClient(kmsClient: KmsClient, mockHttpDo: jest.MockedFunction<HttpDoFn>): Promise<void> {
     // KMS details fetch
-    mockFetch.mockResolvedValueOnce({
+    mockHttpDo.mockResolvedValueOnce({
+      status: 200,
       ok: true,
-      json: jest.fn().mockResolvedValueOnce(mockKmsDetailsResponse),
+      json: async () => mockKmsDetailsResponse,
+      text: async () => '',
     });
 
     // ECDH HTTP POST returns 202 (response comes via Mercury)
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
+    mockHttpDo.mockResolvedValueOnce({
       status: 202,
+      ok: true,
+      json: async () => ({}),
+      text: async () => '',
     });
 
     const initPromise = kmsClient.initialize();
@@ -115,77 +135,67 @@ describe('KmsClient', () => {
 
   describe('initialize', () => {
     it('should successfully initialize KMS context', async () => {
-      const mockFetch = jest.fn();
-      global.fetch = mockFetch;
+      const mockHttpDo = createMockHttpDo([]);
 
-      const kmsClient = new KmsClient(mockConfig);
-      await initializeClient(kmsClient, mockFetch);
+      const kmsClient = new KmsClient({ ...mockConfig, httpDo: mockHttpDo });
+      await initializeClient(kmsClient, mockHttpDo);
 
-      expect(mockFetch).toHaveBeenCalledTimes(2);
-      expect(mockFetch).toHaveBeenNthCalledWith(
-        1,
-        `${mockConfig.encryptionServiceUrl}/kms/${mockConfig.userId}`,
-        expect.objectContaining({
-          method: 'GET',
-          headers: expect.objectContaining({
-            Authorization: `Bearer ${mockConfig.token}`,
-          }),
-        })
-      );
+      expect(mockHttpDo).toHaveBeenCalledTimes(2);
+      expect(mockHttpDo).toHaveBeenNthCalledWith(1, {
+        url: `${mockConfig.encryptionServiceUrl}/kms/${mockConfig.userId}`,
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${mockConfig.token}`,
+        },
+      });
 
       // Second call: POST to /kms/messages
-      expect(mockFetch).toHaveBeenNthCalledWith(
+      expect(mockHttpDo).toHaveBeenNthCalledWith(
         2,
-        `${mockConfig.encryptionServiceUrl}/kms/messages`,
         expect.objectContaining({
+          url: `${mockConfig.encryptionServiceUrl}/kms/messages`,
           method: 'POST',
         })
       );
     });
 
     it('should throw KmsError if KMS details fetch fails', async () => {
-      const mockFetch = jest.fn().mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-        statusText: 'Internal Server Error',
-      });
-      global.fetch = mockFetch;
+      const mockHttpDo = createMockHttpDo([
+        {
+          ok: false,
+          status: 500,
+        },
+      ]);
 
-      const kmsClient = new KmsClient(mockConfig);
+      const kmsClient = new KmsClient({ ...mockConfig, httpDo: mockHttpDo });
 
       await expect(kmsClient.initialize()).rejects.toThrow(KmsError);
     });
 
     it('should throw KmsError if ECDH HTTP POST fails', async () => {
-      const mockFetch = jest.fn();
+      const mockHttpDo = createMockHttpDo([
+        {
+          ok: true,
+          json: async () => mockKmsDetailsResponse,
+        },
+        {
+          ok: false,
+          status: 500,
+          text: async () => 'Internal Server Error',
+        },
+      ]);
 
-      // KMS details succeed
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: jest.fn().mockResolvedValueOnce(mockKmsDetailsResponse),
-      });
-
-      // ECDH POST fails
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-        text: jest.fn().mockResolvedValueOnce('Internal Server Error'),
-      });
-
-      global.fetch = mockFetch;
-
-      const kmsClient = new KmsClient(mockConfig);
+      const kmsClient = new KmsClient({ ...mockConfig, httpDo: mockHttpDo });
 
       await expect(kmsClient.initialize()).rejects.toThrow(KmsError);
     });
 
     it('should throw KmsError on network fetch failure', async () => {
-      const mockFetch = jest.fn().mockRejectedValueOnce(
+      const mockHttpDo = jest.fn().mockRejectedValueOnce(
         new Error('Network error')
-      );
-      global.fetch = mockFetch;
+      ) as jest.MockedFunction<HttpDoFn>;
 
-      const kmsClient = new KmsClient(mockConfig);
+      const kmsClient = new KmsClient({ ...mockConfig, httpDo: mockHttpDo });
 
       await expect(kmsClient.initialize()).rejects.toThrow(KmsError);
       await expect(kmsClient.initialize()).rejects.toThrow(
@@ -196,7 +206,8 @@ describe('KmsClient', () => {
 
   describe('handleKmsMessage', () => {
     it('should resolve pending requests with KMS messages', async () => {
-      const kmsClient = new KmsClient(mockConfig);
+      const mockHttpDo = jest.fn() as jest.MockedFunction<HttpDoFn>;
+      const kmsClient = new KmsClient({ ...mockConfig, httpDo: mockHttpDo });
 
       // No pending requests — should not throw
       kmsClient.handleKmsMessage({
@@ -205,14 +216,16 @@ describe('KmsClient', () => {
     });
 
     it('should handle messages without kmsMessages array', () => {
-      const kmsClient = new KmsClient(mockConfig);
+      const mockHttpDo = jest.fn() as jest.MockedFunction<HttpDoFn>;
+      const kmsClient = new KmsClient({ ...mockConfig, httpDo: mockHttpDo });
 
       // Should not throw
       kmsClient.handleKmsMessage({ someOtherField: 'value' } as Record<string, unknown>);
     });
 
     it('should try data.kmsMessages first, then data.encryption.kmsMessages', () => {
-      const kmsClient = new KmsClient(mockConfig);
+      const mockHttpDo = jest.fn() as jest.MockedFunction<HttpDoFn>;
+      const kmsClient = new KmsClient({ ...mockConfig, httpDo: mockHttpDo });
 
       // Both formats should work without error
       kmsClient.handleKmsMessage({ kmsMessages: ['msg1'] });
@@ -223,17 +236,18 @@ describe('KmsClient', () => {
   describe('getKey', () => {
     it('should return cached key on second call', async () => {
       mockRequestId = 'init-request-id';
-      const mockFetch = jest.fn();
-      global.fetch = mockFetch;
+      const mockHttpDo = createMockHttpDo([]);
 
-      const kmsClient = new KmsClient(mockConfig);
-      await initializeClient(kmsClient, mockFetch);
+      const kmsClient = new KmsClient({ ...mockConfig, httpDo: mockHttpDo });
+      await initializeClient(kmsClient, mockHttpDo);
 
       // getKey POST returns 202
       mockRequestId = 'key-request-id';
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
+      mockHttpDo.mockResolvedValueOnce({
         status: 202,
+        ok: true,
+        json: async () => ({}),
+        text: async () => '',
       });
 
       const keyUri = 'kms://kms.example.com/keys/key-123';
@@ -252,22 +266,23 @@ describe('KmsClient', () => {
 
       expect(key1).toBe(key2);
       // 2 for init + 1 for first getKey = 3
-      expect(mockFetch).toHaveBeenCalledTimes(3);
+      expect(mockHttpDo).toHaveBeenCalledTimes(3);
     });
 
     it('should fetch key from KMS on cache miss', async () => {
       mockRequestId = 'init-request-id';
-      const mockFetch = jest.fn();
-      global.fetch = mockFetch;
+      const mockHttpDo = createMockHttpDo([]);
 
-      const kmsClient = new KmsClient(mockConfig);
-      await initializeClient(kmsClient, mockFetch);
+      const kmsClient = new KmsClient({ ...mockConfig, httpDo: mockHttpDo });
+      await initializeClient(kmsClient, mockHttpDo);
 
       // getKey POST returns 202
       mockRequestId = 'key-request-id';
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
+      mockHttpDo.mockResolvedValueOnce({
         status: 202,
+        ok: true,
+        json: async () => ({}),
+        text: async () => '',
       });
 
       const keyUri = 'kms://kms.example.com/keys/key-123';
@@ -282,11 +297,12 @@ describe('KmsClient', () => {
       await getKeyPromise;
 
       // 2 for init + 1 for getKey = 3
-      expect(mockFetch).toHaveBeenCalledTimes(3);
+      expect(mockHttpDo).toHaveBeenCalledTimes(3);
     });
 
     it('should throw KmsError if not initialized', async () => {
-      const kmsClient = new KmsClient(mockConfig);
+      const mockHttpDo = jest.fn() as jest.MockedFunction<HttpDoFn>;
+      const kmsClient = new KmsClient({ ...mockConfig, httpDo: mockHttpDo });
 
       const keyUri = 'kms://kms.example.com/keys/key-123';
 
@@ -295,18 +311,18 @@ describe('KmsClient', () => {
 
     it('should throw KmsError if key HTTP POST fails', async () => {
       mockRequestId = 'init-request-id';
-      const mockFetch = jest.fn();
-      global.fetch = mockFetch;
+      const mockHttpDo = createMockHttpDo([]);
 
-      const kmsClient = new KmsClient(mockConfig);
-      await initializeClient(kmsClient, mockFetch);
+      const kmsClient = new KmsClient({ ...mockConfig, httpDo: mockHttpDo });
+      await initializeClient(kmsClient, mockHttpDo);
 
       // getKey POST fails
       mockRequestId = 'key-request-id';
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
+      mockHttpDo.mockResolvedValueOnce({
         status: 404,
-        text: jest.fn().mockResolvedValueOnce('Not Found'),
+        ok: false,
+        json: async () => ({}),
+        text: async () => 'Not Found',
       });
 
       const keyUri = 'kms://kms.example.com/keys/nonexistent';
@@ -318,7 +334,8 @@ describe('KmsClient', () => {
   describe('context expiration', () => {
     it('should detect expired context via isContextExpired', async () => {
       // A client that was never initialized should consider context expired
-      const kmsClient = new KmsClient(mockConfig);
+      const mockHttpDo = jest.fn() as jest.MockedFunction<HttpDoFn>;
+      const kmsClient = new KmsClient({ ...mockConfig, httpDo: mockHttpDo });
 
       // getKey on uninitialized client → throws because no context
       await expect(kmsClient.getKey('kms://test/key')).rejects.toThrow(KmsError);
@@ -327,12 +344,11 @@ describe('KmsClient', () => {
 
   describe('error handling', () => {
     it('should wrap non-KmsError exceptions during initialize', async () => {
-      const mockFetch = jest.fn().mockRejectedValueOnce(
+      const mockHttpDo = jest.fn().mockRejectedValueOnce(
         new Error('Unknown error')
-      );
-      global.fetch = mockFetch;
+      ) as jest.MockedFunction<HttpDoFn>;
 
-      const kmsClient = new KmsClient(mockConfig);
+      const kmsClient = new KmsClient({ ...mockConfig, httpDo: mockHttpDo });
 
       await expect(kmsClient.initialize()).rejects.toThrow(KmsError);
       await expect(kmsClient.initialize()).rejects.toThrow(
@@ -342,15 +358,14 @@ describe('KmsClient', () => {
 
     it('should wrap non-KmsError exceptions during getKey', async () => {
       mockRequestId = 'init-request-id';
-      const mockFetch = jest.fn();
-      global.fetch = mockFetch;
+      const mockHttpDo = createMockHttpDo([]);
 
-      const kmsClient = new KmsClient(mockConfig);
-      await initializeClient(kmsClient, mockFetch);
+      const kmsClient = new KmsClient({ ...mockConfig, httpDo: mockHttpDo });
+      await initializeClient(kmsClient, mockHttpDo);
 
       // getKey call that throws network error
       mockRequestId = 'key-request-id';
-      mockFetch.mockRejectedValueOnce(new Error('Network error'));
+      mockHttpDo.mockRejectedValueOnce(new Error('Network error'));
 
       const keyUri = 'kms://kms.example.com/keys/key-123';
 

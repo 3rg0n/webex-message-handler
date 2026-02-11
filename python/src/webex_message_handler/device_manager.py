@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
-
-import aiohttp
 
 from .errors import AuthError, DeviceRegistrationError
 from .logger import Logger, noop_logger
-from .types import DeviceRegistration
+from .types import DeviceRegistration, FetchFunction, FetchRequest
 
 WDM_API_BASE = "https://wdm-a.wbx2.com/wdm/api/v1/devices"
 
@@ -30,10 +29,10 @@ class DeviceManager:
         self,
         *,
         logger: Logger | None = None,
-        connector: aiohttp.BaseConnector | None = None,
+        http_do: FetchFunction,
     ) -> None:
         self._logger: Logger = logger or noop_logger  # type: ignore[assignment]
-        self._connector = connector
+        self._http_do = http_do
         self._device_url: str | None = None
 
     async def register(self, token: str) -> DeviceRegistration:
@@ -41,27 +40,31 @@ class DeviceManager:
         self._logger.debug("Registering device with WDM")
 
         try:
-            async with aiohttp.ClientSession(connector=self._connector) as session, session.post(
-                WDM_API_BASE,
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Content-Type": "application/json",
-                },
-                json=_DEVICE_BODY,
-            ) as response:
-                if response.status == 401:
-                    self._logger.error("Device registration failed: Unauthorized")
-                    raise AuthError("Unauthorized to register device")
+            response = await self._http_do(
+                FetchRequest(
+                    url=WDM_API_BASE,
+                    method="POST",
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Content-Type": "application/json",
+                    },
+                    body=json.dumps(_DEVICE_BODY),
+                )
+            )
 
-                if not response.ok:
-                    self._logger.error(f"Device registration failed with status {response.status}")
-                    raise DeviceRegistrationError("Failed to register device", response.status)
+            if response.status == 401:
+                self._logger.error("Device registration failed: Unauthorized")
+                raise AuthError("Unauthorized to register device")
 
-                data = await response.json()
-                self._device_url = data["url"]
-                registration = self._parse_device_response(data)
-                self._logger.info("Device registered successfully")
-                return registration
+            if not response.ok:
+                self._logger.error(f"Device registration failed with status {response.status}")
+                raise DeviceRegistrationError("Failed to register device", response.status)
+
+            data = await response.json()
+            self._device_url = data["url"]
+            registration = self._parse_device_response(data)
+            self._logger.info("Device registered successfully")
+            return registration
 
         except (AuthError, DeviceRegistrationError):
             raise
@@ -77,26 +80,30 @@ class DeviceManager:
         self._logger.debug("Refreshing device registration")
 
         try:
-            async with aiohttp.ClientSession(connector=self._connector) as session, session.put(
-                self._device_url,
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Content-Type": "application/json",
-                },
-                json=_DEVICE_BODY,
-            ) as response:
-                if response.status == 401:
-                    self._logger.error("Device refresh failed: Unauthorized")
-                    raise AuthError("Unauthorized to refresh device")
+            response = await self._http_do(
+                FetchRequest(
+                    url=self._device_url,
+                    method="PUT",
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Content-Type": "application/json",
+                    },
+                    body=json.dumps(_DEVICE_BODY),
+                )
+            )
 
-                if not response.ok:
-                    self._logger.error(f"Device refresh failed with status {response.status}")
-                    raise DeviceRegistrationError("Failed to refresh device", response.status)
+            if response.status == 401:
+                self._logger.error("Device refresh failed: Unauthorized")
+                raise AuthError("Unauthorized to refresh device")
 
-                data = await response.json()
-                registration = self._parse_device_response(data)
-                self._logger.info("Device refreshed successfully")
-                return registration
+            if not response.ok:
+                self._logger.error(f"Device refresh failed with status {response.status}")
+                raise DeviceRegistrationError("Failed to refresh device", response.status)
+
+            data = await response.json()
+            registration = self._parse_device_response(data)
+            self._logger.info("Device refreshed successfully")
+            return registration
 
         except (AuthError, DeviceRegistrationError):
             raise
@@ -112,23 +119,27 @@ class DeviceManager:
         self._logger.debug("Unregistering device")
 
         try:
-            async with aiohttp.ClientSession(connector=self._connector) as session, session.delete(
-                self._device_url,
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Content-Type": "application/json",
-                },
-            ) as response:
-                if response.status == 401:
-                    self._logger.error("Device unregistration failed: Unauthorized")
-                    raise AuthError("Unauthorized to unregister device")
+            response = await self._http_do(
+                FetchRequest(
+                    url=self._device_url,
+                    method="DELETE",
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Content-Type": "application/json",
+                    },
+                )
+            )
 
-                if not response.ok:
-                    self._logger.error(f"Device unregistration failed with status {response.status}")
-                    raise DeviceRegistrationError("Failed to unregister device", response.status)
+            if response.status == 401:
+                self._logger.error("Device unregistration failed: Unauthorized")
+                raise AuthError("Unauthorized to unregister device")
 
-                self._device_url = None
-                self._logger.info("Device unregistered successfully")
+            if not response.ok:
+                self._logger.error(f"Device unregistration failed with status {response.status}")
+                raise DeviceRegistrationError("Failed to unregister device", response.status)
+
+            self._device_url = None
+            self._logger.info("Device unregistered successfully")
 
         except (AuthError, DeviceRegistrationError):
             raise
