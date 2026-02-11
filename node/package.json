@@ -38,9 +38,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ecopelan/webex-message-handler.git"
+    "url": "git+https://github.com/3rg0n/webex-message-handler.git",
+    "directory": "node"
   },
-  "license": "Apache-2.0",
+  "license": "MIT",
   "engines": {
     "node": ">=18.0.0"
   },
