@@ -12,6 +12,7 @@ import type {
   ConnectionStatus,
   FetchRequest,
   FetchResponse,
+  InjectedWebSocket,
 } from './types.js';
 import { DeviceManager } from './device-manager.js';
 import { MercurySocket } from './mercury-socket.js';
@@ -22,7 +23,7 @@ import { noopLogger } from './logger.js';
 
 // Internal adapter types
 type HttpDoFn = (request: FetchRequest) => Promise<FetchResponse>;
-type WsFactoryFn = (url: string) => WebSocket;
+type WsFactoryFn = (url: string) => WebSocket | InjectedWebSocket;
 
 export interface TypedEventEmitter<T> {
   on<K extends keyof T>(event: K, listener: T[K]): this;
@@ -38,7 +39,6 @@ export class WebexMessageHandler
 {
   private token: string;
   private logger: Logger;
-  private agent: http.Agent | https.Agent | undefined;
   private httpDo: HttpDoFn;
   private wsFactory: WsFactoryFn;
   private deviceManager: DeviceManager;
@@ -75,7 +75,6 @@ export class WebexMessageHandler
 
     this.token = config.token;
     this.logger = config.logger ?? noopLogger;
-    this.agent = config.agent;
 
     // Create adapters based on mode
     if (mode === 'native') {

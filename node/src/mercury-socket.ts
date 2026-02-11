@@ -1,14 +1,12 @@
 import { EventEmitter } from 'events';
-import type * as http from 'http';
-import type * as https from 'https';
-import type WebSocket from 'ws';
+import WebSocket from 'ws';
 import { v4 as uuidv4 } from 'uuid';
-import type { MercuryEnvelope, MercuryActivity } from './types.js';
+import type { MercuryEnvelope, MercuryActivity, InjectedWebSocket } from './types.js';
 import { AuthError, MercuryConnectionError } from './errors.js';
 import type { Logger } from './logger.js';
 import { noopLogger } from './logger.js';
 
-type WsFactoryFn = (url: string) => WebSocket;
+type WsFactoryFn = (url: string) => WebSocket | InjectedWebSocket;
 
 interface MercuryWireMessage {
   id?: string;
@@ -31,7 +29,7 @@ export interface MercurySocketOptions {
 }
 
 export class MercurySocket extends EventEmitter {
-  private ws: WebSocket | null = null;
+  private ws: WebSocket | InjectedWebSocket | null = null;
   private logger: Logger;
   private wsFactory: WsFactoryFn;
   private pingInterval: number;
@@ -75,7 +73,7 @@ export class MercurySocket extends EventEmitter {
         this.ws = this.wsFactory(preparedUrl);
         let settled = false;
 
-        this.ws.on('open', () => {
+        (this.ws as any).on('open', () => {
           this.logger.debug('WebSocket opened, sending authorization');
           const authMessage = JSON.stringify({
             id: uuidv4(),
@@ -85,9 +83,9 @@ export class MercurySocket extends EventEmitter {
           this.ws!.send(authMessage);
         });
 
-        this.ws.on('message', (rawData: WebSocket.Data) => {
+        (this.ws as any).on('message', (rawData: WebSocket.Data | string) => {
           try {
-            const rawStr = rawData.toString();
+            const rawStr = typeof rawData === 'string' ? rawData : rawData.toString();
             this.logger.debug('WS message received (' + rawStr.length + ' bytes)');
             const message = JSON.parse(rawStr) as MercuryWireMessage;
             this._handleMessage(message);
@@ -105,7 +103,7 @@ export class MercurySocket extends EventEmitter {
           }
         });
 
-        this.ws.on('error', (error: Error) => {
+        (this.ws as any).on('error', (error: Error) => {
           this.logger.error('WebSocket error:', error);
           if (!settled) {
             settled = true;
@@ -117,7 +115,7 @@ export class MercurySocket extends EventEmitter {
           }
         });
 
-        this.ws.on('close', (code: number, reason: Buffer) => {
+        (this.ws as any).on('close', (code: number, reason: Buffer | string) => {
           if (!settled) {
             settled = true;
             reject(
@@ -127,7 +125,8 @@ export class MercurySocket extends EventEmitter {
               )
             );
           }
-          this._handleClose(code, reason.toString());
+          const reasonStr = typeof reason === 'string' ? reason : reason.toString();
+          this._handleClose(code, reasonStr);
         });
       } catch (error) {
         reject(error);
