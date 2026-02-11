@@ -1,9 +1,11 @@
 import { DeviceRegistration } from './types.js';
 import { AuthError, DeviceRegistrationError } from './errors.js';
 import { Logger, noopLogger } from './logger.js';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 
 interface DeviceManagerOptions {
   logger?: Logger;
+  proxyUrl?: string;
 }
 
 interface WDMDeviceResponse {
@@ -18,9 +20,14 @@ const WDM_API_BASE = 'https://wdm-a.wbx2.com/wdm/api/v1/devices';
 export class DeviceManager {
   private logger: Logger;
   private deviceUrl: string | undefined;
+  private proxyAgent: HttpsProxyAgent<string> | undefined;
 
   constructor(options?: DeviceManagerOptions) {
     this.logger = options?.logger ?? noopLogger;
+    if (options?.proxyUrl) {
+      this.proxyAgent = new HttpsProxyAgent(options.proxyUrl);
+      this.logger.debug(`Using proxy: ${options.proxyUrl}`);
+    }
   }
 
   async register(token: string): Promise<DeviceRegistration> {
@@ -44,6 +51,8 @@ export class DeviceManager {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),
+        // @ts-expect-error - dispatcher is an undici option for Node.js fetch
+        dispatcher: this.proxyAgent,
       });
 
       if (response.status === 401) {
@@ -103,6 +112,8 @@ export class DeviceManager {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),
+        // @ts-expect-error - dispatcher is an undici option for Node.js fetch
+        dispatcher: this.proxyAgent,
       });
 
       if (response.status === 401) {
@@ -148,6 +159,8 @@ export class DeviceManager {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
+        // @ts-expect-error - dispatcher is an undici option for Node.js fetch
+        dispatcher: this.proxyAgent,
       });
 
       if (response.status === 401) {

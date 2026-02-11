@@ -29,6 +29,7 @@ export class WebexMessageHandler
 {
   private token: string;
   private logger: Logger;
+  private proxyUrl: string | undefined;
   private deviceManager: DeviceManager;
   private mercurySocket: MercurySocket;
   private kmsClient: KmsClient | null = null;
@@ -47,9 +48,19 @@ export class WebexMessageHandler
     this.token = config.token;
     this.logger = config.logger ?? noopLogger;
 
-    this.deviceManager = new DeviceManager({ logger: this.logger });
+    // Auto-detect proxy from environment if not explicitly provided
+    this.proxyUrl = config.proxyUrl || process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+    if (this.proxyUrl) {
+      this.logger.debug(`Using proxy: ${this.proxyUrl}`);
+    }
+
+    this.deviceManager = new DeviceManager({
+      logger: this.logger,
+      proxyUrl: this.proxyUrl,
+    });
     this.mercurySocket = new MercurySocket({
       logger: this.logger,
+      proxyUrl: this.proxyUrl,
       pingInterval: config.pingInterval,
       pongTimeout: config.pongTimeout,
       reconnectBackoffMax: config.reconnectBackoffMax,
@@ -82,6 +93,7 @@ export class WebexMessageHandler
         userId: this.registration.userId,
         encryptionServiceUrl: this.registration.encryptionServiceUrl,
         logger: this.logger,
+        proxyUrl: this.proxyUrl,
       });
 
       // Step 3: Connect Mercury WebSocket FIRST (KMS responses arrive here)

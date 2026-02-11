@@ -3,6 +3,7 @@ import * as jose from 'node-jose';
 import type { JWK } from 'node-jose';
 import { KmsError } from './errors.js';
 import { Logger, noopLogger } from './logger.js';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 
 interface KmsClientConfig {
   token: string;
@@ -10,6 +11,7 @@ interface KmsClientConfig {
   userId: string;
   encryptionServiceUrl: string;
   logger?: Logger;
+  proxyUrl?: string;
 }
 
 interface KmsDetailsResponse {
@@ -31,6 +33,7 @@ export class KmsClient {
   private userId: string;
   private encryptionServiceUrl: string;
   private logger: Logger;
+  private proxyAgent: HttpsProxyAgent<string> | undefined;
 
   private context: KMS.Context | null = null;
   private kmsCluster: string = '';
@@ -46,6 +49,9 @@ export class KmsClient {
     this.userId = config.userId;
     this.encryptionServiceUrl = config.encryptionServiceUrl;
     this.logger = config.logger ?? noopLogger;
+    if (config.proxyUrl) {
+      this.proxyAgent = new HttpsProxyAgent(config.proxyUrl);
+    }
   }
 
   /**
@@ -95,6 +101,8 @@ export class KmsClient {
         headers: {
           Authorization: `Bearer ${this.token}`,
         },
+        // @ts-expect-error - dispatcher is an undici option for Node.js fetch
+        dispatcher: this.proxyAgent,
       });
 
       if (!kmsDetailsResponse.ok) {
@@ -256,6 +264,8 @@ export class KmsClient {
           destination: this.kmsCluster,
           kmsMessages: [wrapped],
         }),
+        // @ts-expect-error - dispatcher is an undici option for Node.js fetch
+        dispatcher: this.proxyAgent,
       }
     );
 

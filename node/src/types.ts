@@ -5,6 +5,8 @@ import type { Logger } from './logger.js';
 export interface WebexMessageHandlerConfig {
   token: string;
   logger?: Logger;
+  /** Proxy URL for HTTP/HTTPS requests (e.g., http://proxy.example.com:8080). Auto-detects from HTTPS_PROXY env var if not provided. */
+  proxyUrl?: string;
   /** Ping interval in ms (default: 15000) */
   pingInterval?: number;
   /** Pong timeout in ms (default: 14000) */

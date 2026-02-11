@@ -46,6 +46,7 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
+    "https-proxy-agent": "^7.0.6",
     "node-jose": "^2.2.0",
     "node-kms": "^0.4.1",
     "uuid": "^11.1.0",

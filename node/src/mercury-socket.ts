@@ -5,6 +5,7 @@ import type { MercuryEnvelope, MercuryActivity } from './types.js';
 import { AuthError, MercuryConnectionError } from './errors.js';
 import type { Logger } from './logger.js';
 import { noopLogger } from './logger.js';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 
 interface MercuryWireMessage {
   id?: string;
@@ -19,6 +20,7 @@ interface MercuryWireMessage {
 
 export interface MercurySocketOptions {
   logger?: Logger;
+  proxyUrl?: string;
   pingInterval?: number;
   pongTimeout?: number;
   reconnectBackoffMax?: number;
@@ -28,6 +30,7 @@ export interface MercurySocketOptions {
 export class MercurySocket extends EventEmitter {
   private ws: WebSocket | null = null;
   private logger: Logger;
+  private proxyAgent: HttpsProxyAgent<string> | undefined;
   private pingInterval: number;
   private pongTimeout: number;
   private reconnectBackoffMax: number;
@@ -44,6 +47,9 @@ export class MercurySocket extends EventEmitter {
   constructor(options: MercurySocketOptions = {}) {
     super();
     this.logger = options.logger || noopLogger;
+    if (options.proxyUrl) {
+      this.proxyAgent = new HttpsProxyAgent(options.proxyUrl);
+    }
     this.pingInterval = options.pingInterval || 15000;
     this.pongTimeout = options.pongTimeout || 14000;
     this.reconnectBackoffMax = options.reconnectBackoffMax || 32000;
@@ -65,7 +71,9 @@ export class MercurySocket extends EventEmitter {
         const preparedUrl = this._prepareUrl(this.baseUrl!);
         this.logger.debug(`Connecting to Mercury at ${preparedUrl}`);
 
-        this.ws = new WebSocket(preparedUrl);
+        this.ws = new WebSocket(preparedUrl, {
+          agent: this.proxyAgent,
+        });
         let settled = false;
 
         this.ws.on('open', () => {
