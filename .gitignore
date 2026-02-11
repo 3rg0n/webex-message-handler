@@ -1,0 +1,28 @@
+# Environment
+.env
+.env.*
+
+# Node.js
+node/node_modules/
+node/dist/
+node/coverage/
+*.tsbuildinfo
+
+# Python
+python/src/*.egg-info/
+python/**/__pycache__/
+python/.pytest_cache/
+*.pyc
+
+# Go
+go/basic-bot.exe
+go/*.exe
+
+# Rust
+rust/target/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

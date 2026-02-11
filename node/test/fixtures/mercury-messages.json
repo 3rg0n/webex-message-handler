@@ -1,0 +1,48 @@
+{
+  "bufferState": {
+    "id": "test-buffer-state-id",
+    "data": {
+      "eventType": "mercury.buffer_state"
+    },
+    "timestamp": 1700000000000,
+    "trackingId": "test-tracking-id"
+  },
+  "activityEnvelope": {
+    "id": "test-envelope-id",
+    "data": {
+      "eventType": "conversation.activity",
+      "activity": {
+        "id": "test-activity-id",
+        "verb": "post",
+        "actor": {
+          "id": "actor-id",
+          "objectType": "person",
+          "emailAddress": "user@example.com"
+        },
+        "object": {
+          "id": "message-id",
+          "objectType": "comment",
+          "displayName": "encrypted-text",
+          "content": "encrypted-html",
+          "encryptionKeyUrl": "https://kms.example.com/keys/key-123"
+        },
+        "target": {
+          "id": "room-id",
+          "objectType": "conversation",
+          "tags": ["GROUP"]
+        },
+        "published": "2024-01-01T00:00:00.000Z",
+        "encryptionKeyUrl": "https://kms.example.com/keys/key-123"
+      }
+    },
+    "timestamp": 1700000000000,
+    "trackingId": "test-tracking-id-2"
+  },
+  "pong": {
+    "id": "test-ping-id",
+    "type": "pong"
+  },
+  "shutdown": {
+    "type": "shutdown"
+  }
+}

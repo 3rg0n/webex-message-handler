@@ -1,0 +1,23 @@
+{
+  "id": "activity-123",
+  "verb": "post",
+  "actor": {
+    "id": "person-456",
+    "objectType": "person",
+    "emailAddress": "sender@example.com"
+  },
+  "object": {
+    "id": "message-789",
+    "objectType": "comment",
+    "displayName": "eyJhbGciOiJBMjU2S1ciLCJlbmMiOiJBMjU2R0NNIn0.fake-encrypted-displayname",
+    "content": "eyJhbGciOiJBMjU2S1ciLCJlbmMiOiJBMjU2R0NNIn0.fake-encrypted-content",
+    "encryptionKeyUrl": "https://kms.example.com/keys/key-abc"
+  },
+  "target": {
+    "id": "room-def",
+    "objectType": "conversation",
+    "tags": ["ONE_ON_ONE"]
+  },
+  "published": "2024-06-15T12:00:00.000Z",
+  "encryptionKeyUrl": "https://kms.example.com/keys/key-abc"
+}
