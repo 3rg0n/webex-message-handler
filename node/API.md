@@ -168,6 +168,42 @@ const handler = new WebexMessageHandler({
 });
 ```
 
+**Example with proxy (corporate environments):**
+```typescript
+import { ProxyAgent } from 'undici';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+import WebSocket from 'ws';
+
+const proxyUrl = process.env.HTTPS_PROXY || 'http://proxy.example.com:8080';
+const httpProxyAgent = new ProxyAgent(proxyUrl);
+const wsProxyAgent = new HttpsProxyAgent(proxyUrl);
+
+const handler = new WebexMessageHandler({
+  token: process.env.WEBEX_BOT_TOKEN!,
+  mode: 'injected',
+  fetch: async (request) => {
+    const response = await fetch(request.url, {
+      method: request.method,
+      headers: request.headers,
+      body: request.body,
+      dispatcher: httpProxyAgent, // Route HTTP through proxy
+    });
+    return {
+      status: response.status,
+      ok: response.ok,
+      json: () => response.json(),
+      text: () => response.text(),
+    };
+  },
+  webSocketFactory: (url) => {
+    // IMPORTANT: ws library requires 'agent' option for proxy support
+    return new WebSocket(url, { agent: wsProxyAgent }) as any;
+  },
+});
+```
+
+> **Critical for proxy users:** The `ws` library requires an explicit `agent` option to route WebSocket connections through a proxy. Simply creating `new WebSocket(url)` will bypass the proxy and attempt a direct connection.
+
 **Example for testing:**
 ```typescript
 // Mock fetch that returns canned responses

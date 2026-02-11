@@ -192,6 +192,41 @@ const handler = new WebexMessageHandler({
 });
 ```
 
+**With proxy support:**
+```typescript
+import { ProxyAgent } from 'undici';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+import WebSocket from 'ws';
+
+const proxyUrl = 'http://proxy.example.com:8080';
+const httpProxyAgent = new ProxyAgent(proxyUrl);
+const wsProxyAgent = new HttpsProxyAgent(proxyUrl);
+
+const handler = new WebexMessageHandler({
+  token: process.env.WEBEX_BOT_TOKEN!,
+  mode: 'injected',
+  fetch: async (request) => {
+    const response = await fetch(request.url, {
+      method: request.method,
+      headers: request.headers,
+      body: request.body,
+      dispatcher: httpProxyAgent, // HTTP requests via proxy
+    });
+    return {
+      status: response.status,
+      ok: response.ok,
+      json: () => response.json(),
+      text: () => response.text(),
+    };
+  },
+  webSocketFactory: (url) => {
+    return new WebSocket(url, { agent: wsProxyAgent }); // WebSocket via proxy
+  },
+});
+```
+
+> **Important:** WebSocket connections require an `agent` option to use a proxy. Simply passing the proxy URL is not sufficient.
+
 See language-specific API docs for Python, Go, and Rust injected mode examples.
 
 ## API Reference

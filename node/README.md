@@ -76,6 +76,48 @@ await handler.connect();
 
 The library accepts any `http.Agent`, `https.Agent`, or undici `Dispatcher`, allowing you to use any proxy library or custom agent configuration.
 
+### Advanced: Proxy with Injected Mode
+
+For maximum control over proxy configuration (e.g., different proxies for HTTP vs WebSocket, custom logging), use injected mode:
+
+```typescript
+import { WebexMessageHandler } from 'webex-message-handler';
+import { ProxyAgent } from 'undici';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+import WebSocket from 'ws';
+
+const proxyUrl = process.env.HTTPS_PROXY!;
+const httpProxy = new ProxyAgent(proxyUrl);
+const wsProxy = new HttpsProxyAgent(proxyUrl);
+
+const handler = new WebexMessageHandler({
+  token: process.env.WEBEX_BOT_TOKEN!,
+  mode: 'injected',
+  fetch: async (request) => {
+    const response = await fetch(request.url, {
+      method: request.method,
+      headers: request.headers,
+      body: request.body,
+      dispatcher: httpProxy, // HTTP via proxy
+    });
+    return {
+      status: response.status,
+      ok: response.ok,
+      json: () => response.json(),
+      text: () => response.text(),
+    };
+  },
+  webSocketFactory: (url) => {
+    // CRITICAL: ws library needs 'agent' option for proxy
+    return new WebSocket(url, { agent: wsProxy });
+  },
+});
+
+await handler.connect();
+```
+
+> **Important:** WebSocket connections require an `agent` option to route through a proxy. The `ws` library will bypass proxies without this configuration.
+
 ## API Reference
 
 ### `WebexMessageHandler`
