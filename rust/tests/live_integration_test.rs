@@ -157,6 +157,6 @@ async fn test_live_integration_send_and_receive() {
 
     // Cleanup
     println!("\n🧹 Cleaning up...");
-    handler.disconnect().await.expect("Failed to disconnect");
-    println!("✅ Disconnected\n");
+    handler.disconnect().await;
+    println!("✅ Disconnected");
 }

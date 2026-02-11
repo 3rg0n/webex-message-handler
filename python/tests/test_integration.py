@@ -26,10 +26,18 @@ TIMEOUT_SECONDS = 30
 
 @pytest.mark.asyncio
 async def test_integration_send_and_receive():
-    """Send a message to self via REST API and receive it via Mercury."""
+    """Send a message via REST API and receive it via Mercury.
+
+    Note: Webex doesn't allow bots to message themselves, so you need to provide
+    a target email (another bot or your personal email) via WEBEX_TEST_TARGET_EMAIL.
+    """
     token = os.getenv("WEBEX_BOT_TOKEN")
     if not token:
         pytest.skip("WEBEX_BOT_TOKEN environment variable not set")
+
+    target_email = os.getenv("WEBEX_TEST_TARGET_EMAIL")
+    if not target_email:
+        pytest.skip("WEBEX_TEST_TARGET_EMAIL environment variable not set (bots cannot message themselves)")
 
     print("\n🚀 Starting integration test...\n")
 
@@ -63,7 +71,7 @@ async def test_integration_send_and_receive():
         print("1️⃣  Connecting to Mercury...")
         await handler.connect()
 
-        # Step 2: Get bot's own email
+        # Step 2: Get bot's own email (for display purposes)
         print("2️⃣  Fetching bot identity...")
         async with aiohttp.ClientSession() as session:
             async with session.get(
@@ -72,10 +80,10 @@ async def test_integration_send_and_receive():
             ) as response:
                 assert response.status == 200, f"Failed to get bot identity: {response.status}"
                 whoami = await response.json()
-                bot_email = whoami["emails"][0]
-                print(f"   Bot: {whoami['displayName']} ({bot_email})")
+                print(f"   Bot: {whoami['displayName']} ({whoami['emails'][0]})")
+                print(f"   Target: {target_email}")
 
-            # Step 3: Send message to self
+            # Step 3: Send message to target email
             print(f"3️⃣  Sending test message: \"{test_message}\"")
             async with session.post(
                 "https://webexapis.com/v1/messages",
@@ -84,7 +92,7 @@ async def test_integration_send_and_receive():
                     "Content-Type": "application/json"
                 },
                 json={
-                    "toPersonEmail": bot_email,
+                    "toPersonEmail": target_email,
                     "text": test_message
                 }
             ) as response:

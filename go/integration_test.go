@@ -44,7 +44,7 @@ func TestIntegrationSendAndReceive(t *testing.T) {
 		t.Skip("WEBEX_BOT_TOKEN environment variable not set")
 	}
 
-	fmt.Println("\n🚀 Starting integration test...\n")
+	fmt.Println("\n🚀 Starting integration test...")
 
 	// Create handler
 	handler, err := webex.New(webex.Config{
@@ -122,7 +122,7 @@ func TestIntegrationSendAndReceive(t *testing.T) {
 	// Cleanup
 	fmt.Println("\n🧹 Cleaning up...")
 	handler.Disconnect(ctx)
-	fmt.Println("✅ Disconnected\n")
+	fmt.Println("✅ Disconnected")
 }
 
 func getWhoAmI(token string) (*webexPerson, error) {

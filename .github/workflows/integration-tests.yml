@@ -33,7 +33,7 @@ jobs:
           version: 8
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --no-frozen-lockfile
 
       - name: Build
         run: pnpm run build
@@ -41,7 +41,7 @@ jobs:
       - name: Run integration test
         env:
           WEBEX_BOT_TOKEN: ${{ secrets.WEBEX_BOT_TOKEN }}
-        run: node test/integration.test.js
+        run: node dist/test/integration.test.js
         timeout-minutes: 2
 
   integration-python:
