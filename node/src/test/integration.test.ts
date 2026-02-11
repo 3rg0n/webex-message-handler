@@ -12,7 +12,7 @@
  * Run with: WEBEX_BOT_TOKEN=your_token npm run test:integration
  */
 
-import { WebexMessageHandler } from '../src/index.js';
+import { WebexMessageHandler } from '../index.js';
 
 const TIMEOUT_MS = 30000; // 30 seconds
 
