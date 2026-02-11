@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -43,12 +42,14 @@ class KmsClient:
         user_id: str,
         encryption_service_url: str,
         logger: Logger | None = None,
+        connector: aiohttp.BaseConnector | None = None,
     ) -> None:
         self._token = token
         self._device_url = device_url
         self._user_id = user_id
         self._encryption_service_url = encryption_service_url
         self._logger: Logger = logger or noop_logger  # type: ignore[assignment]
+        self._connector = connector
 
         self._kms_cluster: str = ""
         self._ephemeral_key: jwk.JWK | None = None
@@ -89,16 +90,15 @@ class KmsClient:
 
             # Step 1: Fetch KMS details
             kms_details_url = f"{self._encryption_service_url}/kms/{self._user_id}"
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    kms_details_url,
-                    headers={"Authorization": f"Bearer {self._token}"},
-                ) as response:
-                    if not response.ok:
-                        raise KmsError(
-                            f"Failed to fetch KMS details: {response.status} {response.reason}"
-                        )
-                    kms_details = await response.json()
+            async with aiohttp.ClientSession(connector=self._connector) as session, session.get(
+                kms_details_url,
+                headers={"Authorization": f"Bearer {self._token}"},
+            ) as response:
+                if not response.ok:
+                    raise KmsError(
+                        f"Failed to fetch KMS details: {response.status} {response.reason}"
+                    )
+                kms_details = await response.json()
 
             self._kms_cluster = kms_details["kmsCluster"]
             rsa_public_key_raw = kms_details["rsaPublicKey"]
@@ -281,24 +281,23 @@ class KmsClient:
 
         # POST the request
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self._encryption_service_url}/kms/messages",
-                    headers={
-                        "Authorization": f"Bearer {self._token}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "destination": self._kms_cluster,
-                        "kmsMessages": [wrapped],
-                    },
-                ) as response:
-                    self._logger.debug(f"KMS HTTP POST response: {response.status}")
-                    if not response.ok:
-                        self._pending_requests.pop(request_id, None)
-                        timeout_handle.cancel()
-                        error_body = await response.text()
-                        raise KmsError(f"KMS HTTP request failed: {response.status} {error_body}")
+            async with aiohttp.ClientSession(connector=self._connector) as session, session.post(
+                f"{self._encryption_service_url}/kms/messages",
+                headers={
+                    "Authorization": f"Bearer {self._token}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "destination": self._kms_cluster,
+                    "kmsMessages": [wrapped],
+                },
+            ) as response:
+                self._logger.debug(f"KMS HTTP POST response: {response.status}")
+                if not response.ok:
+                    self._pending_requests.pop(request_id, None)
+                    timeout_handle.cancel()
+                    error_body = await response.text()
+                    raise KmsError(f"KMS HTTP request failed: {response.status} {error_body}")
         except KmsError:
             raise
         except Exception as exc:
@@ -370,13 +369,13 @@ def _derive_ecdh_shared_key(local_key: jwk.JWK, remote_key: jwk.JWK, *, kid: str
     # Get cryptography private key from local JWK
     local_private = local_key.get_op_key("sign") if local_key.has_private else local_key.get_op_key("unwrapKey")
     # For EC keys, get the actual private key object
-    from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat
     local_crypto_key = local_key._get_private_key() if hasattr(local_key, '_get_private_key') else None
 
     if local_crypto_key is None:
         # Fallback: load from JWK export
-        from cryptography.hazmat.primitives.asymmetric.ec import derive_private_key, SECP256R1
         import json as _json
+
+        from cryptography.hazmat.primitives.asymmetric.ec import SECP256R1, derive_private_key
         key_data = _json.loads(local_key.export(private_key=True))
         d_bytes = base64url_decode(key_data["d"])
         d_int = int.from_bytes(d_bytes, "big")
@@ -385,7 +384,7 @@ def _derive_ecdh_shared_key(local_key: jwk.JWK, remote_key: jwk.JWK, *, kid: str
     # Get cryptography public key from remote JWK
     remote_crypto_key = None
     try:
-        from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePublicNumbers, SECP256R1
+        from cryptography.hazmat.primitives.asymmetric.ec import SECP256R1, EllipticCurvePublicNumbers
         remote_data = json.loads(remote_key.export())
         x_bytes = base64url_decode(remote_data["x"])
         y_bytes = base64url_decode(remote_data["y"])
