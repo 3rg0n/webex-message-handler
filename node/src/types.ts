@@ -1,10 +1,14 @@
 import type { Logger } from './logger.js';
+import type * as http from 'http';
+import type * as https from 'https';
 
 // --- Configuration ---
 
 export interface WebexMessageHandlerConfig {
   token: string;
   logger?: Logger;
+  /** Optional HTTP/HTTPS agent for proxy support or custom connection handling */
+  agent?: http.Agent | https.Agent;
   /** Ping interval in ms (default: 15000) */
   pingInterval?: number;
   /** Pong timeout in ms (default: 14000) */
