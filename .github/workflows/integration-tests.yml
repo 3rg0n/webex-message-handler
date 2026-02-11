@@ -41,6 +41,7 @@ jobs:
       - name: Run integration test
         env:
           WEBEX_BOT_TOKEN: ${{ secrets.WEBEX_BOT_TOKEN }}
+          WEBEX_BOT_TOKEN_TEST: ${{ secrets.WEBEX_BOT_TOKEN_TEST }}
         run: node dist/test/integration.test.js
         timeout-minutes: 2
 
@@ -67,6 +68,7 @@ jobs:
       - name: Run integration test
         env:
           WEBEX_BOT_TOKEN: ${{ secrets.WEBEX_BOT_TOKEN }}
+          WEBEX_BOT_TOKEN_TEST: ${{ secrets.WEBEX_BOT_TOKEN_TEST }}
         run: pytest tests/test_integration.py -v
         timeout-minutes: 2
 
@@ -91,6 +93,7 @@ jobs:
       - name: Run integration test
         env:
           WEBEX_BOT_TOKEN: ${{ secrets.WEBEX_BOT_TOKEN }}
+          WEBEX_BOT_TOKEN_TEST: ${{ secrets.WEBEX_BOT_TOKEN_TEST }}
         run: go test -v -run TestIntegration
         timeout-minutes: 2
 
@@ -121,5 +124,6 @@ jobs:
       - name: Run integration test
         env:
           WEBEX_BOT_TOKEN: ${{ secrets.WEBEX_BOT_TOKEN }}
+          WEBEX_BOT_TOKEN_TEST: ${{ secrets.WEBEX_BOT_TOKEN_TEST }}
         run: cargo test --test live_integration_test -- --ignored --nocapture
         timeout-minutes: 2

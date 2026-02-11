@@ -23,15 +23,20 @@ interface WebexPerson {
 }
 
 async function integrationTest(): Promise<void> {
-  const token = process.env.WEBEX_BOT_TOKEN;
-  if (!token) {
-    throw new Error('WEBEX_BOT_TOKEN environment variable is required');
+  const receiverToken = process.env.WEBEX_BOT_TOKEN;
+  if (!receiverToken) {
+    throw new Error('WEBEX_BOT_TOKEN environment variable is required (bot that receives messages)');
+  }
+
+  const senderToken = process.env.WEBEX_BOT_TOKEN_TEST;
+  if (!senderToken) {
+    throw new Error('WEBEX_BOT_TOKEN_TEST environment variable is required (bot that sends test message)');
   }
 
   console.log('🚀 Starting integration test...\n');
 
-  // Create handler
-  const handler = new WebexMessageHandler({ token });
+  // Create handler with receiver bot
+  const handler = new WebexMessageHandler({ token: receiverToken });
 
   // Unique test message
   const testMessage = `Integration test ${Date.now()}`;
@@ -59,29 +64,34 @@ async function integrationTest(): Promise<void> {
     console.log('1️⃣  Connecting to Mercury...');
     await handler.connect();
 
-    // Step 2: Get bot's own email
-    console.log('2️⃣  Fetching bot identity...');
-    const whoamiResponse = await fetch('https://webexapis.com/v1/people/me', {
-      headers: { Authorization: `Bearer ${token}` }
+    // Step 2: Get receiver bot's email
+    console.log('2️⃣  Fetching bot identities...');
+    const receiverResponse = await fetch('https://webexapis.com/v1/people/me', {
+      headers: { Authorization: `Bearer ${receiverToken}` }
+    });
+    const senderResponse = await fetch('https://webexapis.com/v1/people/me', {
+      headers: { Authorization: `Bearer ${senderToken}` }
     });
 
-    if (!whoamiResponse.ok) {
-      throw new Error(`Failed to get bot identity: ${whoamiResponse.status} ${whoamiResponse.statusText}`);
+    if (!receiverResponse.ok || !senderResponse.ok) {
+      throw new Error('Failed to get bot identities');
     }
 
-    const whoami = await whoamiResponse.json() as WebexPerson;
-    console.log(`   Bot: ${whoami.displayName} (${whoami.emails[0]})`);
+    const receiver = await receiverResponse.json() as WebexPerson;
+    const sender = await senderResponse.json() as WebexPerson;
+    console.log(`   Receiver: ${receiver.displayName} (${receiver.emails[0]})`);
+    console.log(`   Sender: ${sender.displayName} (${sender.emails[0]})`);
 
-    // Step 3: Send message to self
+    // Step 3: Send message FROM sender bot TO receiver bot
     console.log(`3️⃣  Sending test message: "${testMessage}"`);
     const sendResponse = await fetch('https://webexapis.com/v1/messages', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${senderToken}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        toPersonEmail: whoami.emails[0],
+        toPersonEmail: receiver.emails[0],
         text: testMessage
       })
     });

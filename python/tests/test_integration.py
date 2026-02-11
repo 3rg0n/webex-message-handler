@@ -26,25 +26,25 @@ TIMEOUT_SECONDS = 30
 
 @pytest.mark.asyncio
 async def test_integration_send_and_receive():
-    """Send a message via REST API and receive it via Mercury.
+    """Send a message FROM test bot TO receiver bot via REST API and receive via Mercury.
 
-    Note: Webex doesn't allow bots to message themselves, so you need to provide
-    a target email (another bot or your personal email) via WEBEX_TEST_TARGET_EMAIL.
+    Uses two bots: receiver bot (WEBEX_BOT_TOKEN) listens for messages,
+    sender bot (WEBEX_BOT_TOKEN_TEST) sends test message.
     """
-    token = os.getenv("WEBEX_BOT_TOKEN")
-    if not token:
-        pytest.skip("WEBEX_BOT_TOKEN environment variable not set")
+    receiver_token = os.getenv("WEBEX_BOT_TOKEN")
+    if not receiver_token:
+        pytest.skip("WEBEX_BOT_TOKEN environment variable not set (bot that receives messages)")
 
-    target_email = os.getenv("WEBEX_TEST_TARGET_EMAIL")
-    if not target_email:
-        pytest.skip("WEBEX_TEST_TARGET_EMAIL environment variable not set (bots cannot message themselves)")
+    sender_token = os.getenv("WEBEX_BOT_TOKEN_TEST")
+    if not sender_token:
+        pytest.skip("WEBEX_BOT_TOKEN_TEST environment variable not set (bot that sends test message)")
 
     print("\n🚀 Starting integration test...\n")
 
-    # Create handler
+    # Create handler with receiver bot
     handler = WebexMessageHandler(
         WebexMessageHandlerConfig(
-            token=token,
+            token=receiver_token,
         )
     )
 
@@ -71,28 +71,33 @@ async def test_integration_send_and_receive():
         print("1️⃣  Connecting to Mercury...")
         await handler.connect()
 
-        # Step 2: Get bot's own email (for display purposes)
-        print("2️⃣  Fetching bot identity...")
+        # Step 2: Get bot identities
+        print("2️⃣  Fetching bot identities...")
         async with aiohttp.ClientSession() as session:
             async with session.get(
                 "https://webexapis.com/v1/people/me",
-                headers={"Authorization": f"Bearer {token}"}
-            ) as response:
-                assert response.status == 200, f"Failed to get bot identity: {response.status}"
-                whoami = await response.json()
-                print(f"   Bot: {whoami['displayName']} ({whoami['emails'][0]})")
-                print(f"   Target: {target_email}")
+                headers={"Authorization": f"Bearer {receiver_token}"}
+            ) as receiver_response, session.get(
+                "https://webexapis.com/v1/people/me",
+                headers={"Authorization": f"Bearer {sender_token}"}
+            ) as sender_response:
+                assert receiver_response.status == 200, f"Failed to get receiver bot identity: {receiver_response.status}"
+                assert sender_response.status == 200, f"Failed to get sender bot identity: {sender_response.status}"
+                receiver = await receiver_response.json()
+                sender = await sender_response.json()
+                print(f"   Receiver: {receiver['displayName']} ({receiver['emails'][0]})")
+                print(f"   Sender: {sender['displayName']} ({sender['emails'][0]})")
 
-            # Step 3: Send message to target email
+            # Step 3: Send message FROM sender bot TO receiver bot
             print(f"3️⃣  Sending test message: \"{test_message}\"")
             async with session.post(
                 "https://webexapis.com/v1/messages",
                 headers={
-                    "Authorization": f"Bearer {token}",
+                    "Authorization": f"Bearer {sender_token}",
                     "Content-Type": "application/json"
                 },
                 json={
-                    "toPersonEmail": target_email,
+                    "toPersonEmail": receiver['emails'][0],
                     "text": test_message
                 }
             ) as response:
