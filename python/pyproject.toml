@@ -1,0 +1,62 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "webex-message-handler"
+version = "0.1.0"
+description = "Lightweight Webex Mercury WebSocket + KMS decryption for receiving bot messages without the full Webex SDK"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    { name = "Ergon Copeland" },
+]
+keywords = ["webex", "mercury", "websocket", "kms", "bot", "messaging"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Communications :: Chat",
+    "Framework :: AsyncIO",
+]
+dependencies = [
+    "aiohttp>=3.9",
+    "jwcrypto>=1.5",
+]
+
+[project.urls]
+Homepage = "https://github.com/ecopelan/webex-message-handler-py"
+Repository = "https://github.com/ecopelan/webex-message-handler-py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/webex_message_handler"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "SIM"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7",
+    "pytest-asyncio>=0.23",
+    "aioresponses>=0.7",
+    "ruff>=0.4",
+    "mypy>=1.10",
+]
