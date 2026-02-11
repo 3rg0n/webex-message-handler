@@ -9,7 +9,7 @@
  * 5. Message receive (Mercury)
  * 6. Message decryption (KMS)
  *
- * Run with: WEBEX_BOT_TOKEN=your_token cargo test --test live_integration_test -- --nocapture --ignored
+ * Run with: WEBEX_BOT_TOKEN=receiver_token WEBEX_BOT_TOKEN_TEST=sender_token cargo test --test live_integration_test -- --nocapture --ignored
  */
 
 use serde::{Deserialize, Serialize};
@@ -21,6 +21,7 @@ const TIMEOUT_SECONDS: u64 = 30;
 
 #[derive(Debug, Deserialize)]
 struct WebexPerson {
+    #[allow(dead_code)]
     id: String,
     emails: Vec<String>,
     #[serde(rename = "displayName")]
@@ -42,19 +43,27 @@ struct SendMessageRequest {
 #[tokio::test]
 #[ignore] // Only run with --ignored flag
 async fn test_live_integration_send_and_receive() {
-    let token = match std::env::var("WEBEX_BOT_TOKEN") {
+    let receiver_token = match std::env::var("WEBEX_BOT_TOKEN") {
         Ok(t) => t,
         Err(_) => {
-            println!("⏭️  Skipping integration test: WEBEX_BOT_TOKEN not set");
+            println!("⏭️  Skipping integration test: WEBEX_BOT_TOKEN not set (bot that receives messages)");
+            return;
+        }
+    };
+
+    let sender_token = match std::env::var("WEBEX_BOT_TOKEN_TEST") {
+        Ok(t) => t,
+        Err(_) => {
+            println!("⏭️  Skipping integration test: WEBEX_BOT_TOKEN_TEST not set (bot that sends test message)");
             return;
         }
     };
 
     println!("\n🚀 Starting integration test...\n");
 
-    // Create handler
+    // Create handler with receiver bot
     let handler = WebexMessageHandler::new(Config {
-        token: token.clone(),
+        token: receiver_token.clone(),
         ..Default::default()
     })
     .expect("Failed to create handler");
@@ -77,29 +86,40 @@ async fn test_live_integration_send_and_receive() {
     println!("1️⃣  Connecting to Mercury...");
     handler.connect().await.expect("Failed to connect");
 
-    // Step 2: Get bot's own email
-    println!("2️⃣  Fetching bot identity...");
+    // Step 2: Get both bot identities
+    println!("2️⃣  Fetching bot identities...");
     let client = reqwest::Client::new();
-    let whoami: WebexPerson = client
+    let receiver: WebexPerson = client
         .get("https://webexapis.com/v1/people/me")
-        .header("Authorization", format!("Bearer {}", token))
+        .header("Authorization", format!("Bearer {}", receiver_token))
         .send()
         .await
-        .expect("Failed to fetch bot identity")
+        .expect("Failed to fetch receiver bot identity")
         .json()
         .await
-        .expect("Failed to parse bot identity");
+        .expect("Failed to parse receiver bot identity");
 
-    println!("   Bot: {} ({})", whoami.display_name, whoami.emails[0]);
+    let sender: WebexPerson = client
+        .get("https://webexapis.com/v1/people/me")
+        .header("Authorization", format!("Bearer {}", sender_token))
+        .send()
+        .await
+        .expect("Failed to fetch sender bot identity")
+        .json()
+        .await
+        .expect("Failed to parse sender bot identity");
 
-    // Step 3: Send message to self
+    println!("   Receiver: {} ({})", receiver.display_name, receiver.emails[0]);
+    println!("   Sender: {} ({})", sender.display_name, sender.emails[0]);
+
+    // Step 3: Send message FROM sender bot TO receiver bot
     println!("3️⃣  Sending test message: \"{}\"", test_message);
     let sent_msg: WebexMessage = client
         .post("https://webexapis.com/v1/messages")
-        .header("Authorization", format!("Bearer {}", token))
+        .header("Authorization", format!("Bearer {}", sender_token))
         .header("Content-Type", "application/json")
         .json(&SendMessageRequest {
-            to_person_email: whoami.emails[0].clone(),
+            to_person_email: receiver.emails[0].clone(),
             text: test_message.clone(),
         })
         .send()

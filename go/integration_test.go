@@ -24,7 +24,7 @@ import (
 // 5. Message receive (Mercury)
 // 6. Message decryption (KMS)
 //
-// Run with: WEBEX_BOT_TOKEN=your_token go test -v -run TestIntegration
+// Run with: WEBEX_BOT_TOKEN=receiver_token WEBEX_BOT_TOKEN_TEST=sender_token go test -v -run TestIntegration
 
 const timeoutSeconds = 30
 
@@ -39,16 +39,21 @@ type webexMessage struct {
 }
 
 func TestIntegrationSendAndReceive(t *testing.T) {
-	token := os.Getenv("WEBEX_BOT_TOKEN")
-	if token == "" {
-		t.Skip("WEBEX_BOT_TOKEN environment variable not set")
+	receiverToken := os.Getenv("WEBEX_BOT_TOKEN")
+	if receiverToken == "" {
+		t.Skip("WEBEX_BOT_TOKEN environment variable not set (bot that receives messages)")
+	}
+
+	senderToken := os.Getenv("WEBEX_BOT_TOKEN_TEST")
+	if senderToken == "" {
+		t.Skip("WEBEX_BOT_TOKEN_TEST environment variable not set (bot that sends test message)")
 	}
 
 	fmt.Println("\n🚀 Starting integration test...")
 
-	// Create handler
+	// Create handler with receiver bot
 	handler, err := webex.New(webex.Config{
-		Token: token,
+		Token: receiverToken,
 	})
 	if err != nil {
 		t.Fatalf("Failed to create handler: %v", err)
@@ -85,17 +90,22 @@ func TestIntegrationSendAndReceive(t *testing.T) {
 	}
 	defer handler.Disconnect(ctx)
 
-	// Step 2: Get bot's own email
-	fmt.Println("2️⃣  Fetching bot identity...")
-	whoami, err := getWhoAmI(token)
+	// Step 2: Get both bot identities
+	fmt.Println("2️⃣  Fetching bot identities...")
+	receiver, err := getWhoAmI(receiverToken)
 	if err != nil {
-		t.Fatalf("Failed to get bot identity: %v", err)
+		t.Fatalf("Failed to get receiver bot identity: %v", err)
 	}
-	fmt.Printf("   Bot: %s (%s)\n", whoami.DisplayName, whoami.Emails[0])
+	sender, err := getWhoAmI(senderToken)
+	if err != nil {
+		t.Fatalf("Failed to get sender bot identity: %v", err)
+	}
+	fmt.Printf("   Receiver: %s (%s)\n", receiver.DisplayName, receiver.Emails[0])
+	fmt.Printf("   Sender: %s (%s)\n", sender.DisplayName, sender.Emails[0])
 
-	// Step 3: Send message to self
+	// Step 3: Send message FROM sender bot TO receiver bot
 	fmt.Printf("3️⃣  Sending test message: \"%s\"\n", testMessage)
-	msgID, err := sendMessage(token, whoami.Emails[0], testMessage)
+	msgID, err := sendMessage(senderToken, receiver.Emails[0], testMessage)
 	if err != nil {
 		t.Fatalf("Failed to send message: %v", err)
 	}
