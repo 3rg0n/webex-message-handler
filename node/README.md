@@ -58,10 +58,10 @@ For corporate environments behind a proxy, pass a configured agent:
 
 ```typescript
 import { WebexMessageHandler } from 'webex-message-handler';
-import { HttpsProxyAgent } from 'https-proxy-agent';
+import { ProxyAgent } from 'undici';
 
 const agent = process.env.HTTPS_PROXY
-  ? new HttpsProxyAgent(process.env.HTTPS_PROXY)
+  ? new ProxyAgent(process.env.HTTPS_PROXY)
   : undefined;
 
 const handler = new WebexMessageHandler({
@@ -72,7 +72,9 @@ const handler = new WebexMessageHandler({
 await handler.connect();
 ```
 
-The library accepts any `http.Agent` or `https.Agent`, allowing you to use any proxy library or custom agent configuration.
+**Recommended:** Use undici's `ProxyAgent` for best compatibility with Node.js v18+ native `fetch()`. While `https-proxy-agent` may work, undici's `ProxyAgent` provides more reliable proxy support since Node.js fetch uses undici internally.
+
+The library accepts any `http.Agent`, `https.Agent`, or undici `Dispatcher`, allowing you to use any proxy library or custom agent configuration.
 
 ## API Reference
 

@@ -58,7 +58,7 @@ new WebexMessageHandler(config: WebexMessageHandlerConfig)
 |---|---|---|---|---|
 | `token` | `string` | Yes | — | Webex bot or user access token. |
 | `mode` | `NetworkMode` | No | `'native'` | Networking mode: `'native'` or `'injected'`. See [Networking Modes](#networking-modes). |
-| `agent` | `http.Agent \| https.Agent` | No | — | **Native mode only**: Proxy agent for HTTP/HTTPS requests (e.g., `HttpsProxyAgent`). |
+| `agent` | `http.Agent \| https.Agent \| undici.Dispatcher` | No | — | **Native mode only**: Proxy agent for HTTP/HTTPS requests. Recommended: undici's `ProxyAgent` for Node.js v18+. |
 | `fetch` | `FetchFunction` | Required for injected | — | **Injected mode only**: Custom fetch function for all HTTP requests. |
 | `webSocketFactory` | `WebSocketFactory` | Required for injected | — | **Injected mode only**: Custom WebSocket factory function. |
 | `logger` | `Logger` | No | silent | Logger implementation (`consoleLogger` provided). |
@@ -84,13 +84,15 @@ const handler = new WebexMessageHandler({
 
 **With proxy:**
 ```typescript
-import { HttpsProxyAgent } from 'https-proxy-agent';
+import { ProxyAgent } from 'undici';
 
 const handler = new WebexMessageHandler({
   token: process.env.WEBEX_BOT_TOKEN!,
-  agent: new HttpsProxyAgent('http://proxy.example.com:8080'),
+  agent: new ProxyAgent('http://proxy.example.com:8080'),
 });
 ```
+
+> **Note:** Use undici's `ProxyAgent` for best compatibility with Node.js v18+ native `fetch()`. While `https-proxy-agent` may work, undici's `ProxyAgent` is more reliable since Node.js fetch uses undici internally.
 
 #### Injected Mode
 

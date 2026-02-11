@@ -120,13 +120,15 @@ Uses the language's built-in HTTP/WebSocket libraries with optional proxy config
 
 **Node.js:**
 ```typescript
-import { HttpsProxyAgent } from 'https-proxy-agent';
+import { ProxyAgent } from 'undici';
 
 const handler = new WebexMessageHandler({
   token: process.env.WEBEX_BOT_TOKEN!,
-  agent: new HttpsProxyAgent('http://proxy.example.com:8080'),
+  agent: new ProxyAgent('http://proxy.example.com:8080'),
 });
 ```
+
+> **Note:** Node.js v18+ uses undici for native `fetch()`. While `https-proxy-agent` may work, undici's `ProxyAgent` is the recommended choice for best compatibility.
 
 **Python:**
 ```python
