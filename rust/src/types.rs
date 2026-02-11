@@ -9,6 +9,10 @@ pub struct Config {
     /// Webex bot or user access token (required).
     pub token: String,
 
+    /// Optional HTTP client for proxy support or custom connection handling.
+    /// If None, a default client will be created.
+    pub client: Option<reqwest::Client>,
+
     /// Mercury ping interval in seconds (default: 15).
     pub ping_interval: f64,
 
@@ -26,6 +30,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             token: String::new(),
+            client: None,
             ping_interval: 15.0,
             pong_timeout: 14.0,
             reconnect_backoff_max: 32.0,

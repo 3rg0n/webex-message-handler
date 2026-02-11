@@ -34,6 +34,7 @@ pub enum HandlerEvent {
 /// Receives and decrypts Webex messages over Mercury WebSocket.
 pub struct WebexMessageHandler {
     token: Arc<Mutex<String>>,
+    client: reqwest::Client,
     device_manager: Arc<Mutex<DeviceManager>>,
     mercury_socket: Arc<MercurySocket>,
     kms_client: Arc<Mutex<Option<KmsClient>>>,
@@ -58,7 +59,10 @@ impl WebexMessageHandler {
             ));
         }
 
+        let client = config.client.clone().unwrap_or_else(|| reqwest::Client::new());
+
         let mercury_socket = MercurySocket::new(
+            client.clone(),
             Duration::from_secs_f64(config.ping_interval),
             Duration::from_secs_f64(config.pong_timeout),
             Duration::from_secs_f64(config.reconnect_backoff_max),
@@ -69,7 +73,8 @@ impl WebexMessageHandler {
 
         Ok(Self {
             token: Arc::new(Mutex::new(config.token.clone())),
-            device_manager: Arc::new(Mutex::new(DeviceManager::new())),
+            client: client.clone(),
+            device_manager: Arc::new(Mutex::new(DeviceManager::new(client.clone()))),
             mercury_socket: Arc::new(mercury_socket),
             kms_client: Arc::new(Mutex::new(None)),
             kms_response_handler: Arc::new(Mutex::new(None)),
@@ -134,6 +139,7 @@ impl WebexMessageHandler {
 
         // Step 2: Create KMS client
         let kms = KmsClient::new(
+            self.client.clone(),
             &token,
             &reg.device_url,
             &reg.user_id,

@@ -26,10 +26,10 @@ pub struct DeviceManager {
 }
 
 impl DeviceManager {
-    pub fn new() -> Self {
+    pub fn new(client: reqwest::Client) -> Self {
         Self {
             device_url: None,
-            client: reqwest::Client::new(),
+            client,
         }
     }
 

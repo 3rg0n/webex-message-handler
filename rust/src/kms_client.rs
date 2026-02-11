@@ -104,6 +104,7 @@ pub struct KmsClient {
 
 impl KmsClient {
     pub fn new(
+        client: reqwest::Client,
         token: &str,
         device_url: &str,
         user_id: &str,
@@ -114,7 +115,7 @@ impl KmsClient {
             device_url: device_url.to_string(),
             user_id: user_id.to_string(),
             encryption_service_url: encryption_service_url.to_string(),
-            client: reqwest::Client::new(),
+            client,
             kms_cluster: String::new(),
             ephemeral_key: None,
             ephemeral_key_kid: String::new(),

@@ -26,6 +26,8 @@ pub enum MercuryEvent {
 
 /// Mercury WebSocket connection manager.
 pub struct MercurySocket {
+    #[allow(dead_code)]
+    client: reqwest::Client,
     ping_interval: Duration,
     pong_timeout: Duration,
     reconnect_backoff_max: Duration,
@@ -44,6 +46,7 @@ pub struct MercurySocket {
 
 impl MercurySocket {
     pub fn new(
+        client: reqwest::Client,
         ping_interval: Duration,
         pong_timeout: Duration,
         reconnect_backoff_max: Duration,
@@ -52,6 +55,7 @@ impl MercurySocket {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
 
         Self {
+            client,
             ping_interval,
             pong_timeout,
             reconnect_backoff_max,

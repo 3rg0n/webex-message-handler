@@ -53,11 +53,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+## Proxy Support (Enterprise)
+
+For corporate environments behind a proxy, pass a configured `reqwest::Client`:
+
+```rust
+use webex_message_handler::{WebexMessageHandler, Config, HandlerEvent};
+use reqwest::Proxy;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Configure proxy client
+    let client = if let Ok(proxy_url) = std::env::var("HTTPS_PROXY") {
+        reqwest::Client::builder()
+            .proxy(Proxy::https(&proxy_url)?)
+            .build()?
+    } else {
+        reqwest::Client::new()
+    };
+
+    let handler = WebexMessageHandler::new(Config {
+        token: std::env::var("WEBEX_BOT_TOKEN")?,
+        client: Some(client), // Pass configured client
+        ..Default::default()
+    })?;
+
+    // ... rest of code
+    Ok(())
+}
+```
+
+Note: WebSocket proxy support in Rust uses environment variables (`HTTPS_PROXY`, `HTTP_PROXY`) which `tokio-tungstenite` respects automatically.
+
 ## Configuration
 
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `token` | `String` | (required) | Webex bot or user access token |
+| `client` | `Option<reqwest::Client>` | `None` | HTTP client for proxy support (creates default if None) |
 | `ping_interval` | `f64` | `15.0` | Mercury ping interval in seconds |
 | `pong_timeout` | `f64` | `14.0` | Pong response timeout in seconds |
 | `reconnect_backoff_max` | `f64` | `32.0` | Max reconnect backoff in seconds |
