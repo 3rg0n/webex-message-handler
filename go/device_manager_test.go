@@ -36,7 +36,7 @@ func TestDeviceManagerRegisterSuccess(t *testing.T) {
 	defer func() { setWdmAPIBase(origBase) }()
 	setWdmAPIBase(server.URL)
 
-	dm := NewDeviceManager(NoopLogger())
+	dm := NewDeviceManager(NoopLogger(), nil)
 	reg, err := dm.Register(context.Background(), "test-token")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -66,7 +66,7 @@ func TestDeviceManagerRegister401(t *testing.T) {
 	defer func() { setWdmAPIBase(origBase) }()
 	setWdmAPIBase(server.URL)
 
-	dm := NewDeviceManager(NoopLogger())
+	dm := NewDeviceManager(NoopLogger(), nil)
 	_, err := dm.Register(context.Background(), "bad-token")
 	if err == nil {
 		t.Fatal("expected error for 401")
@@ -90,7 +90,7 @@ func TestDeviceManagerRegister500(t *testing.T) {
 	defer func() { setWdmAPIBase(origBase) }()
 	setWdmAPIBase(server.URL)
 
-	dm := NewDeviceManager(NoopLogger())
+	dm := NewDeviceManager(NoopLogger(), nil)
 	_, err := dm.Register(context.Background(), "test-token")
 	if err == nil {
 		t.Fatal("expected error for 500")
@@ -105,7 +105,7 @@ func TestDeviceManagerRegister500(t *testing.T) {
 }
 
 func TestDeviceManagerRefreshNotRegistered(t *testing.T) {
-	dm := NewDeviceManager(NoopLogger())
+	dm := NewDeviceManager(NoopLogger(), nil)
 	_, err := dm.Refresh(context.Background(), "test-token")
 	if err == nil {
 		t.Fatal("expected error when not registered")
@@ -113,7 +113,7 @@ func TestDeviceManagerRefreshNotRegistered(t *testing.T) {
 }
 
 func TestDeviceManagerUnregisterNotRegistered(t *testing.T) {
-	dm := NewDeviceManager(NoopLogger())
+	dm := NewDeviceManager(NoopLogger(), nil)
 	err := dm.Unregister(context.Background(), "test-token")
 	if err == nil {
 		t.Fatal("expected error when not registered")
@@ -144,7 +144,7 @@ func TestDeviceManagerUnregisterSuccess(t *testing.T) {
 	defer func() { setWdmAPIBase(origBase) }()
 	setWdmAPIBase(server.URL)
 
-	dm := NewDeviceManager(NoopLogger())
+	dm := NewDeviceManager(NoopLogger(), nil)
 	_, err := dm.Register(context.Background(), "test-token")
 	if err != nil {
 		t.Fatalf("unexpected register error: %v", err)
@@ -177,7 +177,7 @@ func TestDeviceManagerUnregister401(t *testing.T) {
 	defer func() { setWdmAPIBase(origBase) }()
 	setWdmAPIBase(server.URL)
 
-	dm := NewDeviceManager(NoopLogger())
+	dm := NewDeviceManager(NoopLogger(), nil)
 	dm.Register(context.Background(), "test-token")
 
 	err := dm.Unregister(context.Background(), "test-token")
@@ -207,7 +207,7 @@ func TestDeviceManagerEmptyServices(t *testing.T) {
 	defer func() { setWdmAPIBase(origBase) }()
 	setWdmAPIBase(server.URL)
 
-	dm := NewDeviceManager(NoopLogger())
+	dm := NewDeviceManager(NoopLogger(), nil)
 	reg, err := dm.Register(context.Background(), "test-token")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

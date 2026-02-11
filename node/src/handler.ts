@@ -1,4 +1,6 @@
 import { EventEmitter } from 'events';
+import type * as http from 'http';
+import type * as https from 'https';
 import type {
   WebexMessageHandlerConfig,
   WebexMessageHandlerEvents,
@@ -29,6 +31,7 @@ export class WebexMessageHandler
 {
   private token: string;
   private logger: Logger;
+  private agent: http.Agent | https.Agent | undefined;
   private deviceManager: DeviceManager;
   private mercurySocket: MercurySocket;
   private kmsClient: KmsClient | null = null;
@@ -46,10 +49,15 @@ export class WebexMessageHandler
 
     this.token = config.token;
     this.logger = config.logger ?? noopLogger;
+    this.agent = config.agent;
 
-    this.deviceManager = new DeviceManager({ logger: this.logger });
+    this.deviceManager = new DeviceManager({
+      logger: this.logger,
+      agent: this.agent,
+    });
     this.mercurySocket = new MercurySocket({
       logger: this.logger,
+      agent: this.agent,
       pingInterval: config.pingInterval,
       pongTimeout: config.pongTimeout,
       reconnectBackoffMax: config.reconnectBackoffMax,
@@ -82,6 +90,7 @@ export class WebexMessageHandler
         userId: this.registration.userId,
         encryptionServiceUrl: this.registration.encryptionServiceUrl,
         logger: this.logger,
+        agent: this.agent,
       });
 
       // Step 3: Connect Mercury WebSocket FIRST (KMS responses arrive here)

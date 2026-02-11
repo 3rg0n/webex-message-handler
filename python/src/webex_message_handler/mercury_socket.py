@@ -6,8 +6,9 @@ import asyncio
 import json
 import math
 import uuid
-from typing import Any, Callable
-from urllib.parse import urlencode, urlparse, urlunparse, parse_qs
+from collections.abc import Callable
+from typing import Any
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import aiohttp
 
@@ -27,12 +28,14 @@ class MercurySocket:
         self,
         *,
         logger: Logger | None = None,
+        connector: aiohttp.BaseConnector | None = None,
         ping_interval: float = 15.0,
         pong_timeout: float = 14.0,
         reconnect_backoff_max: float = 32.0,
         max_reconnect_attempts: int = 10,
     ) -> None:
         self._logger: Logger = logger or noop_logger  # type: ignore[assignment]
+        self._connector = connector
         self._ping_interval = ping_interval
         self._pong_timeout = pong_timeout
         self._reconnect_backoff_max = reconnect_backoff_max
@@ -92,7 +95,7 @@ class MercurySocket:
         ready_event = asyncio.Event()
         connect_error: list[Exception] = []
 
-        self._session = aiohttp.ClientSession()
+        self._session = aiohttp.ClientSession(connector=self._connector)
         try:
             self._ws = await self._session.ws_connect(prepared_url)
         except Exception as exc:

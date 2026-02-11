@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    import aiohttp
 
 
 # --- Configuration ---
@@ -17,6 +20,9 @@ class WebexMessageHandlerConfig:
 
     logger: Any = None
     """Logger implementation (noop_logger by default)."""
+
+    connector: aiohttp.BaseConnector | None = None
+    """Optional aiohttp connector for proxy support or custom connection handling."""
 
     ping_interval: float = 15.0
     """Mercury ping interval in seconds (default: 15)."""

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Callable, Coroutine
+from collections.abc import Callable
+from typing import Any
 
 from .device_manager import DeviceManager
-from .errors import WebexError
 from .kms_client import KmsClient
 from .logger import Logger, noop_logger
 from .mercury_socket import MercurySocket
@@ -45,10 +45,15 @@ class WebexMessageHandler:
 
         self._token = config.token
         self._logger: Logger = config.logger or noop_logger  # type: ignore[assignment]
+        self._connector = config.connector
 
-        self._device_manager = DeviceManager(logger=self._logger)
+        self._device_manager = DeviceManager(
+            logger=self._logger,
+            connector=self._connector,
+        )
         self._mercury_socket = MercurySocket(
             logger=self._logger,
+            connector=self._connector,
             ping_interval=config.ping_interval,
             pong_timeout=config.pong_timeout,
             reconnect_backoff_max=config.reconnect_backoff_max,
@@ -145,6 +150,7 @@ class WebexMessageHandler:
                 user_id=self._registration.user_id,
                 encryption_service_url=self._registration.encryption_service_url,
                 logger=self._logger,
+                connector=self._connector,
             )
 
             # Step 3: Connect Mercury WebSocket FIRST (KMS responses arrive here)

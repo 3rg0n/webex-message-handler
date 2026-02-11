@@ -1,3 +1,5 @@
+import type * as http from 'http';
+import type * as https from 'https';
 import * as KMS from 'node-kms';
 import * as jose from 'node-jose';
 import type { JWK } from 'node-jose';
@@ -10,6 +12,7 @@ interface KmsClientConfig {
   userId: string;
   encryptionServiceUrl: string;
   logger?: Logger;
+  agent?: http.Agent | https.Agent;
 }
 
 interface KmsDetailsResponse {
@@ -31,6 +34,7 @@ export class KmsClient {
   private userId: string;
   private encryptionServiceUrl: string;
   private logger: Logger;
+  private agent: http.Agent | https.Agent | undefined;
 
   private context: KMS.Context | null = null;
   private kmsCluster: string = '';
@@ -46,6 +50,7 @@ export class KmsClient {
     this.userId = config.userId;
     this.encryptionServiceUrl = config.encryptionServiceUrl;
     this.logger = config.logger ?? noopLogger;
+    this.agent = config.agent;
   }
 
   /**
@@ -95,6 +100,8 @@ export class KmsClient {
         headers: {
           Authorization: `Bearer ${this.token}`,
         },
+        // @ts-expect-error - dispatcher is an undici option for Node.js fetch
+        dispatcher: this.agent,
       });
 
       if (!kmsDetailsResponse.ok) {
@@ -256,6 +263,8 @@ export class KmsClient {
           destination: this.kmsCluster,
           kmsMessages: [wrapped],
         }),
+        // @ts-expect-error - dispatcher is an undici option for Node.js fetch
+        dispatcher: this.agent,
       }
     );
 

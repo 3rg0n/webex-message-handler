@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net/http"
 	"net/url"
 	"strconv"
 	"sync"
@@ -16,10 +17,11 @@ import (
 
 // MercurySocket manages the Mercury WebSocket connection.
 type MercurySocket struct {
-	logger              Logger
-	pingInterval        time.Duration
-	pongTimeout         time.Duration
-	reconnectBackoffMax time.Duration
+	logger               Logger
+	httpClient           *http.Client
+	pingInterval         time.Duration
+	pongTimeout          time.Duration
+	reconnectBackoffMax  time.Duration
 	maxReconnectAttempts int
 
 	conn              *websocket.Conn
@@ -45,6 +47,7 @@ type MercurySocket struct {
 // MercurySocketConfig holds options for MercurySocket.
 type MercurySocketConfig struct {
 	Logger               Logger
+	HTTPClient           *http.Client
 	PingInterval         time.Duration
 	PongTimeout          time.Duration
 	ReconnectBackoffMax  time.Duration
@@ -69,8 +72,14 @@ func NewMercurySocket(cfg MercurySocketConfig) *MercurySocket {
 		cfg.MaxReconnectAttempts = 10
 	}
 
+	httpClient := cfg.HTTPClient
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+
 	return &MercurySocket{
 		logger:               cfg.Logger,
+		httpClient:           httpClient,
 		pingInterval:         cfg.PingInterval,
 		pongTimeout:          cfg.PongTimeout,
 		reconnectBackoffMax:  cfg.ReconnectBackoffMax,
@@ -114,7 +123,9 @@ func (ms *MercurySocket) connectInternal(ctx context.Context) error {
 	connCtx, cancel := context.WithCancel(ctx)
 	ms.cancelFn = cancel
 
-	conn, _, err := websocket.Dial(connCtx, preparedURL, nil)
+	conn, _, err := websocket.Dial(connCtx, preparedURL, &websocket.DialOptions{
+		HTTPClient: ms.httpClient,
+	})
 	if err != nil {
 		cancel()
 		return NewMercuryConnectionError("Failed to connect to Mercury socket", 0)

@@ -26,16 +26,23 @@ var deviceBody = map[string]string{
 
 // DeviceManager manages WDM device registration lifecycle.
 type DeviceManager struct {
-	logger    Logger
-	deviceURL string
+	logger     Logger
+	httpClient *http.Client
+	deviceURL  string
 }
 
 // NewDeviceManager creates a new DeviceManager.
-func NewDeviceManager(logger Logger) *DeviceManager {
+func NewDeviceManager(logger Logger, httpClient *http.Client) *DeviceManager {
 	if logger == nil {
 		logger = NoopLogger()
 	}
-	return &DeviceManager{logger: logger}
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	return &DeviceManager{
+		logger:     logger,
+		httpClient: httpClient,
+	}
 }
 
 // Register registers a new device with WDM.
@@ -54,7 +61,7 @@ func (dm *DeviceManager) Register(ctx context.Context, token string) (*DeviceReg
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := dm.httpClient.Do(req)
 	if err != nil {
 		dm.logger.Error(fmt.Sprintf("Device registration error: %v", err))
 		return nil, NewDeviceRegistrationError("Failed to register device", 0)
@@ -102,7 +109,7 @@ func (dm *DeviceManager) Refresh(ctx context.Context, token string) (*DeviceRegi
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := dm.httpClient.Do(req)
 	if err != nil {
 		dm.logger.Error(fmt.Sprintf("Device refresh error: %v", err))
 		return nil, NewDeviceRegistrationError("Failed to refresh device", 0)
@@ -144,7 +151,7 @@ func (dm *DeviceManager) Unregister(ctx context.Context, token string) error {
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := dm.httpClient.Do(req)
 	if err != nil {
 		dm.logger.Error(fmt.Sprintf("Device unregistration error: %v", err))
 		return NewDeviceRegistrationError("Failed to unregister device", 0)

@@ -32,6 +32,7 @@ type KmsClient struct {
 	userID               string
 	encryptionServiceURL string
 	logger               Logger
+	httpClient           *http.Client
 
 	kmsCluster        string
 	ephemeralKey      *jose.JSONWebKey
@@ -55,6 +56,7 @@ type KmsClientConfig struct {
 	UserID               string
 	EncryptionServiceURL string
 	Logger               Logger
+	HTTPClient           *http.Client
 }
 
 // NewKmsClient creates a new KmsClient.
@@ -62,12 +64,17 @@ func NewKmsClient(cfg KmsClientConfig) *KmsClient {
 	if cfg.Logger == nil {
 		cfg.Logger = NoopLogger()
 	}
+	httpClient := cfg.HTTPClient
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
 	return &KmsClient{
 		token:                cfg.Token,
 		deviceURL:            cfg.DeviceURL,
 		userID:               cfg.UserID,
 		encryptionServiceURL: cfg.EncryptionServiceURL,
 		logger:               cfg.Logger,
+		httpClient:           httpClient,
 		keyCache:             make(map[string]*jose.JSONWebKey),
 		pendingRequests:      make(map[string]*pendingRequest),
 	}
@@ -125,7 +132,7 @@ func (kc *KmsClient) Initialize(ctx context.Context) error {
 	}
 	req.Header.Set("Authorization", "Bearer "+kc.token)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := kc.httpClient.Do(req)
 	if err != nil {
 		return NewKmsErrorWithCause("Failed to fetch KMS details", err)
 	}
@@ -373,7 +380,7 @@ func (kc *KmsClient) sendKmsRequest(ctx context.Context, requestID, wrapped stri
 	httpReq.Header.Set("Authorization", "Bearer "+kc.token)
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	httpResp, err := http.DefaultClient.Do(httpReq)
+	httpResp, err := kc.httpClient.Do(httpReq)
 	if err != nil {
 		cancel()
 		kc.mu.Lock()

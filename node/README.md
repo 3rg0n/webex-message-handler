@@ -52,6 +52,28 @@ process.on('SIGINT', async () => {
 
 See `examples/basic-bot.ts` for a complete working example.
 
+## Proxy Support (Enterprise)
+
+For corporate environments behind a proxy, pass a configured agent:
+
+```typescript
+import { WebexMessageHandler } from 'webex-message-handler';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+
+const agent = process.env.HTTPS_PROXY
+  ? new HttpsProxyAgent(process.env.HTTPS_PROXY)
+  : undefined;
+
+const handler = new WebexMessageHandler({
+  token: process.env.WEBEX_BOT_TOKEN!,
+  agent, // Pass configured agent for proxy support
+});
+
+await handler.connect();
+```
+
+The library accepts any `http.Agent` or `https.Agent`, allowing you to use any proxy library or custom agent configuration.
+
 ## API Reference
 
 ### `WebexMessageHandler`
@@ -70,6 +92,7 @@ new WebexMessageHandler(config: WebexMessageHandlerConfig)
 |--------|------|---------|-------------|
 | `token` | `string` | required | Webex bot access token |
 | `logger` | `Logger` | noop | Custom logger (`consoleLogger` provided) |
+| `agent` | `http.Agent \| https.Agent` | undefined | HTTP/HTTPS agent for proxy support |
 | `pingInterval` | `number` | `15000` | Mercury ping interval (ms) |
 | `pongTimeout` | `number` | `14000` | Pong response timeout (ms) |
 | `reconnectBackoffMax` | `number` | `32000` | Max reconnect backoff (ms) |

@@ -68,6 +68,51 @@ asyncio.run(main())
 
 See `examples/basic_bot.py` for a complete working example.
 
+## Proxy Support (Enterprise)
+
+For corporate environments behind a proxy, pass a configured connector:
+
+```python
+import aiohttp
+from aiohttp_socks import ProxyConnector
+
+# Using HTTP/HTTPS proxy
+connector = ProxyConnector.from_url(
+    "http://proxy.example.com:8080"
+)
+
+handler = WebexMessageHandler(
+    WebexMessageHandlerConfig(
+        token="YOUR_BOT_TOKEN",
+        connector=connector,  # Pass configured connector
+        logger=console_logger,
+    )
+)
+
+await handler.connect()
+```
+
+Or using environment variables:
+
+```python
+import os
+import aiohttp
+from aiohttp_socks import ProxyConnector
+
+proxy_url = os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY")
+connector = ProxyConnector.from_url(proxy_url) if proxy_url else None
+
+handler = WebexMessageHandler(
+    WebexMessageHandlerConfig(
+        token=os.getenv("WEBEX_BOT_TOKEN"),
+        connector=connector,
+        logger=console_logger,
+    )
+)
+```
+
+Requires: `pip install aiohttp-socks[asyncio]`
+
 ## API Reference
 
 ### `WebexMessageHandler`
@@ -86,6 +131,7 @@ WebexMessageHandler(config: WebexMessageHandlerConfig)
 |--------|------|---------|-------------|
 | `token` | `str` | required | Webex bot access token |
 | `logger` | `Logger` | noop | Custom logger (`console_logger` provided) |
+| `connector` | `aiohttp.BaseConnector` | `None` | HTTP/HTTPS connector for proxy support |
 | `ping_interval` | `float` | `15.0` | Mercury ping interval (seconds) |
 | `pong_timeout` | `float` | `14.0` | Pong response timeout (seconds) |
 | `reconnect_backoff_max` | `float` | `32.0` | Max reconnect backoff (seconds) |
