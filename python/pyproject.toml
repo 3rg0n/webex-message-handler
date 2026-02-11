@@ -31,8 +31,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/ecopelan/webex-message-handler-py"
-Repository = "https://github.com/ecopelan/webex-message-handler-py"
+Homepage = "https://github.com/3rg0n/webex-message-handler"
+Repository = "https://github.com/3rg0n/webex-message-handler"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/webex_message_handler"]
