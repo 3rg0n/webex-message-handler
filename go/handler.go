@@ -3,13 +3,15 @@ package webexmessagehandler
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 )
 
 // WebexMessageHandler receives and decrypts Webex messages over Mercury WebSocket.
 type WebexMessageHandler struct {
-	token  string
-	logger Logger
+	token      string
+	logger     Logger
+	httpClient *http.Client
 
 	deviceManager    *DeviceManager
 	mercurySocket    *MercurySocket
@@ -57,12 +59,19 @@ func New(cfg Config) (*WebexMessageHandler, error) {
 		maxReconnectAttempts = cfg.MaxReconnectAttempts
 	}
 
+	httpClient := cfg.HTTPClient
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+
 	h := &WebexMessageHandler{
 		token:         cfg.Token,
 		logger:        logger,
-		deviceManager: NewDeviceManager(logger),
+		httpClient:    httpClient,
+		deviceManager: NewDeviceManager(logger, httpClient),
 		mercurySocket: NewMercurySocket(MercurySocketConfig{
 			Logger:               logger,
+			HTTPClient:           httpClient,
 			PingInterval:         pingInterval,
 			PongTimeout:          pongTimeout,
 			ReconnectBackoffMax:  reconnectBackoffMax,
@@ -132,6 +141,7 @@ func (h *WebexMessageHandler) Connect(ctx context.Context) error {
 		UserID:               reg.UserID,
 		EncryptionServiceURL: reg.EncryptionServiceURL,
 		Logger:               h.logger,
+		HTTPClient:           h.httpClient,
 	})
 
 	// Step 3: Connect Mercury (KMS responses arrive here)

@@ -1,5 +1,7 @@
 package webexmessagehandler
 
+import "net/http"
+
 // Config holds configuration for WebexMessageHandler.
 type Config struct {
 	// Token is the Webex bot or user access token (required).
@@ -7,6 +9,10 @@ type Config struct {
 
 	// Logger is an optional logger implementation (silent by default).
 	Logger Logger
+
+	// HTTPClient is an optional HTTP client for proxy support or custom connection handling.
+	// If nil, http.DefaultClient is used.
+	HTTPClient *http.Client
 
 	// PingInterval is the Mercury ping interval in seconds (default: 15).
 	PingInterval float64

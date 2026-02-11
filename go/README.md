@@ -51,6 +51,47 @@ func main() {
 }
 ```
 
+## Proxy Support (Enterprise)
+
+For corporate environments behind a proxy, pass a configured HTTP client:
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/url"
+	"os"
+
+	webex "github.com/ecopelan/webex-message-handler-go"
+)
+
+func main() {
+	// Configure proxy
+	var httpClient *http.Client
+	if proxyURL := os.Getenv("HTTPS_PROXY"); proxyURL != "" {
+		proxy, _ := url.Parse(proxyURL)
+		httpClient = &http.Client{
+			Transport: &http.Transport{
+				Proxy: http.ProxyURL(proxy),
+			},
+		}
+	}
+
+	handler, err := webex.New(webex.Config{
+		Token:      os.Getenv("WEBEX_BOT_TOKEN"),
+		HTTPClient: httpClient, // Pass configured client
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	// ... set up callbacks and connect
+}
+```
+
 ## API
 
 ### `New(cfg Config) (*WebexMessageHandler, error)`
@@ -61,6 +102,7 @@ Creates a new handler. Config fields:
 |-------|------|---------|-------------|
 | `Token` | `string` | required | Webex bot access token |
 | `Logger` | `Logger` | noop | Logger implementation |
+| `HTTPClient` | `*http.Client` | `http.DefaultClient` | HTTP client for proxy support |
 | `PingInterval` | `float64` | `15` | Ping interval (seconds) |
 | `PongTimeout` | `float64` | `14` | Pong timeout (seconds) |
 | `ReconnectBackoffMax` | `float64` | `32` | Max reconnect backoff (seconds) |
