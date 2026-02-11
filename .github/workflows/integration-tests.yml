@@ -1,0 +1,125 @@
+name: Integration Tests
+
+on:
+  # Run on manual trigger
+  workflow_dispatch:
+  # Run on schedule (once a day to verify bot still works)
+  schedule:
+    - cron: '0 12 * * *'  # Daily at noon UTC
+  # Optionally run on PR when labeled
+  pull_request:
+    types: [labeled]
+
+jobs:
+  integration-node:
+    name: Node.js Integration Test
+    # Only run if manually triggered, scheduled, or PR has 'test:integration' label
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'test:integration'))
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: node
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Run integration test
+        env:
+          WEBEX_BOT_TOKEN: ${{ secrets.WEBEX_BOT_TOKEN }}
+        run: node test/integration.test.js
+        timeout-minutes: 2
+
+  integration-python:
+    name: Python Integration Test
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'test:integration'))
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -e .
+          pip install pytest pytest-asyncio aiohttp
+
+      - name: Run integration test
+        env:
+          WEBEX_BOT_TOKEN: ${{ secrets.WEBEX_BOT_TOKEN }}
+        run: pytest tests/test_integration.py -v
+        timeout-minutes: 2
+
+  integration-go:
+    name: Go Integration Test
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'test:integration'))
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Run integration test
+        env:
+          WEBEX_BOT_TOKEN: ${{ secrets.WEBEX_BOT_TOKEN }}
+        run: go test -v -run TestIntegration
+        timeout-minutes: 2
+
+  integration-rust:
+    name: Rust Integration Test
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'test:integration'))
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            rust/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('rust/Cargo.lock') }}
+
+      - name: Run integration test
+        env:
+          WEBEX_BOT_TOKEN: ${{ secrets.WEBEX_BOT_TOKEN }}
+        run: cargo test --test live_integration_test -- --ignored --nocapture
+        timeout-minutes: 2
