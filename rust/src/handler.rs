@@ -148,8 +148,6 @@ impl WebexMessageHandler {
             }
         };
 
-        let client = config.client.clone().unwrap_or_else(|| reqwest::Client::new());
-
         let mercury_socket = MercurySocket::new(
             ws_factory,
             Duration::from_secs_f64(config.ping_interval),
