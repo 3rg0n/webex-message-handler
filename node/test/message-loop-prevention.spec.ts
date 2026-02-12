@@ -132,7 +132,7 @@ describe('Message Loop Prevention (Real Handler Integration)', () => {
   });
 
   it('WITHOUT ignoreSelfMessages: bot processes its own messages (BUG)', async () => {
-    const handler = new WebexMessageHandler({ token: 'test-token' });
+    const handler = new WebexMessageHandler({ token: 'test-token', ignoreSelfMessages: false });
     await handler.connect();
 
     const mercury = handler['mercurySocket'] as unknown as MockMercurySocket;
@@ -253,7 +253,7 @@ describe('Message Loop Prevention (Real Handler Integration)', () => {
   });
 
   it('WITHOUT ignoreSelfMessages: /people/me is NOT called', async () => {
-    const handler = new WebexMessageHandler({ token: 'test-token' });
+    const handler = new WebexMessageHandler({ token: 'test-token', ignoreSelfMessages: false });
     await handler.connect();
 
     // /people/me should never be called

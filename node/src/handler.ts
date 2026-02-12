@@ -78,7 +78,7 @@ export class WebexMessageHandler
 
     this.token = config.token;
     this.logger = config.logger ?? noopLogger;
-    this.ignoreSelfMessages = config.ignoreSelfMessages ?? false;
+    this.ignoreSelfMessages = config.ignoreSelfMessages ?? true;
 
     // Create adapters based on mode
     if (mode === 'native') {

@@ -45,7 +45,7 @@ export interface WebexMessageHandlerConfig {
   fetch?: FetchFunction;
   /** Custom WebSocket factory (injected mode) */
   webSocketFactory?: WebSocketFactory;
-  /** Automatically filter out messages sent by this bot to prevent loops (default: false) */
+  /** Automatically filter out messages sent by this bot to prevent loops (default: true) */
   ignoreSelfMessages?: boolean;
   /** Ping interval in ms (default: 15000) */
   pingInterval?: number;

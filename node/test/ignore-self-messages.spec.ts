@@ -10,13 +10,23 @@ describe('ignoreSelfMessages feature', () => {
     }).not.toThrow();
   });
 
-  it('should default ignoreSelfMessages to false', () => {
+  it('should default ignoreSelfMessages to true', () => {
     const handler = new WebexMessageHandler({
       token: 'test-token',
     });
 
     expect(handler).toBeDefined();
-    // Internal field, but behavior defaults to not filtering
+    expect(handler['ignoreSelfMessages']).toBe(true);
+  });
+
+  it('should allow opting out with ignoreSelfMessages: false', () => {
+    const handler = new WebexMessageHandler({
+      token: 'test-token',
+      ignoreSelfMessages: false,
+    });
+
+    expect(handler).toBeDefined();
+    expect(handler['ignoreSelfMessages']).toBe(false);
   });
 
   it('should work with ignoreSelfMessages enabled', () => {

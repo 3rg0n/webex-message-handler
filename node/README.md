@@ -52,43 +52,30 @@ process.on('SIGINT', async () => {
 
 See `examples/basic-bot.ts` for a complete working example.
 
-## Preventing Message Loops
+## Self-Message Filtering
 
-**Recommended for all bots:** Enable `ignoreSelfMessages` to automatically filter out messages sent by your bot, preventing infinite response loops:
+By default, the library automatically filters out messages sent by your bot, preventing infinite response loops. On `connect()`, it fetches the bot's person ID via `/people/me`, caches it, and silently drops any messages where `personId` matches.
 
 ```typescript
 const handler = new WebexMessageHandler({
   token: process.env.WEBEX_BOT_TOKEN!,
-  ignoreSelfMessages: true, // ✅ Filters bot's own messages
   logger: consoleLogger,
+  // ignoreSelfMessages defaults to true — no config needed
 });
 
 handler.on('message:created', (msg) => {
   // This will NEVER fire for the bot's own messages
   console.log(`User said: ${msg.text}`);
-
-  // Safe to send responses - no loop!
-  // ... send reply logic
 });
 ```
 
-**How it works:**
-1. On `connect()`, the library fetches the bot's person ID via `/people/me`
-2. Caches the ID for the session lifetime
-3. Silently filters any messages where `personId` matches the bot's ID
-4. Your event handlers only receive messages from other users
+To receive the bot's own messages (e.g., for auditing), explicitly disable filtering:
 
-**Without this feature**, you must manually check message sender:
 ```typescript
-// ❌ Manual approach (error-prone)
-const botId = await getBotPersonId(); // Extra API call
-if (msg.personId === botId) return;   // Easy to forget
-```
-
-**With `ignoreSelfMessages: true`:**
-```typescript
-// ✅ Automatic (recommended)
-// Just handle messages - library filters for you
+const handler = new WebexMessageHandler({
+  token: process.env.WEBEX_BOT_TOKEN!,
+  ignoreSelfMessages: false,
+});
 ```
 
 ## Proxy Support (Enterprise)
@@ -175,6 +162,7 @@ new WebexMessageHandler(config: WebexMessageHandlerConfig)
 |--------|------|---------|-------------|
 | `token` | `string` | required | Webex bot access token |
 | `logger` | `Logger` | noop | Custom logger (`consoleLogger` provided) |
+| `ignoreSelfMessages` | `boolean` | `true` | Filter out messages sent by this bot |
 | `agent` | `http.Agent \| https.Agent` | undefined | HTTP/HTTPS agent for proxy support |
 | `pingInterval` | `number` | `15000` | Mercury ping interval (ms) |
 | `pongTimeout` | `number` | `14000` | Pong response timeout (ms) |
