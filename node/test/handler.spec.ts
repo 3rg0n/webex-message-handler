@@ -63,6 +63,8 @@ describe('WebexMessageHandler', () => {
     encryptionServiceUrl: 'https://encryption.example.com',
   };
 
+  const originalFetch = global.fetch;
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockDeviceManager.register.mockReset().mockResolvedValue(mockDeviceRegistration);
@@ -72,6 +74,23 @@ describe('WebexMessageHandler', () => {
     mockMessageDecryptor.decryptActivity.mockReset().mockImplementation((activity) =>
       Promise.resolve(activity)
     );
+
+    // Mock global.fetch for /people/me (required by ignoreSelfMessages default: true)
+    global.fetch = jest.fn(async (url: any, opts: any) => {
+      if (String(url).includes('/people/me')) {
+        return {
+          status: 200,
+          ok: true,
+          json: async () => ({ id: 'Y2lzY29zcGFyazovL3VzL1BFT1BMRS9ib3QtaWQ', emails: ['bot@test.com'], displayName: 'Bot', type: 'bot' }),
+          text: async () => '',
+        };
+      }
+      return originalFetch(url, opts);
+    }) as any;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
   });
 
   describe('connect', () => {

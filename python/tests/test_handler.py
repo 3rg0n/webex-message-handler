@@ -130,6 +130,7 @@ class TestConnect:
         mock_kms_cls.return_value = mock_kms
 
         handler = _make_handler()
+        handler._fetch_bot_person_id = AsyncMock()
         connected_events = []
         handler.on("connected", lambda: connected_events.append(True))
 
@@ -183,6 +184,7 @@ class TestDisconnect:
         mock_kms_cls.return_value = mock_kms
 
         handler = _make_handler()
+        handler._fetch_bot_person_id = AsyncMock()
         await handler.connect()
         await handler.disconnect()
 

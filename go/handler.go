@@ -222,7 +222,10 @@ func (h *WebexMessageHandler) Connect(ctx context.Context) error {
 
 	// Step 1.5: Fetch bot person info if self-message filtering is enabled
 	if h.ignoreSelfMessages {
-		h.fetchBotPersonID(ctx)
+		if err := h.fetchBotPersonID(ctx); err != nil {
+			h.connecting = false
+			return err
+		}
 	}
 
 	// Step 2: Create KMS client
@@ -328,7 +331,7 @@ func (h *WebexMessageHandler) Status() HandlerStatus {
 	}
 }
 
-func (h *WebexMessageHandler) fetchBotPersonID(ctx context.Context) {
+func (h *WebexMessageHandler) fetchBotPersonID(ctx context.Context) error {
 	h.logger.Debug("Fetching bot person info for self-message filtering")
 	resp, err := h.httpDo(ctx, FetchRequest{
 		URL:    "https://webexapis.com/v1/people/me",
@@ -339,14 +342,14 @@ func (h *WebexMessageHandler) fetchBotPersonID(ctx context.Context) {
 		},
 	})
 	if err != nil {
-		h.logger.Warn(fmt.Sprintf("Error fetching bot person info: %v", err))
-		return
+		return fmt.Errorf("failed to fetch bot identity for self-message filtering: %w. "+
+			"Set IgnoreSelfMessages to false to skip this check (not recommended — may cause message loops)", err)
 	}
 	defer resp.Body.Close()
 
 	if !resp.OK {
-		h.logger.Warn(fmt.Sprintf("Failed to fetch bot person info: HTTP %d", resp.Status))
-		return
+		return fmt.Errorf("failed to fetch bot identity for self-message filtering: HTTP %d. "+
+			"Set IgnoreSelfMessages to false to skip this check (not recommended — may cause message loops)", resp.Status)
 	}
 
 	var result struct {
@@ -354,17 +357,16 @@ func (h *WebexMessageHandler) fetchBotPersonID(ctx context.Context) {
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		h.logger.Warn(fmt.Sprintf("Error reading bot person info: %v", err))
-		return
+		return fmt.Errorf("failed to read bot identity response: %w", err)
 	}
 
 	if err := json.Unmarshal(body, &result); err != nil {
-		h.logger.Warn(fmt.Sprintf("Error parsing bot person info: %v", err))
-		return
+		return fmt.Errorf("failed to parse bot identity response: %w", err)
 	}
 
 	h.botPersonID = extractPersonUUID(result.ID)
 	h.logger.Info(fmt.Sprintf("Bot person ID cached for self-message filtering: %s", h.botPersonID))
+	return nil
 }
 
 func (h *WebexMessageHandler) setupMercuryListeners() {

@@ -51,6 +51,16 @@ func main() {
 }
 ```
 
+## Important: Implementing Loop Detection
+
+This library only handles the **receive side** of messaging — it decrypts incoming messages from the Mercury WebSocket. It has no visibility into messages your bot **sends** via the REST API. This means it cannot detect message loops on its own.
+
+If your bot replies to incoming messages, you **must** implement loop detection in your wrapper code. Without it, a bug or misconfiguration could cause your bot to endlessly reply to its own messages. Webex enforces a server-side rate limit (approximately 11 consecutive messages before throttling), but that still results in spam before the cutoff.
+
+**Recommended approach:** Track your bot's outgoing message rate. If it exceeds a threshold (e.g., 5 messages in 3 seconds to the same room), pause sending and log a warning.
+
+The `IgnoreSelfMessages` option (default: `true`) provides a first line of defense by filtering out messages sent by this bot's own identity. If the library cannot verify the bot's identity during `Connect()` (e.g., `/people/me` API failure), connection will fail rather than silently running without protection. Set `IgnoreSelfMessages` to `false` to opt out, but only if you have your own loop prevention in place.
+
 ## Proxy Support (Enterprise)
 
 For corporate environments behind a proxy, pass a configured HTTP client:
@@ -102,6 +112,7 @@ Creates a new handler. Config fields:
 |-------|------|---------|-------------|
 | `Token` | `string` | required | Webex bot access token |
 | `Logger` | `Logger` | noop | Logger implementation |
+| `IgnoreSelfMessages` | `*bool` | `true` | Filter out messages sent by this bot |
 | `HTTPClient` | `*http.Client` | `http.DefaultClient` | HTTP client for proxy support |
 | `PingInterval` | `float64` | `15` | Ping interval (seconds) |
 | `PongTimeout` | `float64` | `14` | Pong timeout (seconds) |

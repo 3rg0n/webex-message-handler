@@ -11,7 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Critical: Self-message filtering now works in production** — The Webex REST API (`/v1/people/me`) returns base64-encoded IDs (e.g., `ciscospark://us/PEOPLE/<uuid>`), while Mercury wire format uses raw UUIDs. The `===` comparison always failed, so `ignoreSelfMessages` never filtered anything, causing infinite message loops. Added `extractPersonUuid()` to normalize both formats to raw UUID before comparison.
 
 ### Changed (All Languages)
+- **`connect()` now fails if `/people/me` is unreachable when `ignoreSelfMessages` is enabled** — Previously, failure to fetch the bot identity silently degraded to no filtering. Now `connect()` throws/returns an error, preventing the bot from running without loop protection. Set `ignoreSelfMessages: false` to opt out (not recommended).
 - Updated message loop prevention tests to use realistic mismatched ID formats (base64 from REST API vs raw UUID from Mercury)
+- E2E test is now bidirectional: receiver bot replies to incoming messages, verifying self-message filtering works end-to-end
+
+### Documentation (All Languages)
+- Added "Important: Implementing Loop Detection" section to all READMEs — explains that this library only sees the receive side and cannot detect send loops; recommends wrapper-level rate limiting
+- Updated self-message filtering docs to describe fail-closed behavior
+- Added `ignoreSelfMessages` / `ignore_self_messages` to config tables in Python, Go, and Rust READMEs
 
 ## [0.4.0] - 2026-02-12
 

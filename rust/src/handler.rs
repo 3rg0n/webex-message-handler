@@ -253,7 +253,7 @@ impl WebexMessageHandler {
         }
     }
 
-    async fn fetch_bot_person_id(&self) {
+    async fn fetch_bot_person_id(&self) -> Result<(), WebexError> {
         info!("Fetching bot person info for self-message filtering");
         let token = self.token.lock().await.clone();
         let req = FetchRequest {
@@ -268,29 +268,34 @@ impl WebexMessageHandler {
             body: None,
         };
 
-        match (self.http_do)(req).await {
-            Ok(resp) => {
-                if !resp.ok {
-                    warn!("Failed to fetch bot person info: HTTP {}", resp.status);
-                    return;
-                }
-                match serde_json::from_slice::<serde_json::Value>(&resp.body) {
-                    Ok(data) => {
-                        if let Some(id) = data.get("id").and_then(|v| v.as_str()) {
-                            let uuid = extract_person_uuid(id);
-                            info!("Bot person ID cached for self-message filtering: {}", uuid);
-                            *self.bot_person_id.lock().await = Some(uuid);
-                        }
-                    }
-                    Err(e) => {
-                        warn!("Error parsing bot person info: {}", e);
-                    }
-                }
-            }
-            Err(e) => {
-                warn!("Error fetching bot person info: {}", e);
-            }
+        let resp = (self.http_do)(req).await.map_err(|e| {
+            WebexError::Internal(format!(
+                "Failed to fetch bot identity for self-message filtering: {e}. \
+                 Set ignore_self_messages to false to skip this check (not recommended — may cause message loops)."
+            ))
+        })?;
+
+        if !resp.ok {
+            return Err(WebexError::Internal(format!(
+                "Failed to fetch bot identity for self-message filtering: HTTP {}. \
+                 Set ignore_self_messages to false to skip this check (not recommended — may cause message loops).",
+                resp.status
+            )));
         }
+
+        let data: serde_json::Value = serde_json::from_slice(&resp.body).map_err(|e| {
+            WebexError::Internal(format!("Failed to parse bot identity response: {e}"))
+        })?;
+
+        let id = data
+            .get("id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| WebexError::Internal("Bot identity response missing 'id' field".into()))?;
+
+        let uuid = extract_person_uuid(id);
+        info!("Bot person ID cached for self-message filtering: {}", uuid);
+        *self.bot_person_id.lock().await = Some(uuid);
+        Ok(())
     }
 
     async fn connect_internal(&self) -> Result<(), WebexError> {
@@ -305,7 +310,7 @@ impl WebexMessageHandler {
 
         // Step 1.5: Fetch bot person info if self-message filtering is enabled
         if self.ignore_self_messages {
-            self.fetch_bot_person_id().await;
+            self.fetch_bot_person_id().await?;
         }
 
         // Step 2: Create KMS client

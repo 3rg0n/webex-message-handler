@@ -346,28 +346,31 @@ class WebexMessageHandler:
         )
 
     async def _fetch_bot_person_id(self) -> None:
-        """Fetch the bot's person ID for self-message filtering."""
-        try:
-            self._logger.debug("Fetching bot person info for self-message filtering")
-            response = await self._http_do(
-                FetchRequest(
-                    url="https://webexapis.com/v1/people/me",
-                    method="GET",
-                    headers={
-                        "Authorization": f"Bearer {self._token}",
-                        "Content-Type": "application/json",
-                    },
-                )
+        """Fetch the bot's person ID for self-message filtering.
+
+        Raises on failure — connect() will not proceed without a valid bot ID
+        when ignore_self_messages is enabled.
+        """
+        self._logger.debug("Fetching bot person info for self-message filtering")
+        response = await self._http_do(
+            FetchRequest(
+                url="https://webexapis.com/v1/people/me",
+                method="GET",
+                headers={
+                    "Authorization": f"Bearer {self._token}",
+                    "Content-Type": "application/json",
+                },
             )
-            if not response.ok:
-                self._logger.warning(f"Failed to fetch bot person info: HTTP {response.status}")
-                return
-            data = await response.json()
-            raw_id = data.get("id", "")
-            self._bot_person_id = extract_person_uuid(raw_id)
-            self._logger.info(f"Bot person ID cached for self-message filtering: {self._bot_person_id}")
-        except Exception as exc:
-            self._logger.warning(f"Error fetching bot person info: {exc}")
+        )
+        if not response.ok:
+            raise RuntimeError(
+                f"Failed to fetch bot identity for self-message filtering: HTTP {response.status}. "
+                "Set ignore_self_messages=False to skip this check (not recommended — may cause message loops)."
+            )
+        data = await response.json()
+        raw_id = data.get("id", "")
+        self._bot_person_id = extract_person_uuid(raw_id)
+        self._logger.info(f"Bot person ID cached for self-message filtering: {self._bot_person_id}")
 
     def _setup_mercury_listeners(self) -> None:
         # Forward KMS messages from Mercury to the KMS client

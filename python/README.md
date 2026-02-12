@@ -68,6 +68,16 @@ asyncio.run(main())
 
 See `examples/basic_bot.py` for a complete working example.
 
+## Important: Implementing Loop Detection
+
+This library only handles the **receive side** of messaging — it decrypts incoming messages from the Mercury WebSocket. It has no visibility into messages your bot **sends** via the REST API. This means it cannot detect message loops on its own.
+
+If your bot replies to incoming messages, you **must** implement loop detection in your wrapper code. Without it, a bug or misconfiguration could cause your bot to endlessly reply to its own messages. Webex enforces a server-side rate limit (approximately 11 consecutive messages before throttling), but that still results in spam before the cutoff.
+
+**Recommended approach:** Track your bot's outgoing message rate. If it exceeds a threshold (e.g., 5 messages in 3 seconds to the same room), pause sending and log a warning.
+
+The `ignore_self_messages` option (default: `True`) provides a first line of defense by filtering out messages sent by this bot's own identity. If the library cannot verify the bot's identity during `connect()` (e.g., `/people/me` API failure), connection will fail rather than silently running without protection. Set `ignore_self_messages=False` to opt out, but only if you have your own loop prevention in place.
+
 ## Proxy Support (Enterprise)
 
 For corporate environments behind a proxy, pass a configured connector:
@@ -131,6 +141,7 @@ WebexMessageHandler(config: WebexMessageHandlerConfig)
 |--------|------|---------|-------------|
 | `token` | `str` | required | Webex bot access token |
 | `logger` | `Logger` | noop | Custom logger (`console_logger` provided) |
+| `ignore_self_messages` | `bool` | `True` | Filter out messages sent by this bot |
 | `connector` | `aiohttp.BaseConnector` | `None` | HTTP/HTTPS connector for proxy support |
 | `ping_interval` | `float` | `15.0` | Mercury ping interval (seconds) |
 | `pong_timeout` | `float` | `14.0` | Pong response timeout (seconds) |

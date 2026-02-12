@@ -54,7 +54,9 @@ See `examples/basic-bot.ts` for a complete working example.
 
 ## Self-Message Filtering
 
-By default, the library automatically filters out messages sent by your bot, preventing infinite response loops. On `connect()`, it fetches the bot's person ID via `/people/me`, caches it, and silently drops any messages where `personId` matches.
+By default, the library automatically filters out messages sent by your bot, preventing infinite response loops. On `connect()`, it fetches the bot's person ID via `/people/me`, normalizes it to a raw UUID, and silently drops any messages where the sender matches.
+
+If `/people/me` fails (e.g., invalid token, network error), `connect()` will throw rather than silently running without protection. This fail-closed behavior ensures your bot never runs without self-message filtering active.
 
 ```typescript
 const handler = new WebexMessageHandler({
@@ -69,14 +71,24 @@ handler.on('message:created', (msg) => {
 });
 ```
 
-To receive the bot's own messages (e.g., for auditing), explicitly disable filtering:
+To receive the bot's own messages (e.g., for auditing), explicitly disable filtering. **Only do this if you have your own loop prevention in place:**
 
 ```typescript
 const handler = new WebexMessageHandler({
   token: process.env.WEBEX_BOT_TOKEN!,
-  ignoreSelfMessages: false,
+  ignoreSelfMessages: false, // WARNING: risk of message loops
 });
 ```
+
+## Important: Implementing Loop Detection
+
+This library only handles the **receive side** of messaging — it decrypts incoming messages from the Mercury WebSocket. It has no visibility into messages your bot **sends** via the REST API. This means it cannot detect message loops on its own.
+
+If your bot replies to incoming messages, you **must** implement loop detection in your wrapper code. Without it, a bug or misconfiguration could cause your bot to endlessly reply to its own messages. Webex enforces a server-side rate limit (approximately 11 consecutive messages before throttling), but that still results in spam before the cutoff.
+
+**Recommended approach:** Track your bot's outgoing message rate. If it exceeds a threshold (e.g., 5 messages in 3 seconds to the same room), pause sending and log a warning.
+
+The `ignoreSelfMessages` option (default: `true`) provides a first line of defense by filtering out messages sent by this bot's own identity. If the library cannot verify the bot's identity during `connect()` (e.g., `/people/me` API failure), connection will fail rather than silently running without protection. Set `ignoreSelfMessages: false` to opt out, but only if you have your own loop prevention in place.
 
 ## Proxy Support (Enterprise)
 

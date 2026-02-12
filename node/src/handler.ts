@@ -415,31 +415,27 @@ export class WebexMessageHandler
   }
 
   private async _fetchBotPersonId(): Promise<void> {
-    try {
-      this.logger.debug('Fetching bot person info for self-message filtering');
+    this.logger.debug('Fetching bot person info for self-message filtering');
 
-      const response = await this.httpDo({
-        url: 'https://webexapis.com/v1/people/me',
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${this.token}`,
-          'Content-Type': 'application/json',
-        },
-      });
+    const response = await this.httpDo({
+      url: 'https://webexapis.com/v1/people/me',
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${this.token}`,
+        'Content-Type': 'application/json',
+      },
+    });
 
-      if (!response.ok) {
-        this.logger.warn(`Failed to fetch bot person info: HTTP ${response.status}`);
-        return;
-      }
-
-      const personInfo = await response.json() as PersonInfo;
-      this.botPersonId = extractPersonUuid(personInfo.id);
-      this.logger.info(`Bot person ID cached for self-message filtering: ${this.botPersonId}`);
-    } catch (error) {
-      this.logger.warn(
-        `Error fetching bot person info: ${error instanceof Error ? error.message : String(error)}`
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch bot identity for self-message filtering: HTTP ${response.status}. ` +
+        'Set ignoreSelfMessages: false to skip this check (not recommended — may cause message loops).'
       );
     }
+
+    const personInfo = await response.json() as PersonInfo;
+    this.botPersonId = extractPersonUuid(personInfo.id);
+    this.logger.info(`Bot person ID cached for self-message filtering: ${this.botPersonId}`);
   }
 
   private async _onReconnect(): Promise<void> {

@@ -276,7 +276,7 @@ describe('Message Loop Prevention (Real Handler Integration)', () => {
     await handler.disconnect();
   });
 
-  it('/people/me failure degrades gracefully (no filtering, no crash)', async () => {
+  it('/people/me failure prevents connect() when ignoreSelfMessages is true', async () => {
     // Override fetch to fail for /people/me
     global.fetch = jest.fn(async () => ({
       status: 500,
@@ -290,29 +290,32 @@ describe('Message Loop Prevention (Real Handler Integration)', () => {
       ignoreSelfMessages: true,
     });
 
-    // Should not throw even though /people/me fails
-    await handler.connect();
+    // connect() should throw — fail-closed, no silent degradation
+    await expect(handler.connect()).rejects.toThrow(
+      /Failed to fetch bot identity for self-message filtering/
+    );
 
-    // Bot person ID not cached — filtering won't work
+    // Bot person ID not cached
     expect(handler['botPersonId']).toBeNull();
+  });
 
-    const mercury = handler['mercurySocket'] as unknown as MockMercurySocket;
-    const messagesReceived: string[] = [];
+  it('/people/me failure does NOT prevent connect() when ignoreSelfMessages is false', async () => {
+    // Override fetch to fail for /people/me
+    global.fetch = jest.fn(async () => ({
+      status: 500,
+      ok: false,
+      json: async () => ({ message: 'Internal Server Error' }),
+      text: async () => 'Internal Server Error',
+    })) as any;
 
-    handler.on('message:created', (msg) => {
-      messagesReceived.push(msg.personId);
+    const handler = new WebexMessageHandler({
+      token: 'test-token',
+      ignoreSelfMessages: false,
     });
 
-    // Bot message comes in — without cached ID, filtering can't work
-    const botMsg = createActivity(BOT_RAW_UUID, 'Bot message');
-    mockMessageDecryptor.decryptActivity.mockResolvedValueOnce(botMsg);
-    mercury.emit('activity', botMsg);
-
-    await new Promise(resolve => setImmediate(resolve));
+    // connect() should succeed — /people/me is not called at all
+    await handler.connect();
+    expect(handler['botPersonId']).toBeNull();
     await handler.disconnect();
-
-    // Message was NOT filtered (graceful degradation)
-    expect(messagesReceived.length).toBe(1);
-    expect(messagesReceived[0]).toBe(BOT_RAW_UUID);
   });
 });
