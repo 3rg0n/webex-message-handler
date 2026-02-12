@@ -792,6 +792,160 @@ describe('WebexMessageHandler', () => {
     });
   });
 
+  describe('membership handling', () => {
+    const membershipVerbs = ['add', 'leave', 'assignModerator', 'unassignModerator'];
+
+    for (const verb of membershipVerbs) {
+      it(`should emit membership:created for verb=${verb} with objectType=person`, async () => {
+        const handler = new WebexMessageHandler({ token: mockToken });
+        await handler.connect();
+
+        const membershipListener = jest.fn();
+        handler.on('membership:created', membershipListener);
+
+        const activity: MercuryActivity = {
+          id: 'membership-event-123',
+          verb,
+          actor: {
+            id: 'admin-456',
+            objectType: 'person',
+            emailAddress: 'admin@example.com',
+          },
+          object: {
+            id: 'member-789',
+            objectType: 'person',
+          },
+          target: {
+            id: 'room-101',
+            objectType: 'conversation',
+            tags: ['GROUP'],
+          },
+          published: '2024-01-01T00:00:00Z',
+        };
+
+        const mercury = handler['mercurySocket'] as any;
+        mercury.emit('activity', activity);
+
+        await new Promise(resolve => setImmediate(resolve));
+
+        expect(membershipListener).toHaveBeenCalledWith(
+          expect.objectContaining({
+            id: 'membership-event-123',
+            actorId: 'admin-456',
+            personId: 'member-789',
+            roomId: 'room-101',
+            action: verb,
+            created: '2024-01-01T00:00:00Z',
+            roomType: 'group',
+          })
+        );
+      });
+    }
+
+    it('should not emit membership:created for non-membership verb with objectType=person', async () => {
+      const handler = new WebexMessageHandler({ token: mockToken });
+      await handler.connect();
+
+      const membershipListener = jest.fn();
+      handler.on('membership:created', membershipListener);
+
+      const activity: MercuryActivity = {
+        id: 'activity-123',
+        verb: 'post',
+        actor: {
+          id: 'person-456',
+          objectType: 'person',
+        },
+        object: {
+          id: 'person-789',
+          objectType: 'person',
+        },
+        target: {
+          id: 'room-101',
+          objectType: 'conversation',
+        },
+        published: '2024-01-01T00:00:00Z',
+      };
+
+      const mercury = handler['mercurySocket'] as any;
+      mercury.emit('activity', activity);
+
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(membershipListener).not.toHaveBeenCalled();
+    });
+
+    it('should not emit membership:created for membership verb with non-person objectType', async () => {
+      const handler = new WebexMessageHandler({ token: mockToken });
+      await handler.connect();
+
+      const membershipListener = jest.fn();
+      handler.on('membership:created', membershipListener);
+
+      const activity: MercuryActivity = {
+        id: 'activity-123',
+        verb: 'add',
+        actor: {
+          id: 'person-456',
+          objectType: 'person',
+        },
+        object: {
+          id: 'comment-789',
+          objectType: 'comment',
+        },
+        target: {
+          id: 'room-101',
+          objectType: 'conversation',
+        },
+        published: '2024-01-01T00:00:00Z',
+      };
+
+      const mercury = handler['mercurySocket'] as any;
+      mercury.emit('activity', activity);
+
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(membershipListener).not.toHaveBeenCalled();
+    });
+
+    it('should include raw activity in membership event', async () => {
+      const handler = new WebexMessageHandler({ token: mockToken });
+      await handler.connect();
+
+      const membershipListener = jest.fn();
+      handler.on('membership:created', membershipListener);
+
+      const activity: MercuryActivity = {
+        id: 'membership-event-123',
+        verb: 'add',
+        actor: {
+          id: 'admin-456',
+          objectType: 'person',
+        },
+        object: {
+          id: 'member-789',
+          objectType: 'person',
+        },
+        target: {
+          id: 'room-101',
+          objectType: 'conversation',
+        },
+        published: '2024-01-01T00:00:00Z',
+      };
+
+      const mercury = handler['mercurySocket'] as any;
+      mercury.emit('activity', activity);
+
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(membershipListener).toHaveBeenCalledWith(
+        expect.objectContaining({
+          raw: activity,
+        })
+      );
+    });
+  });
+
   describe('edge cases', () => {
     it('should handle activity with missing optional fields', async () => {
       const handler = new WebexMessageHandler({ token: mockToken });

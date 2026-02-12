@@ -6,7 +6,6 @@ import pytest
 
 from webex_message_handler.handler import WebexMessageHandler
 from webex_message_handler.types import (
-    DecryptedMessage,
     DeviceRegistration,
     MercuryActivity,
     MercuryActor,
@@ -37,7 +36,10 @@ def _make_activity(**overrides) -> MercuryActivity:
         "id": "msg-123",
         "verb": "post",
         "actor": MercuryActor(id="person-456", object_type="person", email_address="user@example.com"),
-        "object": MercuryObject(id="comment-789", object_type="comment", display_name="Test Message", content="<p>Test Message</p>"),
+        "object": MercuryObject(
+            id="comment-789", object_type="comment",
+            display_name="Test Message", content="<p>Test Message</p>",
+        ),
         "target": MercuryTarget(id="room-101", object_type="conversation", tags=["GROUP"]),
         "published": "2024-01-01T00:00:00Z",
     }
@@ -280,6 +282,118 @@ class TestMessageHandling:
         await handler._handle_activity(activity)
 
         assert len(messages) == 0
+
+
+class TestMembershipHandling:
+    async def test_handle_membership_add(self):
+        handler = _make_handler()
+        activity = _make_activity(
+            verb="add",
+            object=MercuryObject(id="member-789", object_type="person"),
+        )
+
+        events = []
+        handler.on("membership:created", lambda a: events.append(a))
+
+        await handler._handle_activity(activity)
+
+        assert len(events) == 1
+        evt = events[0]
+        assert evt.id == "msg-123"
+        assert evt.actor_id == "person-456"
+        assert evt.person_id == "member-789"
+        assert evt.room_id == "room-101"
+        assert evt.action == "add"
+        assert evt.created == "2024-01-01T00:00:00Z"
+        assert evt.room_type == "group"
+
+    async def test_handle_membership_leave(self):
+        handler = _make_handler()
+        activity = _make_activity(
+            verb="leave",
+            object=MercuryObject(id="member-789", object_type="person"),
+        )
+
+        events = []
+        handler.on("membership:created", lambda a: events.append(a))
+
+        await handler._handle_activity(activity)
+
+        assert len(events) == 1
+        assert events[0].action == "leave"
+
+    async def test_handle_membership_assign_moderator(self):
+        handler = _make_handler()
+        activity = _make_activity(
+            verb="assignModerator",
+            object=MercuryObject(id="member-789", object_type="person"),
+        )
+
+        events = []
+        handler.on("membership:created", lambda a: events.append(a))
+
+        await handler._handle_activity(activity)
+
+        assert len(events) == 1
+        assert events[0].action == "assignModerator"
+
+    async def test_handle_membership_unassign_moderator(self):
+        handler = _make_handler()
+        activity = _make_activity(
+            verb="unassignModerator",
+            object=MercuryObject(id="member-789", object_type="person"),
+        )
+
+        events = []
+        handler.on("membership:created", lambda a: events.append(a))
+
+        await handler._handle_activity(activity)
+
+        assert len(events) == 1
+        assert events[0].action == "unassignModerator"
+
+    async def test_non_membership_verb_with_person_object(self):
+        handler = _make_handler()
+        activity = _make_activity(
+            verb="post",
+            object=MercuryObject(id="person-789", object_type="person"),
+        )
+
+        events = []
+        handler.on("membership:created", lambda a: events.append(a))
+
+        await handler._handle_activity(activity)
+
+        assert len(events) == 0
+
+    async def test_membership_verb_with_non_person_object(self):
+        handler = _make_handler()
+        activity = _make_activity(
+            verb="add",
+            object=MercuryObject(id="comment-789", object_type="comment"),
+        )
+
+        events = []
+        handler.on("membership:created", lambda a: events.append(a))
+
+        await handler._handle_activity(activity)
+
+        assert len(events) == 0
+
+    async def test_membership_includes_raw_activity(self):
+        handler = _make_handler()
+        activity = _make_activity(
+            verb="add",
+            object=MercuryObject(id="member-789", object_type="person"),
+        )
+
+        events = []
+        handler.on("membership:created", lambda a: events.append(a))
+
+        await handler._handle_activity(activity)
+
+        assert len(events) == 1
+        assert events[0].raw is activity
 
 
 class TestStatus:

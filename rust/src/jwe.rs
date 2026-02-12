@@ -66,7 +66,7 @@ pub fn encrypt_rsa_oaep_a256gcm(
         "{}.{}.{}.{}.{}",
         header_b64,
         URL_SAFE_NO_PAD.encode(&encrypted_key),
-        URL_SAFE_NO_PAD.encode(&iv),
+        URL_SAFE_NO_PAD.encode(iv),
         URL_SAFE_NO_PAD.encode(ciphertext),
         URL_SAFE_NO_PAD.encode(tag),
     ))
@@ -105,7 +105,7 @@ pub fn encrypt_dir_a256gcm(
         "{}.{}.{}.{}.{}",
         header_b64,
         "",  // empty encrypted key for dir
-        URL_SAFE_NO_PAD.encode(&iv),
+        URL_SAFE_NO_PAD.encode(iv),
         URL_SAFE_NO_PAD.encode(ciphertext),
         URL_SAFE_NO_PAD.encode(tag),
     ))
@@ -149,7 +149,7 @@ pub fn encrypt_a256kw_a256gcm(
         "{}.{}.{}.{}.{}",
         header_b64,
         URL_SAFE_NO_PAD.encode(&wrapped_key),
-        URL_SAFE_NO_PAD.encode(&iv),
+        URL_SAFE_NO_PAD.encode(iv),
         URL_SAFE_NO_PAD.encode(ciphertext),
         URL_SAFE_NO_PAD.encode(tag),
     ))
@@ -427,7 +427,7 @@ fn concat_kdf(
     use sha2::{Digest, Sha256};
 
     let key_data_len = (key_data_len_bits / 8) as usize;
-    let reps = (key_data_len + 31) / 32; // ceil(keyDataLen / hashLen)
+    let reps = key_data_len.div_ceil(32); // ceil(keyDataLen / hashLen)
 
     let mut derived = Vec::with_capacity(key_data_len);
 

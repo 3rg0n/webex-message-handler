@@ -55,7 +55,6 @@ class TestDecryptActivity:
             mock_jwe_obj2.payload = b"decrypted-content"
 
             call_count = [0]
-            original_init = mock_jwe.JWE
 
             def side_effect():
                 call_count[0] += 1

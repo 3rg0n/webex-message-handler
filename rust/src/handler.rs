@@ -7,7 +7,7 @@ use crate::mercury_socket::{MercuryEvent, MercurySocket};
 use crate::message_decryptor::MessageDecryptor;
 use crate::types::{
     Config, ConnectionStatus, DecryptedMessage, DeletedMessage, DeviceRegistration, FetchRequest,
-    FetchResponse, HandlerStatus, MercuryActivity, NetworkMode,
+    FetchResponse, HandlerStatus, MembershipActivity, MercuryActivity, NetworkMode,
 };
 use std::future::Future;
 use std::pin::Pin;
@@ -30,6 +30,8 @@ pub enum HandlerEvent {
     MessageCreated(DecryptedMessage),
     /// A message was deleted.
     MessageDeleted(DeletedMessage),
+    /// A membership event occurred (add, leave, assignModerator, unassignModerator).
+    MembershipCreated(MembershipActivity),
     /// Successfully connected (or reconnected).
     Connected,
     /// Disconnected with a reason string.
@@ -172,7 +174,7 @@ impl WebexMessageHandler {
         // Create adapters based on mode
         let (http_do, ws_factory) = match config.mode {
             NetworkMode::Native => {
-                let client = config.client.clone().unwrap_or_else(|| reqwest::Client::new());
+                let client = config.client.clone().unwrap_or_default();
                 let http_adapter = create_native_http_adapter(client.clone());
                 (http_adapter, None)
             }
@@ -499,6 +501,24 @@ impl WebexMessageHandler {
                 message_id: activity.object.id.clone(),
                 room_id: activity.target.id.clone(),
                 person_id: activity.actor.id.clone(),
+            }));
+            return;
+        }
+
+        // membership:created — membership verbs + objectType=person
+        let membership_verbs = ["add", "leave", "assignModerator", "unassignModerator"];
+        if membership_verbs.contains(&activity.verb.as_str())
+            && activity.object.object_type == "person"
+        {
+            let _ = event_tx.send(HandlerEvent::MembershipCreated(MembershipActivity {
+                id: activity.id.clone(),
+                actor_id: activity.actor.id.clone(),
+                person_id: activity.object.id.clone(),
+                room_id: activity.target.id.clone(),
+                action: activity.verb.clone(),
+                created: activity.published.clone(),
+                room_type: infer_room_type(activity),
+                raw: activity.clone(),
             }));
         }
     }

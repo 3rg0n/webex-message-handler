@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import math
 import uuid
@@ -160,9 +161,9 @@ class MercurySocket:
         # Wait for connection ready or error
         try:
             await asyncio.wait_for(ready_event.wait(), timeout=30.0)
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError as exc:
             await self._cleanup_ws()
-            raise MercuryConnectionError("Mercury connection timeout waiting for ready signal")
+            raise MercuryConnectionError("Mercury connection timeout waiting for ready signal") from exc
 
         if connect_error:
             await self._cleanup_ws()
@@ -337,10 +338,8 @@ class MercurySocket:
         self._stop_ping_loop()
         if self._read_task and not self._read_task.done():
             self._read_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._read_task
-            except asyncio.CancelledError:
-                pass
         await self._close_websocket()
         self._ws = None
 
@@ -351,10 +350,8 @@ class MercurySocket:
         self._stop_ping_loop()
         if self._read_task and not self._read_task.done():
             self._read_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._read_task
-            except asyncio.CancelledError:
-                pass
         await self._close_websocket()
         self._ws = None
         self._connection_ready = False

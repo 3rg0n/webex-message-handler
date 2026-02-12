@@ -8,13 +8,15 @@ from webex_message_handler.types import FetchRequest, FetchResponse
 async def create_test_http_do(connector: aiohttp.BaseConnector | None = None):
     """Create a test HTTP adapter for use in tests."""
     async def http_do(request: FetchRequest) -> FetchResponse:
-        async with aiohttp.ClientSession(connector=connector) as session:
-            async with session.request(
+        async with (
+            aiohttp.ClientSession(connector=connector) as session,
+            session.request(
                 request.method,
                 request.url,
                 headers=request.headers,
                 data=request.body,
-            ) as response:
+            ) as response,
+        ):
                 # Eagerly read the response body before the context closes
                 body_bytes = await response.read()
                 status = response.status

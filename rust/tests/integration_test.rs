@@ -4,7 +4,7 @@
 //! Full integration tests require a live Webex bot token.
 
 use webex_message_handler::{
-    Config, ConnectionStatus, DeletedMessage, HandlerStatus,
+    Config, ConnectionStatus, DeletedMessage, HandlerStatus, MembershipActivity,
     MercuryActivity, NetworkMode, WebexError, WebexMessageHandler,
 };
 use std::sync::Arc;
@@ -280,5 +280,73 @@ fn test_rejects_default_mode_with_fetch() {
     assert!(result.is_err());
     if let Err(e) = result {
         assert!(e.to_string().contains("Cannot provide fetch/web_socket_factory in native mode"));
+    }
+}
+
+#[test]
+fn test_membership_activity_construction() {
+    let activity = MembershipActivity {
+        id: "membership-1".to_string(),
+        actor_id: "admin-1".to_string(),
+        person_id: "member-1".to_string(),
+        room_id: "room-1".to_string(),
+        action: "add".to_string(),
+        created: "2024-01-01T00:00:00Z".to_string(),
+        room_type: Some("group".to_string()),
+        raw: MercuryActivity {
+            id: "membership-1".to_string(),
+            verb: "add".to_string(),
+            actor: webex_message_handler::MercuryActor {
+                id: "admin-1".to_string(),
+                object_type: "person".to_string(),
+                email_address: None,
+            },
+            object: webex_message_handler::MercuryObject {
+                id: "member-1".to_string(),
+                object_type: "person".to_string(),
+                display_name: None,
+                content: None,
+                encryption_key_url: None,
+            },
+            target: webex_message_handler::MercuryTarget {
+                id: "room-1".to_string(),
+                object_type: "conversation".to_string(),
+                encryption_key_url: None,
+                tags: vec!["GROUP".to_string()],
+            },
+            published: "2024-01-01T00:00:00Z".to_string(),
+            encryption_key_url: None,
+        },
+    };
+    assert_eq!(activity.id, "membership-1");
+    assert_eq!(activity.actor_id, "admin-1");
+    assert_eq!(activity.person_id, "member-1");
+    assert_eq!(activity.room_id, "room-1");
+    assert_eq!(activity.action, "add");
+    assert_eq!(activity.room_type, Some("group".to_string()));
+}
+
+#[test]
+fn test_membership_activity_all_verbs() {
+    for verb in &["add", "leave", "assignModerator", "unassignModerator"] {
+        let activity = MembershipActivity {
+            id: "test".to_string(),
+            actor_id: "actor".to_string(),
+            person_id: "person".to_string(),
+            room_id: "room".to_string(),
+            action: verb.to_string(),
+            created: "2024-01-01T00:00:00Z".to_string(),
+            room_type: None,
+            raw: MercuryActivity {
+                id: "test".to_string(),
+                verb: verb.to_string(),
+                actor: Default::default(),
+                object: Default::default(),
+                target: Default::default(),
+                published: String::new(),
+                encryption_key_url: None,
+            },
+        };
+        assert_eq!(activity.action, *verb);
     }
 }

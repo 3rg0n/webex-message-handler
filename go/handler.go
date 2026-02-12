@@ -31,12 +31,13 @@ type WebexMessageHandler struct {
 	botPersonID        string
 
 	// Event callbacks
-	onMessageCreated func(msg DecryptedMessage)
-	onMessageDeleted func(data DeletedMessage)
-	onConnected      func()
-	onDisconnected   func(reason string)
-	onReconnecting   func(attempt int)
-	onError          func(err error)
+	onMessageCreated    func(msg DecryptedMessage)
+	onMessageDeleted    func(data DeletedMessage)
+	onMembershipCreated func(activity MembershipActivity)
+	onConnected         func()
+	onDisconnected      func(reason string)
+	onReconnecting      func(attempt int)
+	onError             func(err error)
 }
 
 // Internal adapter types (aliases for public types)
@@ -177,6 +178,11 @@ func (h *WebexMessageHandler) OnMessageCreated(fn func(msg DecryptedMessage)) {
 // OnMessageDeleted sets the callback for deleted messages.
 func (h *WebexMessageHandler) OnMessageDeleted(fn func(data DeletedMessage)) {
 	h.onMessageDeleted = fn
+}
+
+// OnMembershipCreated sets the callback for membership events.
+func (h *WebexMessageHandler) OnMembershipCreated(fn func(activity MembershipActivity)) {
+	h.onMembershipCreated = fn
 }
 
 // OnConnected sets the callback for connection events.
@@ -461,6 +467,26 @@ func (h *WebexMessageHandler) handleActivity(ctx context.Context, activity Mercu
 				MessageID: activity.Object.ID,
 				RoomID:    activity.Target.ID,
 				PersonID:  activity.Actor.ID,
+			})
+		}
+		return nil
+	}
+
+	// membership:created — membership verbs + objectType=person
+	if activity.Object.ObjectType == "person" &&
+		(activity.Verb == "add" || activity.Verb == "leave" ||
+			activity.Verb == "assignModerator" || activity.Verb == "unassignModerator") {
+		if h.onMembershipCreated != nil {
+			activityCopy := activity
+			h.onMembershipCreated(MembershipActivity{
+				ID:       activity.ID,
+				ActorID:  activity.Actor.ID,
+				PersonID: activity.Object.ID,
+				RoomID:   activity.Target.ID,
+				Action:   activity.Verb,
+				Created:  activity.Published,
+				RoomType: inferRoomType(activity),
+				Raw:      &activityCopy,
 			})
 		}
 		return nil

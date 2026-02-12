@@ -86,6 +86,11 @@ func TestCallbackRegistration(t *testing.T) {
 		t.Error("expected onMessageDeleted callback to be set")
 	}
 
+	h.OnMembershipCreated(func(activity MembershipActivity) {})
+	if h.onMembershipCreated == nil {
+		t.Error("expected onMembershipCreated callback to be set")
+	}
+
 	h.OnConnected(func() {})
 	if h.onConnected == nil {
 		t.Error("expected onConnected callback to be set")
@@ -253,6 +258,117 @@ func TestHandleActivityMessageDeleted(t *testing.T) {
 	}
 	if received.PersonID != "person-1" {
 		t.Errorf("expected person-1, got %q", received.PersonID)
+	}
+}
+
+func TestHandleActivityMembershipCreated(t *testing.T) {
+	verbs := []string{"add", "leave", "assignModerator", "unassignModerator"}
+	for _, verb := range verbs {
+		t.Run(verb, func(t *testing.T) {
+			h, _ := New(Config{Token: "test-token"})
+
+			var received MembershipActivity
+			h.OnMembershipCreated(func(a MembershipActivity) {
+				received = a
+			})
+
+			activity := MercuryActivity{
+				ID:   "membership-1",
+				Verb: verb,
+				Actor: MercuryActor{
+					ID:         "admin-1",
+					ObjectType: "person",
+				},
+				Object: MercuryObject{
+					ID:         "member-1",
+					ObjectType: "person",
+				},
+				Target: MercuryTarget{
+					ID:         "room-1",
+					ObjectType: "conversation",
+					Tags:       []string{"GROUP"},
+				},
+				Published: "2024-01-01T00:00:00.000Z",
+			}
+
+			err := h.handleActivity(nil, activity)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if received.ID != "membership-1" {
+				t.Errorf("expected membership-1, got %q", received.ID)
+			}
+			if received.ActorID != "admin-1" {
+				t.Errorf("expected admin-1, got %q", received.ActorID)
+			}
+			if received.PersonID != "member-1" {
+				t.Errorf("expected member-1, got %q", received.PersonID)
+			}
+			if received.RoomID != "room-1" {
+				t.Errorf("expected room-1, got %q", received.RoomID)
+			}
+			if received.Action != verb {
+				t.Errorf("expected %q, got %q", verb, received.Action)
+			}
+			if received.Created != "2024-01-01T00:00:00.000Z" {
+				t.Errorf("expected 2024-01-01T00:00:00.000Z, got %q", received.Created)
+			}
+			if received.RoomType != "group" {
+				t.Errorf("expected group, got %q", received.RoomType)
+			}
+			if received.Raw == nil {
+				t.Error("expected non-nil Raw")
+			}
+		})
+	}
+}
+
+func TestHandleActivityMembershipNotTriggeredForNonPersonObject(t *testing.T) {
+	h, _ := New(Config{Token: "test-token"})
+
+	called := false
+	h.OnMembershipCreated(func(a MembershipActivity) {
+		called = true
+	})
+
+	activity := MercuryActivity{
+		Verb: "add",
+		Object: MercuryObject{
+			ObjectType: "comment",
+		},
+	}
+
+	err := h.handleActivity(nil, activity)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if called {
+		t.Error("callback should not have been called for non-person objectType")
+	}
+}
+
+func TestHandleActivityMembershipNotTriggeredForNonMembershipVerb(t *testing.T) {
+	h, _ := New(Config{Token: "test-token"})
+
+	called := false
+	h.OnMembershipCreated(func(a MembershipActivity) {
+		called = true
+	})
+
+	activity := MercuryActivity{
+		Verb: "post",
+		Object: MercuryObject{
+			ObjectType: "person",
+		},
+	}
+
+	err := h.handleActivity(nil, activity)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if called {
+		t.Error("callback should not have been called for non-membership verb")
 	}
 }
 

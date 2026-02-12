@@ -25,6 +25,7 @@ export type {
   MercuryEnvelope,
   DecryptedMessage,
   DeletedMessage,
+  MembershipActivity,
   HandlerStatus,
   ConnectionStatus,
   NetworkMode,

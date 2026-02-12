@@ -81,7 +81,9 @@ async def test_integration_send_and_receive():
                 "https://webexapis.com/v1/people/me",
                 headers={"Authorization": f"Bearer {sender_token}"}
             ) as sender_response:
-                assert receiver_response.status == 200, f"Failed to get receiver bot identity: {receiver_response.status}"
+                assert receiver_response.status == 200, (
+                    f"Failed to get receiver bot identity: {receiver_response.status}"
+                )
                 assert sender_response.status == 200, f"Failed to get sender bot identity: {sender_response.status}"
                 receiver = await receiver_response.json()
                 sender = await sender_response.json()

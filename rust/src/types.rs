@@ -7,18 +7,13 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 /// Networking mode for the handler.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum NetworkMode {
     /// Use built-in HTTP and WebSocket libraries (default).
+    #[default]
     Native,
     /// Use provided fetch and WebSocket factory functions.
     Injected,
-}
-
-impl Default for NetworkMode {
-    fn default() -> Self {
-        Self::Native
-    }
 }
 
 /// HTTP request for injected fetch function.
@@ -44,11 +39,14 @@ pub type FetchFn = Arc<
         + Sync,
 >;
 
+/// Boxed future result alias to reduce type complexity.
+type BoxFutureResult<'a, T> = Pin<Box<dyn Future<Output = Result<T, Box<dyn std::error::Error + Send + Sync>>> + Send + 'a>>;
+
 /// WebSocket interface for injected mode.
 pub trait InjectedWebSocket: Send + Sync {
-    fn send(&self, data: String) -> Pin<Box<dyn Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>> + Send + '_>>;
-    fn receive(&self) -> Pin<Box<dyn Future<Output = Result<String, Box<dyn std::error::Error + Send + Sync>>> + Send + '_>>;
-    fn close(&self) -> Pin<Box<dyn Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>> + Send + '_>>;
+    fn send(&self, data: String) -> BoxFutureResult<'_, ()>;
+    fn receive(&self) -> BoxFutureResult<'_, String>;
+    fn close(&self) -> BoxFutureResult<'_, ()>;
 }
 
 /// WebSocket factory for injected mode.
@@ -244,6 +242,34 @@ pub struct DeletedMessage {
     pub message_id: String,
     pub room_id: String,
     pub person_id: String,
+}
+
+/// A membership activity from Mercury.
+#[derive(Debug, Clone)]
+pub struct MembershipActivity {
+    /// Activity ID.
+    pub id: String,
+
+    /// ID of the person who performed the action.
+    pub actor_id: String,
+
+    /// ID of the member affected.
+    pub person_id: String,
+
+    /// Conversation/space ID.
+    pub room_id: String,
+
+    /// Membership action: "add", "leave", "assignModerator", or "unassignModerator".
+    pub action: String,
+
+    /// ISO 8601 timestamp.
+    pub created: String,
+
+    /// "direct", "group", or None.
+    pub room_type: Option<String>,
+
+    /// Full raw activity for advanced use.
+    pub raw: MercuryActivity,
 }
 
 /// Overall connection state.

@@ -46,6 +46,6 @@ pub use errors::WebexError;
 pub use handler::{HandlerEvent, WebexMessageHandler};
 pub use types::{
     Config, ConnectionStatus, DecryptedMessage, DeletedMessage, DeviceRegistration, FetchFn,
-    FetchRequest, FetchResponse, HandlerStatus, InjectedWebSocket, MercuryActivity, MercuryActor,
-    MercuryObject, MercuryTarget, NetworkMode, WebSocketFactory,
+    FetchRequest, FetchResponse, HandlerStatus, InjectedWebSocket, MembershipActivity,
+    MercuryActivity, MercuryActor, MercuryObject, MercuryTarget, NetworkMode, WebSocketFactory,
 };

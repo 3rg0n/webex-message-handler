@@ -151,6 +151,25 @@ export interface DeletedMessage {
   personId: string;
 }
 
+export interface MembershipActivity {
+  /** Activity ID. */
+  id: string;
+  /** ID of the person who performed the action. */
+  actorId: string;
+  /** ID of the member affected. */
+  personId: string;
+  /** Conversation/space ID. */
+  roomId: string;
+  /** Membership action: "add", "leave", "assignModerator", or "unassignModerator". */
+  action: string;
+  /** ISO 8601 timestamp. */
+  created: string;
+  /** "direct", "group", or undefined. */
+  roomType?: string;
+  /** Full raw activity for advanced use. */
+  raw: MercuryActivity;
+}
+
 // --- Status ---
 
 export type ConnectionStatus = 'connected' | 'connecting' | 'reconnecting' | 'disconnected';
@@ -173,6 +192,7 @@ export interface HandlerStatus {
 export interface WebexMessageHandlerEvents {
   'message:created': (msg: DecryptedMessage) => void;
   'message:deleted': (data: DeletedMessage) => void;
+  'membership:created': (activity: MembershipActivity) => void;
   connected: () => void;
   disconnected: (reason: string) => void;
   reconnecting: (attempt: number) => void;

@@ -24,6 +24,7 @@ from .types import (
     FetchResponse,
     HandlerStatus,
     InjectedWebSocket,
+    MembershipActivity,
     MercuryActivity,
     MercuryActor,
     MercuryEnvelope,
@@ -63,6 +64,7 @@ __all__ = [
     "MercuryEnvelope",
     "DecryptedMessage",
     "DeletedMessage",
+    "MembershipActivity",
     "HandlerStatus",
     "ConnectionStatus",
     # Networking types

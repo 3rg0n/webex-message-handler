@@ -49,6 +49,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         del.message_id, del.person_id, del.room_id
                     );
                 }
+                HandlerEvent::MembershipCreated(membership) => {
+                    println!(
+                        "Membership {}: {} affected {} in {}",
+                        membership.action, membership.actor_id, membership.person_id, membership.room_id
+                    );
+                }
                 HandlerEvent::Connected => {
                     println!("Connected to Webex");
                 }

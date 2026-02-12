@@ -6,6 +6,7 @@ import type {
   DeviceRegistration,
   MercuryActivity,
   DecryptedMessage,
+  MembershipActivity,
   HandlerStatus,
   ConnectionStatus,
   FetchRequest,
@@ -402,6 +403,26 @@ export class WebexMessageHandler
         roomId: activity.target.id,
         personId: activity.actor.id,
       });
+      return;
+    }
+
+    // membership:created — membership verbs + objectType=person
+    const membershipVerbs = ['add', 'leave', 'assignModerator', 'unassignModerator'];
+    if (
+      membershipVerbs.includes(activity.verb) &&
+      activity.object?.objectType === 'person'
+    ) {
+      const membershipActivity: MembershipActivity = {
+        id: activity.id,
+        actorId: activity.actor.id,
+        personId: activity.object.id,
+        roomId: activity.target.id,
+        action: activity.verb,
+        created: activity.published,
+        roomType: this._inferRoomType(activity),
+        raw: activity,
+      };
+      this.emit('membership:created', membershipActivity);
       return;
     }
   }

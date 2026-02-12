@@ -23,6 +23,7 @@ from .types import (
     FetchResponse,
     HandlerStatus,
     InjectedWebSocket,
+    MembershipActivity,
     MercuryActivity,
     WebexMessageHandlerConfig,
     WebSocketFactory,
@@ -131,6 +132,7 @@ class WebexMessageHandler:
         self._listeners: dict[str, list[EventCallback]] = {
             "message:created": [],
             "message:deleted": [],
+            "membership:created": [],
             "connected": [],
             "disconnected": [],
             "reconnecting": [],
@@ -452,7 +454,11 @@ class WebexMessageHandler:
                 raw=decrypted,
             )
             # Filter self-messages if enabled
-            if self._ignore_self_messages and self._bot_person_id and extract_person_uuid(message.person_id) == self._bot_person_id:
+            if (
+                self._ignore_self_messages
+                and self._bot_person_id
+                and extract_person_uuid(message.person_id) == self._bot_person_id
+            ):
                 self._logger.debug(f"Ignoring self-message from bot ({self._bot_person_id})")
                 return
 
@@ -467,6 +473,24 @@ class WebexMessageHandler:
                     message_id=activity.object.id,
                     room_id=activity.target.id,
                     person_id=activity.actor.id,
+                ),
+            )
+            return
+
+        # membership:created — membership verbs + objectType=person
+        membership_verbs = {"add", "leave", "assignModerator", "unassignModerator"}
+        if activity.verb in membership_verbs and activity.object.object_type == "person":
+            self._emit(
+                "membership:created",
+                MembershipActivity(
+                    id=activity.id,
+                    actor_id=activity.actor.id,
+                    person_id=activity.object.id,
+                    room_id=activity.target.id,
+                    action=activity.verb,
+                    created=activity.published,
+                    room_type=self._infer_room_type(activity),
+                    raw=activity,
                 ),
             )
 

@@ -53,7 +53,11 @@ class MessageDecryptor:
             decrypted.object = copy.copy(activity.object)
 
             # Decrypt displayName
-            if decrypted.object.display_name and isinstance(decrypted.object.display_name, str) and len(decrypted.object.display_name) > 0:
+            if (
+                decrypted.object.display_name
+                and isinstance(decrypted.object.display_name, str)
+                and len(decrypted.object.display_name) > 0
+            ):
                 try:
                     jwe_obj = jwe.JWE()
                     jwe_obj.deserialize(decrypted.object.display_name, key=key)
@@ -64,7 +68,11 @@ class MessageDecryptor:
                     )
 
             # Decrypt content
-            if decrypted.object.content and isinstance(decrypted.object.content, str) and len(decrypted.object.content) > 0:
+            if (
+                decrypted.object.content
+                and isinstance(decrypted.object.content, str)
+                and len(decrypted.object.content) > 0
+            ):
                 try:
                     jwe_obj = jwe.JWE()
                     jwe_obj.deserialize(decrypted.object.content, key=key)

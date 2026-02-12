@@ -141,13 +141,18 @@ class KmsClient:
             response_body = _unwrap_kms_response(wrapped_response, local_ecdh_key)
             response_data = json.loads(response_body)
 
-            remote_jwk_data = response_data.get("body", {}).get("key", {}).get("jwk") or response_data.get("key", {}).get("jwk")
-            if not remote_jwk_data:
-                # Try alternate response structures
-                if "body" in response_data and "key" in response_data["body"]:
-                    remote_jwk_data = response_data["body"]["key"]
-                    if isinstance(remote_jwk_data, dict) and "jwk" in remote_jwk_data:
-                        remote_jwk_data = remote_jwk_data["jwk"]
+            remote_jwk_data = (
+                response_data.get("body", {}).get("key", {}).get("jwk")
+                or response_data.get("key", {}).get("jwk")
+            )
+            if (
+                not remote_jwk_data
+                and "body" in response_data
+                and "key" in response_data["body"]
+            ):
+                remote_jwk_data = response_data["body"]["key"]
+                if isinstance(remote_jwk_data, dict) and "jwk" in remote_jwk_data:
+                    remote_jwk_data = remote_jwk_data["jwk"]
 
             if not remote_jwk_data:
                 raise KmsError(
@@ -155,7 +160,10 @@ class KmsClient:
                 )
 
             # Step 7: Derive shared key via ECDH
-            remote_ecdh_key = jwk.JWK(**remote_jwk_data) if isinstance(remote_jwk_data, dict) else jwk.JWK(**json.loads(remote_jwk_data))
+            if isinstance(remote_jwk_data, dict):
+                remote_ecdh_key = jwk.JWK(**remote_jwk_data)
+            else:
+                remote_ecdh_key = jwk.JWK(**json.loads(remote_jwk_data))
 
             # Get the remote key URI for use as kid on the derived key
             remote_key_uri = (
@@ -239,14 +247,17 @@ class KmsClient:
             response_data = json.loads(response_body)
 
             # Extract the content key
-            key_data = response_data.get("body", {}).get("key", {}).get("jwk") or response_data.get("key", {}).get("jwk")
-            if not key_data:
-                if "body" in response_data and "key" in response_data["body"]:
-                    key_obj = response_data["body"]["key"]
-                    if isinstance(key_obj, dict) and "jwk" in key_obj:
-                        key_data = key_obj["jwk"]
-                    else:
-                        key_data = key_obj
+            key_data = (
+                response_data.get("body", {}).get("key", {}).get("jwk")
+                or response_data.get("key", {}).get("jwk")
+            )
+            if (
+                not key_data
+                and "body" in response_data
+                and "key" in response_data["body"]
+            ):
+                key_obj = response_data["body"]["key"]
+                key_data = key_obj["jwk"] if isinstance(key_obj, dict) and "jwk" in key_obj else key_obj
 
             if not key_data:
                 raise KmsError("No key found in KMS response")
@@ -370,8 +381,6 @@ def _derive_ecdh_shared_key(local_key: jwk.JWK, remote_key: jwk.JWK, *, kid: str
     from cryptography.hazmat.primitives.hashes import SHA256
     from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-    # Get cryptography private key from local JWK
-    local_private = local_key.get_op_key("sign") if local_key.has_private else local_key.get_op_key("unwrapKey")
     # For EC keys, get the actual private key object
     local_crypto_key = local_key._get_private_key() if hasattr(local_key, '_get_private_key') else None
 

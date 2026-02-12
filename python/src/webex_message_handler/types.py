@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 if TYPE_CHECKING:
     import aiohttp
@@ -226,6 +227,35 @@ class DeletedMessage:
     message_id: str
     room_id: str
     person_id: str
+
+
+@dataclass
+class MembershipActivity:
+    """A membership activity from Mercury."""
+
+    id: str
+    """Activity ID."""
+
+    actor_id: str
+    """ID of the person who performed the action."""
+
+    person_id: str
+    """ID of the member affected."""
+
+    room_id: str
+    """Conversation/space ID."""
+
+    action: str
+    """Membership action: "add", "leave", "assignModerator", or "unassignModerator"."""
+
+    created: str
+    """ISO 8601 timestamp."""
+
+    room_type: str | None = None
+    """'direct' | 'group' | None."""
+
+    raw: MercuryActivity | None = None
+    """Full raw activity for advanced use."""
 
 
 # --- Status ---

@@ -182,6 +182,33 @@ type DeletedMessage struct {
 	PersonID  string
 }
 
+// MembershipActivity represents a membership event from Mercury.
+type MembershipActivity struct {
+	// ID is the activity ID.
+	ID string
+
+	// ActorID is the ID of the person who performed the action.
+	ActorID string
+
+	// PersonID is the ID of the member affected.
+	PersonID string
+
+	// RoomID is the conversation/space ID.
+	RoomID string
+
+	// Action is the membership action: "add", "leave", "assignModerator", or "unassignModerator".
+	Action string
+
+	// Created is the ISO 8601 timestamp.
+	Created string
+
+	// RoomType is "direct", "group", or empty.
+	RoomType string
+
+	// Raw is the full raw activity for advanced use.
+	Raw *MercuryActivity
+}
+
 // ConnectionStatus represents the overall connection state.
 type ConnectionStatus string
 
