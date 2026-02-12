@@ -151,6 +151,7 @@ class WebexMessageHandler:
             session = aiohttp.ClientSession(
                 connector=connector,
                 connector_owner=connector is None,
+                trust_env=True,
             )
             try:
                 response = await session.request(

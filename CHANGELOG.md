@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-02-12
+
+### Added (All Languages)
+- **New event: `membership:created`** — Listen for membership activities from Mercury WebSocket. Emitted when members are added/removed or moderator roles change. Single event with `action` field (`"add"`, `"leave"`, `"assignModerator"`, `"unassignModerator"`).
+- New `MembershipActivity` type with fields: id, actorId, personId, roomId, action, created, roomType, raw
+- Membership tests for all 4 verb variants plus negative cases in all languages
+
+### Fixed (All Languages)
+- **All lint/clippy/ruff warnings resolved** — Zero warnings across Python (ruff), Rust (clippy -D warnings), Go (vet), Node.js (eslint + tsc)
+- Python: fixed long lines, unused variables, import ordering, nested if statements, contextlib.suppress usage
+- Rust: fixed redundant closures, needless borrows, manual div_ceil, bool comparisons, useless conversions, large enum variants (boxed), derivable Default impls, type complexity (added type aliases)
+
+### Changed
+- **Go**: Bumped to go 1.24, replaced deprecated `elliptic.Marshal()` with `(*ecdsa.PublicKey).ECDH()`
+- **Rust**: Corrected README proxy documentation — `tokio-tungstenite` does not read proxy env vars; only `reqwest::Client` routes through proxy
+- **Python**: Added `trust_env=True` to native HTTP adapter for proxy env var support
+- **Rust**: `MercuryEvent::Activity` now uses `Box<MercuryActivity>` to reduce enum size
+- Added proxy validation and e2e test scripts for all languages
+
 ## [0.4.1] - 2026-02-12
 
 ### Fixed (All Languages)
@@ -112,6 +131,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Proxy support via agent/connector parameters
 - Available in 4 languages: Node.js, Python, Go, Rust
 
+[0.5.0]: https://github.com/3rg0n/webex-message-handler/compare/node/v0.4.1...node/v0.5.0
 [0.4.1]: https://github.com/3rg0n/webex-message-handler/compare/node/v0.4.0...node/v0.4.1
 [0.4.0]: https://github.com/3rg0n/webex-message-handler/compare/node/v0.3.3...node/v0.4.0
 [0.3.3]: https://github.com/3rg0n/webex-message-handler/compare/node/v0.3.2...node/v0.3.3

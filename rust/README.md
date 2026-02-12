@@ -93,7 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-Note: WebSocket proxy support in Rust uses environment variables (`HTTPS_PROXY`, `HTTP_PROXY`) which `tokio-tungstenite` respects automatically.
+Note: The `reqwest::Client` proxy configuration applies to HTTP traffic (device registration, KMS). The Mercury WebSocket (`tokio-tungstenite`) connects directly and does not read proxy environment variables. For full WebSocket proxy support, use injected mode with a custom `WebSocketFactory`.
 
 ## Configuration
 
