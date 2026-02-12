@@ -20,7 +20,7 @@ You need a Webex bot access token. You can:
 - Use an existing bot token
 - Create a dedicated test bot at https://developer.webex.com/my-apps
 
-**Recommended:** Create a separate test bot (e.g., "OKR Atlas - Tester") to avoid conflicts with production bots.
+**Recommended:** Create a separate test bot (e.g., "My App - Tester") to avoid conflicts with production bots.
 
 ## Setting Up GitHub Secrets (for CI/CD)
 
@@ -137,11 +137,11 @@ Successful test output looks like:
 1️⃣  Connecting to Mercury...
 ✅ Connected to Mercury
 2️⃣  Fetching bot identity...
-   Bot: OKR Atlas - Tester (okr-atlas-tester@webex.bot)
+   Bot: My Test Bot (my-test-bot@webex.bot)
 3️⃣  Sending test message: "Integration test 1707234567890"
    Message sent (ID: Y2lzY29zcGFyazovL3VzL01FU1NBR0UvYzBkNGU4...)
 4️⃣  Waiting for message to arrive via Mercury...
-📨 Received message: "Integration test 1707234567890" from okr-atlas-tester@webex.bot
+📨 Received message: "Integration test 1707234567890" from my-test-bot@webex.bot
 
 📊 Test Results:
 ✅ PASSED - Message received and decrypted successfully
@@ -187,7 +187,7 @@ Successful test output looks like:
 
 When ready, create a dedicated test bot:
 1. Create new bot at https://developer.webex.com/my-apps
-2. Name it something like "OKR Atlas - Tester"
+2. Name it something like "My App - Tester"
 3. Add token as `WEBEX_TEST_BOT_TOKEN` secret
 4. Update workflows to use test bot token
 5. Keep production bot token separate

@@ -35,7 +35,7 @@ describe('Message Loop Prevention Integration Test', () => {
 
     /**
      * Simulates bot behavior without self-message filtering.
-     * This demonstrates the OKRatlas issue where bot keeps responding to itself.
+     * This demonstrates a real-world issue where bot keeps responding to itself.
      */
     function simulateBotWithoutFiltering(initialMessage: DecryptedMessage) {
       let iteration = 0;
@@ -140,29 +140,29 @@ describe('Message Loop Prevention Integration Test', () => {
     expect(messagesReceived[2]).toBe(`${ALICE_ID}: Thanks bot`);
   });
 
-  it('should show why OKRatlas had infinite loop issue', () => {
+  it('should show why production bots experienced infinite loop issues', () => {
     /**
-     * OKRatlas Issue:
+     * Real-world Issue:
      * 1. getBotPerson() API call failed or was slow
      * 2. Bot couldn't determine its own person ID
      * 3. Bot processed its own messages → responded to itself
      * 4. Infinite loop
      *
-     * Their fix: Cache bot person ID (good)
-     * Our fix: Built-in ignoreSelfMessages with automatic caching (better)
+     * Manual fix: Cache bot person ID (requires extra code)
+     * Our fix: Built-in ignoreSelfMessages with automatic caching (zero-config)
      */
 
     const messagesWithoutBotId: string[] = [];
     const messagesWithBotId: string[] = [];
 
-    // Scenario 1: Bot doesn't know its own ID (OKRatlas bug scenario)
+    // Scenario 1: Bot doesn't know its own ID (production bug scenario)
     function processWithoutBotId(msg: DecryptedMessage) {
       messagesWithoutBotId.push(msg.text);
       // Bot can't filter because it doesn't know its ID!
       // So it processes EVERYTHING including its own messages
     }
 
-    // Scenario 2: Bot knows its ID (OKRatlas fix / our feature)
+    // Scenario 2: Bot knows its ID (with filtering feature)
     function processWithBotId(msg: DecryptedMessage, botPersonId: string) {
       if (msg.personId === botPersonId) return;
       messagesWithBotId.push(msg.text);
