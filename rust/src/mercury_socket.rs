@@ -1,17 +1,20 @@
 //! Mercury WebSocket connection with auth, heartbeat, and reconnection.
 
 use crate::errors::WebexError;
-use crate::types::MercuryActivity;
+use crate::types::{MercuryActivity, WebSocketFactory};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::Value;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, Mutex, Notify};
 use tokio::time;
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
 use tracing::{debug, error, info};
 use url::Url;
 use uuid::Uuid;
+
+/// Type alias for the write half of a WebSocket stream.
+type WsSink = futures_util::stream::SplitSink<WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>, Message>;
 
 /// Events emitted by the Mercury socket.
 #[derive(Debug, Clone)]
@@ -19,7 +22,7 @@ pub enum MercuryEvent {
     Connected,
     Disconnected(String),
     Reconnecting(u32),
-    Activity(MercuryActivity),
+    Activity(Box<MercuryActivity>),
     KmsResponse(Value),
     Error(String),
 }
@@ -27,7 +30,7 @@ pub enum MercuryEvent {
 /// Mercury WebSocket connection manager.
 pub struct MercurySocket {
     #[allow(dead_code)]
-    ws_factory: Option<Arc<dyn Fn(String) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Box<dyn crate::types::InjectedWebSocket>, Box<dyn std::error::Error + Send + Sync>>> + Send>> + Send + Sync>>,
+    ws_factory: Option<WebSocketFactory>,
     ping_interval: Duration,
     pong_timeout: Duration,
     reconnect_backoff_max: Duration,
@@ -46,7 +49,7 @@ pub struct MercurySocket {
 
 impl MercurySocket {
     pub fn new(
-        _ws_factory: Option<Arc<dyn Fn(String) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Box<dyn crate::types::InjectedWebSocket>, Box<dyn std::error::Error + Send + Sync>>> + Send>> + Send + Sync>>,
+        _ws_factory: Option<WebSocketFactory>,
         ping_interval: Duration,
         pong_timeout: Duration,
         reconnect_backoff_max: Duration,
@@ -106,7 +109,7 @@ impl MercurySocket {
             "data": { "token": format!("Bearer {}", token) }
         });
         write
-            .send(Message::Text(auth_msg.to_string().into()))
+            .send(Message::Text(auth_msg.to_string()))
             .await
             .map_err(|e| WebexError::mercury_connection(format!("Failed to send auth: {e}"), None))?;
 
@@ -176,7 +179,7 @@ impl MercurySocket {
                             "type": "ping"
                         });
                         let mut w = ping_write.lock().await;
-                        if w.send(Message::Text(ping_msg.to_string().into())).await.is_err() {
+                        if w.send(Message::Text(ping_msg.to_string())).await.is_err() {
                             break;
                         }
                         debug!("Sent ping: {pong_id}");
@@ -231,7 +234,7 @@ impl MercurySocket {
             }
 
             // Connection ended — handle reconnection if needed
-            if *should_reconnect.lock().await && *connected.lock().await == false {
+            if *should_reconnect.lock().await && !*connected.lock().await {
                 // Reconnect logic handled in handle_close_static
             }
         });
@@ -269,7 +272,7 @@ impl MercurySocket {
     async fn handle_message_static(
         message: &Value,
         event_tx: &mpsc::UnboundedSender<MercuryEvent>,
-        write: &Arc<Mutex<futures_util::stream::SplitSink<tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>, Message>>>,
+        write: &Arc<Mutex<WsSink>>,
     ) {
         let msg_type = message.get("type").and_then(|t| t.as_str()).unwrap_or("");
 
@@ -291,7 +294,7 @@ impl MercurySocket {
                         if let Some(msg_id) = message.get("id").and_then(|i| i.as_str()) {
                             let ack = serde_json::json!({"messageId": msg_id, "type": "ack"});
                             let mut w = write.lock().await;
-                            let _ = w.send(Message::Text(ack.to_string().into())).await;
+                            let _ = w.send(Message::Text(ack.to_string())).await;
                         }
 
                         if event_type.starts_with("encryption.") {
@@ -302,7 +305,7 @@ impl MercurySocket {
                                 match serde_json::from_value::<MercuryActivity>(activity_raw.clone()) {
                                     Ok(activity) => {
                                         debug!("Emitting activity: {}", activity.id);
-                                        let _ = event_tx.send(MercuryEvent::Activity(activity));
+                                        let _ = event_tx.send(MercuryEvent::Activity(Box::new(activity)));
                                     }
                                     Err(e) => {
                                         error!("Failed to parse activity: {e}");

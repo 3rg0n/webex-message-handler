@@ -5,7 +5,6 @@
 
 use std::env;
 use tokio::signal;
-use tracing_subscriber;
 use webex_message_handler::{Config, HandlerEvent, WebexMessageHandler};
 
 #[tokio::main]

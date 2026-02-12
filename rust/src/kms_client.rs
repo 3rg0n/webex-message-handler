@@ -190,8 +190,8 @@ impl KmsClient {
         let public_jwk_map = serde_json::json!({
             "kty": "EC",
             "crv": "P-256",
-            "x": URL_SAFE_NO_PAD.encode(&*x_bytes),
-            "y": URL_SAFE_NO_PAD.encode(&*y_bytes),
+            "x": URL_SAFE_NO_PAD.encode(&x_bytes[..]),
+            "y": URL_SAFE_NO_PAD.encode(&y_bytes[..]),
         });
 
         // Step 3: Build ECDH request body

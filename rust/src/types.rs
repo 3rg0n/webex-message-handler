@@ -7,18 +7,13 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 /// Networking mode for the handler.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum NetworkMode {
     /// Use built-in HTTP and WebSocket libraries (default).
+    #[default]
     Native,
     /// Use provided fetch and WebSocket factory functions.
     Injected,
-}
-
-impl Default for NetworkMode {
-    fn default() -> Self {
-        Self::Native
-    }
 }
 
 /// HTTP request for injected fetch function.
@@ -37,23 +32,26 @@ pub struct FetchResponse {
     pub body: Vec<u8>,
 }
 
+/// Boxed error type used across async trait boundaries.
+pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
 /// Custom fetch function for injected mode.
 pub type FetchFn = Arc<
-    dyn Fn(FetchRequest) -> Pin<Box<dyn Future<Output = Result<FetchResponse, Box<dyn std::error::Error + Send + Sync>>> + Send>>
+    dyn Fn(FetchRequest) -> Pin<Box<dyn Future<Output = Result<FetchResponse, BoxError>> + Send>>
         + Send
         + Sync,
 >;
 
 /// WebSocket interface for injected mode.
 pub trait InjectedWebSocket: Send + Sync {
-    fn send(&self, data: String) -> Pin<Box<dyn Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>> + Send + '_>>;
-    fn receive(&self) -> Pin<Box<dyn Future<Output = Result<String, Box<dyn std::error::Error + Send + Sync>>> + Send + '_>>;
-    fn close(&self) -> Pin<Box<dyn Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>> + Send + '_>>;
+    fn send(&self, data: String) -> Pin<Box<dyn Future<Output = Result<(), BoxError>> + Send + '_>>;
+    fn receive(&self) -> Pin<Box<dyn Future<Output = Result<String, BoxError>> + Send + '_>>;
+    fn close(&self) -> Pin<Box<dyn Future<Output = Result<(), BoxError>> + Send + '_>>;
 }
 
 /// WebSocket factory for injected mode.
 pub type WebSocketFactory = Arc<
-    dyn Fn(String) -> Pin<Box<dyn Future<Output = Result<Box<dyn InjectedWebSocket>, Box<dyn std::error::Error + Send + Sync>>> + Send>>
+    dyn Fn(String) -> Pin<Box<dyn Future<Output = Result<Box<dyn InjectedWebSocket>, BoxError>> + Send>>
         + Send
         + Sync,
 >;

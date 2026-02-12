@@ -27,7 +27,7 @@ type HttpDoFn = Arc<
 #[derive(Debug, Clone)]
 pub enum HandlerEvent {
     /// A new message was received and decrypted.
-    MessageCreated(DecryptedMessage),
+    MessageCreated(Box<DecryptedMessage>),
     /// A message was deleted.
     MessageDeleted(DeletedMessage),
     /// Successfully connected (or reconnected).
@@ -139,7 +139,7 @@ impl WebexMessageHandler {
         // Create adapters based on mode
         let (http_do, ws_factory) = match config.mode {
             NetworkMode::Native => {
-                let client = config.client.clone().unwrap_or_else(|| reqwest::Client::new());
+                let client = config.client.clone().unwrap_or_default();
                 let http_adapter = create_native_http_adapter(client.clone());
                 (http_adapter, None)
             }
@@ -444,7 +444,7 @@ impl WebexMessageHandler {
                         }
                     }
 
-                    let _ = event_tx.send(HandlerEvent::MessageCreated(msg));
+                    let _ = event_tx.send(HandlerEvent::MessageCreated(Box::new(msg)));
                 }
                 Err(e) => {
                     error!("Error decrypting activity: {e}");
