@@ -43,7 +43,8 @@ const handler = new WebexMessageHandler({
 
 const testMessage = `E2E test ${Date.now()}`;
 const replyPrefix = 'Echo: ';
-let messageCount = 0;
+let totalMessages = 0;
+let relevantMessages = 0; // Only messages matching our test pattern
 let receivedOriginal = false;
 let replySent = false;
 
@@ -59,14 +60,22 @@ const testPromise = new Promise((resolve, reject) => {
   }, TIMEOUT_MS);
 
   handler.on('message:created', async (msg) => {
-    messageCount++;
-    console.log(`   [${messageCount}] Received: "${msg.text}" from ${msg.personEmail}`);
+    totalMessages++;
+    console.log(`   [${totalMessages}] Received: "${msg.text}" from ${msg.personEmail}`);
 
-    // Loop detection: if we get more than LOOP_LIMIT messages, filtering is broken
-    if (messageCount >= LOOP_LIMIT) {
+    // Ignore messages from other concurrent test runs
+    if (msg.text !== testMessage && !msg.text.startsWith(replyPrefix)) {
+      console.log(`   -> Ignoring unrelated message (likely from concurrent test)`);
+      return;
+    }
+
+    relevantMessages++;
+
+    // Loop detection: if we get more than LOOP_LIMIT relevant messages, filtering is broken
+    if (relevantMessages >= LOOP_LIMIT) {
       clearTimeout(timer);
       reject(new Error(
-        `LOOP DETECTED: Received ${messageCount} messages — self-message filtering is broken. ` +
+        `LOOP DETECTED: Received ${relevantMessages} relevant messages — self-message filtering is broken. ` +
         `The receiver is processing its own replies.`
       ));
       return;
@@ -171,12 +180,13 @@ try {
   await testPromise;
 
   console.log('\n=== Test Results ===');
-  console.log(`   Messages processed by handler: ${messageCount}`);
+  console.log(`   Total messages: ${totalMessages} (${totalMessages - relevantMessages} unrelated)`);
+  console.log(`   Relevant messages: ${relevantMessages}`);
   console.log(`   Original received: ${receivedOriginal}`);
   console.log(`   Reply sent: ${replySent}`);
-  console.log(`   Self-message filtered: ${messageCount === 1 ? 'YES' : 'NO'}`);
+  console.log(`   Self-message filtered: ${relevantMessages === 1 ? 'YES' : 'NO'}`);
 
-  if (messageCount === 1 && receivedOriginal && replySent) {
+  if (relevantMessages === 1 && receivedOriginal && replySent) {
     console.log('\nPASSED - Bidirectional messaging works, self-messages filtered correctly');
   } else {
     console.log('\nFAILED - Unexpected state');
