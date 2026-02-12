@@ -10,6 +10,8 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
+import aiohttp
+
 from .errors import AuthError, MercuryConnectionError
 from .logger import Logger, noop_logger
 from .types import InjectedWebSocket, MercuryActivity, MercuryActor, MercuryObject, MercuryTarget, WebSocketFactory
@@ -104,7 +106,7 @@ class MercurySocket:
             "type": "authorization",
             "data": {"token": f"Bearer {self._token}"},
         })
-        await self._ws.send(auth_message)
+        await self._ws.send_str(auth_message)
 
         # Start read loop in background
         async def _read_loop() -> None:
@@ -193,7 +195,7 @@ class MercurySocket:
                         "type": "ping",
                     })
                     try:
-                        await self._ws.send(ping_message)
+                        await self._ws.send_str(ping_message)
                     except Exception:
                         break
                     self._logger.debug(f"Sent ping: {self._pending_pong_id}")
@@ -329,7 +331,7 @@ class MercurySocket:
 
     async def _close_websocket(self) -> None:
         if self._ws and not self._ws.closed:
-            await self._ws.close(code=aiohttp.WSCloseCode.OK)
+            await self._ws.close(code=1000)
 
     async def _cleanup_ws(self) -> None:
         self._stop_ping_loop()
