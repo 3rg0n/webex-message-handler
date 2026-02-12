@@ -26,3 +26,6 @@ rust/target/
 .idea/
 *.swp
 *.swo
+
+# Windows
+nul

@@ -12,8 +12,15 @@ import type { MercuryActivity, DeviceRegistration } from '../src/types';
  * This tests the actual handler code path, not a simulation.
  */
 
-const BOT_PERSON_ID = 'Y2lzY29zcGFyazovL3VzL1BFT1BMRS9ib3QtaWQ';
-const USER_PERSON_ID = 'Y2lzY29zcGFyazovL3VzL1BFT1BMRS91c2VyLWlk';
+// /people/me returns base64-encoded Webex IDs:
+//   "Y2lzY29zcGFyazovL3VzL1BFT1BMRS9ib3QtdXVpZC0xMjM0" decodes to
+//   "ciscospark://us/PEOPLE/bot-uuid-1234"
+// Mercury wire format uses raw UUIDs as actor.id:
+//   "bot-uuid-1234"
+// The handler must normalize both to the raw UUID for comparison.
+const BOT_WEBEX_ID = 'Y2lzY29zcGFyazovL3VzL1BFT1BMRS9ib3QtdXVpZC0xMjM0'; // base64("ciscospark://us/PEOPLE/bot-uuid-1234")
+const BOT_RAW_UUID = 'bot-uuid-1234'; // What Mercury uses as actor.id
+const USER_RAW_UUID = 'user-uuid-5678'; // A different user's raw UUID
 const SAFETY_LIMIT = 10;
 
 // --- Mock sub-components (same pattern as handler.spec.ts) ---
@@ -76,7 +83,7 @@ function createActivity(personId: string, text: string): MercuryActivity {
     actor: {
       id: personId,
       objectType: 'person',
-      emailAddress: personId === BOT_PERSON_ID ? 'bot@webex.bot' : 'user@example.com',
+      emailAddress: personId === BOT_RAW_UUID ? 'bot@webex.bot' : 'user@example.com',
     },
     object: {
       id: `comment-${Date.now()}`,
@@ -108,14 +115,14 @@ describe('Message Loop Prevention (Real Handler Integration)', () => {
     mockMessageDecryptor.decryptActivity.mockImplementation((activity) =>
       Promise.resolve(activity)
     );
-    // Mock fetch for /people/me
+    // Mock fetch for /people/me — returns base64-encoded Webex ID (like the real API)
     global.fetch = jest.fn(async (url: any) => {
       if (String(url).includes('/people/me')) {
         return {
           status: 200,
           ok: true,
           json: async () => ({
-            id: BOT_PERSON_ID,
+            id: BOT_WEBEX_ID, // base64-encoded, NOT the raw UUID Mercury uses
             emails: ['bot@webex.bot'],
             displayName: 'Test Bot',
             type: 'bot',
@@ -131,7 +138,7 @@ describe('Message Loop Prevention (Real Handler Integration)', () => {
     global.fetch = originalFetch;
   });
 
-  it('WITHOUT ignoreSelfMessages: bot processes its own messages (BUG)', async () => {
+  it('WITHOUT ignoreSelfMessages: bot processes its own messages (loop)', async () => {
     const handler = new WebexMessageHandler({ token: 'test-token', ignoreSelfMessages: false });
     await handler.connect();
 
@@ -142,16 +149,16 @@ describe('Message Loop Prevention (Real Handler Integration)', () => {
     handler.on('message:created', (msg) => {
       messagesReceived.push({ personId: msg.personId, text: msg.text });
 
-      // Bot "responds" — Mercury echoes it back as a new activity
+      // Bot "responds" — Mercury echoes it back with raw UUID (as real Mercury does)
       if (messagesReceived.length < SAFETY_LIMIT) {
-        const botEcho = createActivity(BOT_PERSON_ID, `Bot reply #${messagesReceived.length}`);
+        const botEcho = createActivity(BOT_RAW_UUID, `Bot reply #${messagesReceived.length}`);
         mockMessageDecryptor.decryptActivity.mockResolvedValueOnce(botEcho);
         mercury.emit('activity', botEcho);
       }
     });
 
-    // User sends initial message
-    const userMsg = createActivity(USER_PERSON_ID, 'Hello bot');
+    // User sends initial message (raw UUID from Mercury)
+    const userMsg = createActivity(USER_RAW_UUID, 'Hello bot');
     mockMessageDecryptor.decryptActivity.mockResolvedValueOnce(userMsg);
     mercury.emit('activity', userMsg);
 
@@ -159,30 +166,31 @@ describe('Message Loop Prevention (Real Handler Integration)', () => {
     await new Promise(resolve => setTimeout(resolve, 100));
     await handler.disconnect();
 
-    // BUG: Bot processed its own echo messages, creating a loop
+    // Without filtering: Bot processed its own echo messages, creating a loop
     expect(messagesReceived.length).toBe(SAFETY_LIMIT);
-    expect(messagesReceived[0].personId).toBe(USER_PERSON_ID);
+    expect(messagesReceived[0].personId).toBe(USER_RAW_UUID);
     expect(messagesReceived[0].text).toBe('Hello bot');
 
     // All subsequent messages are from the bot itself (the loop!)
     for (let i = 1; i < messagesReceived.length; i++) {
-      expect(messagesReceived[i].personId).toBe(BOT_PERSON_ID);
+      expect(messagesReceived[i].personId).toBe(BOT_RAW_UUID);
     }
   });
 
-  it('WITH ignoreSelfMessages: bot ignores its own messages (FIX)', async () => {
+  it('WITH ignoreSelfMessages: bot ignores its own messages despite ID format mismatch', async () => {
     const handler = new WebexMessageHandler({
       token: 'test-token',
       ignoreSelfMessages: true,
     });
     await handler.connect();
 
-    // Verify /people/me was called and bot ID was cached
+    // Verify /people/me was called and bot ID was normalized to raw UUID
     expect(global.fetch).toHaveBeenCalledWith(
       expect.stringContaining('/people/me'),
       expect.anything()
     );
-    expect(handler['botPersonId']).toBe(BOT_PERSON_ID);
+    // extractPersonUuid normalizes the base64 Webex ID to the raw UUID
+    expect(handler['botPersonId']).toBe(BOT_RAW_UUID);
 
     const mercury = handler['mercurySocket'] as unknown as MockMercurySocket;
     const messagesReceived: Array<{ personId: string; text: string }> = [];
@@ -191,14 +199,14 @@ describe('Message Loop Prevention (Real Handler Integration)', () => {
     handler.on('message:created', (msg) => {
       messagesReceived.push({ personId: msg.personId, text: msg.text });
 
-      // Bot "responds" — Mercury echoes it back
-      const botEcho = createActivity(BOT_PERSON_ID, `Bot reply #${messagesReceived.length}`);
+      // Bot "responds" — Mercury echoes it back with raw UUID (as real Mercury does)
+      const botEcho = createActivity(BOT_RAW_UUID, `Bot reply #${messagesReceived.length}`);
       mockMessageDecryptor.decryptActivity.mockResolvedValueOnce(botEcho);
       mercury.emit('activity', botEcho);
     });
 
-    // User sends initial message
-    const userMsg = createActivity(USER_PERSON_ID, 'Hello bot');
+    // User sends initial message (raw UUID from Mercury)
+    const userMsg = createActivity(USER_RAW_UUID, 'Hello bot');
     mockMessageDecryptor.decryptActivity.mockResolvedValueOnce(userMsg);
     mercury.emit('activity', userMsg);
 
@@ -207,8 +215,9 @@ describe('Message Loop Prevention (Real Handler Integration)', () => {
     await handler.disconnect();
 
     // FIX: Bot only processed the user's message, ignored its own echo
+    // even though /people/me returned base64-encoded ID and Mercury uses raw UUID
     expect(messagesReceived.length).toBe(1);
-    expect(messagesReceived[0].personId).toBe(USER_PERSON_ID);
+    expect(messagesReceived[0].personId).toBe(USER_RAW_UUID);
     expect(messagesReceived[0].text).toBe('Hello bot');
   });
 
@@ -225,15 +234,15 @@ describe('Message Loop Prevention (Real Handler Integration)', () => {
     handler.on('message:created', (msg) => {
       messagesReceived.push({ personId: msg.personId, text: msg.text });
 
-      // Bot responds to every message
-      const botEcho = createActivity(BOT_PERSON_ID, `Reply to: ${msg.text}`);
+      // Bot responds to every message — Mercury echoes back with raw UUID
+      const botEcho = createActivity(BOT_RAW_UUID, `Reply to: ${msg.text}`);
       mockMessageDecryptor.decryptActivity.mockResolvedValueOnce(botEcho);
       mercury.emit('activity', botEcho);
     });
 
-    // 3 different users send messages
+    // 3 different users send messages (raw UUIDs from Mercury)
     for (const text of ['Hello', 'How are you?', 'Goodbye']) {
-      const msg = createActivity(USER_PERSON_ID, text);
+      const msg = createActivity(USER_RAW_UUID, text);
       mockMessageDecryptor.decryptActivity.mockResolvedValueOnce(msg);
       mercury.emit('activity', msg);
       await new Promise(resolve => setImmediate(resolve));
@@ -248,7 +257,7 @@ describe('Message Loop Prevention (Real Handler Integration)', () => {
     expect(messagesReceived[1].text).toBe('How are you?');
     expect(messagesReceived[2].text).toBe('Goodbye');
     messagesReceived.forEach(msg => {
-      expect(msg.personId).toBe(USER_PERSON_ID);
+      expect(msg.personId).toBe(USER_RAW_UUID);
     });
   });
 
@@ -295,7 +304,7 @@ describe('Message Loop Prevention (Real Handler Integration)', () => {
     });
 
     // Bot message comes in — without cached ID, filtering can't work
-    const botMsg = createActivity(BOT_PERSON_ID, 'Bot message');
+    const botMsg = createActivity(BOT_RAW_UUID, 'Bot message');
     mockMessageDecryptor.decryptActivity.mockResolvedValueOnce(botMsg);
     mercury.emit('activity', botMsg);
 
@@ -304,6 +313,6 @@ describe('Message Loop Prevention (Real Handler Integration)', () => {
 
     // Message was NOT filtered (graceful degradation)
     expect(messagesReceived.length).toBe(1);
-    expect(messagesReceived[0]).toBe(BOT_PERSON_ID);
+    expect(messagesReceived[0]).toBe(BOT_RAW_UUID);
   });
 });

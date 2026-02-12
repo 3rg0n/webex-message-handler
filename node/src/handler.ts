@@ -24,6 +24,30 @@ import { noopLogger } from './logger.js';
 type HttpDoFn = (request: FetchRequest) => Promise<FetchResponse>;
 type WsFactoryFn = (url: string) => InjectedWebSocket;
 
+/**
+ * Extract the UUID from a Webex person ID.
+ *
+ * Webex REST API returns base64-encoded IDs like:
+ *   "Y2lzY29zcGFyazovL3VzL1BFT1BMRS9mYjUx..." → "ciscospark://us/PEOPLE/fb51254f-..."
+ *
+ * Mercury wire format uses raw UUIDs:
+ *   "fb51254f-3b37-4e50-aa04-45744c2effc7"
+ *
+ * This function normalizes both formats to the raw UUID for comparison.
+ */
+function extractPersonUuid(id: string): string {
+  try {
+    const decoded = Buffer.from(id, 'base64').toString('utf-8');
+    if (decoded.startsWith('ciscospark://')) {
+      const uuid = decoded.split('/').pop();
+      if (uuid) return uuid;
+    }
+  } catch {
+    // Not base64 — treat as raw UUID
+  }
+  return id;
+}
+
 /** Wraps native WebSocket (EventTarget API) into InjectedWebSocket (.on() API) */
 function wrapNativeWebSocket(url: string, dispatcher?: Dispatcher): InjectedWebSocket {
   const ws = new UndiciWebSocket(url, { dispatcher });
@@ -359,7 +383,7 @@ export class WebexMessageHandler
       };
 
       // Filter self-messages if enabled
-      if (this.ignoreSelfMessages && this.botPersonId && message.personId === this.botPersonId) {
+      if (this.ignoreSelfMessages && this.botPersonId && extractPersonUuid(message.personId) === this.botPersonId) {
         this.logger.debug(`Ignoring self-message from bot (${this.botPersonId})`);
         return;
       }
@@ -409,7 +433,7 @@ export class WebexMessageHandler
       }
 
       const personInfo = await response.json() as PersonInfo;
-      this.botPersonId = personInfo.id;
+      this.botPersonId = extractPersonUuid(personInfo.id);
       this.logger.info(`Bot person ID cached for self-message filtering: ${this.botPersonId}`);
     } catch (error) {
       this.logger.warn(

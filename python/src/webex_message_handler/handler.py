@@ -31,8 +31,33 @@ from .types import (
 if TYPE_CHECKING:
     pass
 
+import base64
+
 # Type alias for event callbacks
 EventCallback = Callable[..., Any]
+
+
+def extract_person_uuid(person_id: str) -> str:
+    """Extract the raw UUID from a Webex person ID.
+
+    The Webex REST API returns base64-encoded IDs like:
+        "Y2lzY29zcGFyazovL3VzL1BFT1BMRS9mYjUx..." → "ciscospark://us/PEOPLE/fb51254f-..."
+
+    Mercury wire format uses raw UUIDs:
+        "fb51254f-3b37-4e50-aa04-45744c2effc7"
+
+    This function normalizes both formats to the raw UUID for comparison.
+    """
+    try:
+        decoded = base64.b64decode(person_id).decode("utf-8")
+        if decoded.startswith("ciscospark://"):
+            uuid = decoded.rsplit("/", 1)[-1]
+            if uuid:
+                return uuid
+    except Exception:
+        # Not base64 — treat as raw UUID
+        pass
+    return person_id
 
 
 class WebexMessageHandler:
@@ -338,7 +363,8 @@ class WebexMessageHandler:
                 self._logger.warning(f"Failed to fetch bot person info: HTTP {response.status}")
                 return
             data = await response.json()
-            self._bot_person_id = data.get("id")
+            raw_id = data.get("id", "")
+            self._bot_person_id = extract_person_uuid(raw_id)
             self._logger.info(f"Bot person ID cached for self-message filtering: {self._bot_person_id}")
         except Exception as exc:
             self._logger.warning(f"Error fetching bot person info: {exc}")
@@ -409,7 +435,7 @@ class WebexMessageHandler:
                 raw=decrypted,
             )
             # Filter self-messages if enabled
-            if self._ignore_self_messages and self._bot_person_id and message.person_id == self._bot_person_id:
+            if self._ignore_self_messages and self._bot_person_id and extract_person_uuid(message.person_id) == self._bot_person_id:
                 self._logger.debug(f"Ignoring self-message from bot ({self._bot_person_id})")
                 return
 

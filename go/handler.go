@@ -2,6 +2,7 @@ package webexmessagehandler
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -362,7 +363,7 @@ func (h *WebexMessageHandler) fetchBotPersonID(ctx context.Context) {
 		return
 	}
 
-	h.botPersonID = result.ID
+	h.botPersonID = extractPersonUUID(result.ID)
 	h.logger.Info(fmt.Sprintf("Bot person ID cached for self-message filtering: %s", h.botPersonID))
 }
 
@@ -440,7 +441,7 @@ func (h *WebexMessageHandler) handleActivity(ctx context.Context, activity Mercu
 		}
 
 		// Filter self-messages if enabled
-		if h.ignoreSelfMessages && h.botPersonID != "" && msg.PersonID == h.botPersonID {
+		if h.ignoreSelfMessages && h.botPersonID != "" && extractPersonUUID(msg.PersonID) == h.botPersonID {
 			h.logger.Debug(fmt.Sprintf("Ignoring self-message from bot (%s)", h.botPersonID))
 			return nil
 		}
@@ -464,6 +465,36 @@ func (h *WebexMessageHandler) handleActivity(ctx context.Context, activity Mercu
 	}
 
 	return nil
+}
+
+// extractPersonUUID normalizes a Webex person ID to a raw UUID.
+//
+// The Webex REST API returns base64-encoded IDs like:
+//
+//	"Y2lzY29zcGFyazovL3VzL1BFT1BMRS9mYjUx..." → "ciscospark://us/PEOPLE/fb51254f-..."
+//
+// Mercury wire format uses raw UUIDs:
+//
+//	"fb51254f-3b37-4e50-aa04-45744c2effc7"
+//
+// This function normalizes both formats to the raw UUID for comparison.
+func extractPersonUUID(id string) string {
+	decoded, err := base64.StdEncoding.DecodeString(id)
+	if err != nil {
+		// Try URL-safe or no-padding variants
+		decoded, err = base64.RawStdEncoding.DecodeString(id)
+		if err != nil {
+			return id // Not base64 — treat as raw UUID
+		}
+	}
+	s := string(decoded)
+	if strings.HasPrefix(s, "ciscospark://") {
+		parts := strings.Split(s, "/")
+		if uuid := parts[len(parts)-1]; uuid != "" {
+			return uuid
+		}
+	}
+	return id
 }
 
 func inferRoomType(activity MercuryActivity) string {

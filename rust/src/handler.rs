@@ -40,6 +40,39 @@ pub enum HandlerEvent {
     Error(String),
 }
 
+/// Extract the raw UUID from a Webex person ID.
+///
+/// The Webex REST API returns base64-encoded IDs like:
+///   `"Y2lzY29zcGFyazovL3VzL1BFT1BMRS9mYjUx..."` → `"ciscospark://us/PEOPLE/fb51254f-..."`
+///
+/// Mercury wire format uses raw UUIDs:
+///   `"fb51254f-3b37-4e50-aa04-45744c2effc7"`
+///
+/// This function normalizes both formats to the raw UUID for comparison.
+fn extract_person_uuid(id: &str) -> String {
+    use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD};
+    use base64::Engine;
+
+    // Try standard base64, then no-padding variant
+    let decoded_bytes = STANDARD
+        .decode(id)
+        .or_else(|_| STANDARD_NO_PAD.decode(id));
+
+    if let Ok(bytes) = decoded_bytes {
+        if let Ok(decoded) = String::from_utf8(bytes) {
+            if decoded.starts_with("ciscospark://") {
+                if let Some(uuid) = decoded.rsplit('/').next() {
+                    if !uuid.is_empty() {
+                        return uuid.to_string();
+                    }
+                }
+            }
+        }
+    }
+
+    id.to_string()
+}
+
 /// Create a native HTTP adapter that wraps reqwest::Client.
 fn create_native_http_adapter(client: reqwest::Client) -> HttpDoFn {
     Arc::new(move |req: FetchRequest| {
@@ -244,8 +277,9 @@ impl WebexMessageHandler {
                 match serde_json::from_slice::<serde_json::Value>(&resp.body) {
                     Ok(data) => {
                         if let Some(id) = data.get("id").and_then(|v| v.as_str()) {
-                            info!("Bot person ID cached for self-message filtering: {}", id);
-                            *self.bot_person_id.lock().await = Some(id.to_string());
+                            let uuid = extract_person_uuid(id);
+                            info!("Bot person ID cached for self-message filtering: {}", uuid);
+                            *self.bot_person_id.lock().await = Some(uuid);
                         }
                     }
                     Err(e) => {
@@ -438,7 +472,7 @@ impl WebexMessageHandler {
 
                     // Filter self-messages if enabled
                     if let Some(bot_id) = bot_person_id {
-                        if msg.person_id == bot_id {
+                        if extract_person_uuid(&msg.person_id) == bot_id {
                             info!("Ignoring self-message from bot ({})", bot_id);
                             return;
                         }

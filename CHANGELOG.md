@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-02-12
+
+### Fixed (All Languages)
+- **Critical: Self-message filtering now works in production** — The Webex REST API (`/v1/people/me`) returns base64-encoded IDs (e.g., `ciscospark://us/PEOPLE/<uuid>`), while Mercury wire format uses raw UUIDs. The `===` comparison always failed, so `ignoreSelfMessages` never filtered anything, causing infinite message loops. Added `extractPersonUuid()` to normalize both formats to raw UUID before comparison.
+
+### Changed (All Languages)
+- Updated message loop prevention tests to use realistic mismatched ID formats (base64 from REST API vs raw UUID from Mercury)
+
 ## [0.4.0] - 2026-02-12
 
 ### Breaking Changes (Node.js)
@@ -97,6 +105,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Proxy support via agent/connector parameters
 - Available in 4 languages: Node.js, Python, Go, Rust
 
+[0.4.1]: https://github.com/3rg0n/webex-message-handler/compare/node/v0.4.0...node/v0.4.1
 [0.4.0]: https://github.com/3rg0n/webex-message-handler/compare/node/v0.3.3...node/v0.4.0
 [0.3.3]: https://github.com/3rg0n/webex-message-handler/compare/node/v0.3.2...node/v0.3.3
 [0.3.2]: https://github.com/3rg0n/webex-message-handler/compare/node/v0.3.1...node/v0.3.2
