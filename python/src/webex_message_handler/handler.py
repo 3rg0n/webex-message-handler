@@ -144,7 +144,12 @@ class WebexMessageHandler:
     ) -> FetchFunction:
         """Create HTTP adapter using native aiohttp."""
         async def http_do(request: FetchRequest) -> FetchResponse:
-            session = aiohttp.ClientSession(connector=connector, connector_owner=False)
+            # When a shared connector is provided, don't let the session close it.
+            # When no connector is provided, let the session own (and close) the auto-created one.
+            session = aiohttp.ClientSession(
+                connector=connector,
+                connector_owner=connector is None,
+            )
             try:
                 response = await session.request(
                     request.method,

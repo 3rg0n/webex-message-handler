@@ -50,7 +50,6 @@ class KmsClient:
         self._encryption_service_url = encryption_service_url
         self._http_do = http_do
         self._logger: Logger = logger or noop_logger  # type: ignore[assignment]
-        self._connector = connector
 
         self._kms_cluster: str = ""
         self._ephemeral_key: jwk.JWK | None = None
