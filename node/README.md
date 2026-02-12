@@ -52,6 +52,45 @@ process.on('SIGINT', async () => {
 
 See `examples/basic-bot.ts` for a complete working example.
 
+## Preventing Message Loops
+
+**Recommended for all bots:** Enable `ignoreSelfMessages` to automatically filter out messages sent by your bot, preventing infinite response loops:
+
+```typescript
+const handler = new WebexMessageHandler({
+  token: process.env.WEBEX_BOT_TOKEN!,
+  ignoreSelfMessages: true, // ✅ Filters bot's own messages
+  logger: consoleLogger,
+});
+
+handler.on('message:created', (msg) => {
+  // This will NEVER fire for the bot's own messages
+  console.log(`User said: ${msg.text}`);
+
+  // Safe to send responses - no loop!
+  // ... send reply logic
+});
+```
+
+**How it works:**
+1. On `connect()`, the library fetches the bot's person ID via `/people/me`
+2. Caches the ID for the session lifetime
+3. Silently filters any messages where `personId` matches the bot's ID
+4. Your event handlers only receive messages from other users
+
+**Without this feature**, you must manually check message sender:
+```typescript
+// ❌ Manual approach (error-prone)
+const botId = await getBotPersonId(); // Extra API call
+if (msg.personId === botId) return;   // Easy to forget
+```
+
+**With `ignoreSelfMessages: true`:**
+```typescript
+// ✅ Automatic (recommended)
+// Just handle messages - library filters for you
+```
+
 ## Proxy Support (Enterprise)
 
 For corporate environments behind a proxy, pass a configured agent:

@@ -13,6 +13,7 @@ import type {
   FetchRequest,
   FetchResponse,
   InjectedWebSocket,
+  PersonInfo,
 } from './types.js';
 import { DeviceManager } from './device-manager.js';
 import { MercurySocket } from './mercury-socket.js';
@@ -48,6 +49,8 @@ export class WebexMessageHandler
   private registration: DeviceRegistration | null = null;
   private _connected = false;
   private _connecting = false;
+  private ignoreSelfMessages: boolean;
+  private botPersonId: string | null = null;
 
   constructor(config: WebexMessageHandlerConfig) {
     super();
@@ -75,6 +78,7 @@ export class WebexMessageHandler
 
     this.token = config.token;
     this.logger = config.logger ?? noopLogger;
+    this.ignoreSelfMessages = config.ignoreSelfMessages ?? false;
 
     // Create adapters based on mode
     if (mode === 'native') {
@@ -143,6 +147,11 @@ export class WebexMessageHandler
       this.registration = await this.deviceManager.register(this.token);
       this.logger.info('Device registered');
 
+      // Step 1.5: Fetch bot's person info if self-message filtering is enabled
+      if (this.ignoreSelfMessages) {
+        await this._fetchBotPersonId();
+      }
+
       // Step 2: Create KMS client (needs device info but don't init yet — needs Mercury)
       this.kmsClient = new KmsClient({
         token: this.token,
@@ -200,6 +209,7 @@ export class WebexMessageHandler
     this.registration = null;
     this.kmsClient = null;
     this.messageDecryptor = null;
+    this.botPersonId = null;
   }
 
   /**
@@ -320,6 +330,13 @@ export class WebexMessageHandler
         roomType: this._inferRoomType(decrypted),
         raw: decrypted,
       };
+
+      // Filter self-messages if enabled
+      if (this.ignoreSelfMessages && this.botPersonId && message.personId === this.botPersonId) {
+        this.logger.debug(`Ignoring self-message from bot (${this.botPersonId})`);
+        return;
+      }
+
       this.emit('message:created', message);
       return;
     }
@@ -344,6 +361,34 @@ export class WebexMessageHandler
     if (tags.includes('ONE_ON_ONE')) return 'direct';
     if (tags.includes('TEAM') || tags.includes('LOCKED') || tags.includes('GROUP')) return 'group';
     return undefined;
+  }
+
+  private async _fetchBotPersonId(): Promise<void> {
+    try {
+      this.logger.debug('Fetching bot person info for self-message filtering');
+
+      const response = await this.httpDo({
+        url: 'https://webexapis.com/v1/people/me',
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${this.token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        this.logger.warn(`Failed to fetch bot person info: HTTP ${response.status}`);
+        return;
+      }
+
+      const personInfo = await response.json() as PersonInfo;
+      this.botPersonId = personInfo.id;
+      this.logger.info(`Bot person ID cached for self-message filtering: ${this.botPersonId}`);
+    } catch (error) {
+      this.logger.warn(
+        `Error fetching bot person info: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
   }
 
   private async _onReconnect(): Promise<void> {

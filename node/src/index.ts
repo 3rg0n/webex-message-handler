@@ -17,6 +17,7 @@ export type {
   WebexMessageHandlerConfig,
   WebexMessageHandlerEvents,
   DeviceRegistration,
+  PersonInfo,
   MercuryActor,
   MercuryObject,
   MercuryTarget,

@@ -45,6 +45,8 @@ export interface WebexMessageHandlerConfig {
   fetch?: FetchFunction;
   /** Custom WebSocket factory (injected mode) */
   webSocketFactory?: WebSocketFactory;
+  /** Automatically filter out messages sent by this bot to prevent loops (default: false) */
+  ignoreSelfMessages?: boolean;
   /** Ping interval in ms (default: 15000) */
   pingInterval?: number;
   /** Pong timeout in ms (default: 14000) */
@@ -53,6 +55,19 @@ export interface WebexMessageHandlerConfig {
   reconnectBackoffMax?: number;
   /** Max reconnect attempts before giving up (default: 10) */
   maxReconnectAttempts?: number;
+}
+
+// --- Person Info ---
+
+export interface PersonInfo {
+  /** Person's unique ID */
+  id: string;
+  /** Person's email address */
+  emails: string[];
+  /** Person's display name */
+  displayName: string;
+  /** Person type (person or bot) */
+  type: 'person' | 'bot';
 }
 
 // --- Device Registration ---
