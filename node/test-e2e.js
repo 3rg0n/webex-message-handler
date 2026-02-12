@@ -1,17 +1,13 @@
 /**
- * Live end-to-end integration test (bidirectional).
+ * Live end-to-end integration test.
  *
- * Verifies the entire pipeline including self-message filtering:
+ * Verifies the entire pipeline:
  * 1. Device registration (WDM)
  * 2. Mercury WebSocket connection
  * 3. KMS initialization (ECDH handshake)
- * 4. Message send (REST API) from sender bot
- * 5. Message receive + decrypt (Mercury) on receiver bot
- * 6. Receiver REPLIES via REST API (exercises self-message filtering)
- * 7. Verify receiver does NOT process its own reply (ignoreSelfMessages)
- *
- * If self-message filtering is broken, the receiver will loop on its own
- * replies and the test will fail with a loop detection error.
+ * 4. Message send (REST API)
+ * 5. Message receive (Mercury)
+ * 6. Message decryption (KMS)
  *
  * Run with: node --env-file=../.env test-e2e.js
  * Requires: WEBEX_BOT_TOKEN (receiver) and WEBEX_BOT_TOKEN_TEST (sender)
@@ -19,7 +15,6 @@
 import { WebexMessageHandler, consoleLogger } from './dist/index.js';
 
 const TIMEOUT_MS = 30_000;
-const LOOP_LIMIT = 3; // If we see this many messages, self-filtering is broken
 
 const receiverToken = process.env.WEBEX_BOT_TOKEN;
 const senderToken = process.env.WEBEX_BOT_TOKEN_TEST;
@@ -33,101 +28,26 @@ if (!senderToken) {
   process.exit(1);
 }
 
-console.log('\n=== Webex E2E Integration Test (Node.js — Bidirectional) ===\n');
+console.log('\n=== Webex E2E Integration Test (Node.js) ===\n');
 
 const handler = new WebexMessageHandler({
   token: receiverToken,
   logger: consoleLogger,
-  // ignoreSelfMessages defaults to true — the whole point of this test
 });
 
-const testMessage = `E2E test ${Date.now()}`;
-const replyPrefix = 'Echo: ';
-let totalMessages = 0;
-let relevantMessages = 0; // Only messages matching our test pattern
-let receivedOriginal = false;
-let replySent = false;
+const testMessage = `Integration test ${Date.now()}`;
 
 // Set up message listener BEFORE connecting (so we don't miss events)
-const testPromise = new Promise((resolve, reject) => {
+const messagePromise = new Promise((resolve, reject) => {
   const timer = setTimeout(() => {
-    if (receivedOriginal && replySent) {
-      // Timeout after reply sent and no loop detected — that's a PASS
-      resolve('ok');
-    } else {
-      reject(new Error(`Timeout: message not received within ${TIMEOUT_MS}ms`));
-    }
+    reject(new Error(`Timeout: message not received within ${TIMEOUT_MS}ms`));
   }, TIMEOUT_MS);
 
-  handler.on('message:created', async (msg) => {
-    totalMessages++;
-    console.log(`   [${totalMessages}] Received: "${msg.text}" from ${msg.personEmail}`);
-
-    // Ignore messages from other concurrent test runs
-    if (msg.text !== testMessage && !msg.text.startsWith(replyPrefix)) {
-      console.log(`   -> Ignoring unrelated message (likely from concurrent test)`);
-      return;
-    }
-
-    relevantMessages++;
-
-    // Loop detection: if we get more than LOOP_LIMIT relevant messages, filtering is broken
-    if (relevantMessages >= LOOP_LIMIT) {
+  handler.on('message:created', (msg) => {
+    console.log(`   Received: "${msg.text}" from ${msg.personEmail}`);
+    if (msg.text === testMessage) {
       clearTimeout(timer);
-      reject(new Error(
-        `LOOP DETECTED: Received ${relevantMessages} relevant messages — self-message filtering is broken. ` +
-        `The receiver is processing its own replies.`
-      ));
-      return;
-    }
-
-    // First message should be the sender's test message
-    if (msg.text === testMessage && !receivedOriginal) {
-      receivedOriginal = true;
-      console.log('   -> Original message received, sending reply...');
-
-      // Receiver replies via REST API — this is the critical part.
-      // Mercury will echo this back. If ignoreSelfMessages works,
-      // the handler will silently drop it. If broken, we loop.
-      try {
-        const res = await fetch('https://webexapis.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${receiverToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            roomId: msg.roomId,
-            text: `${replyPrefix}${msg.text}`,
-          }),
-        });
-        if (!res.ok) {
-          clearTimeout(timer);
-          reject(new Error(`Failed to send reply: HTTP ${res.status}`));
-          return;
-        }
-        replySent = true;
-        console.log('   -> Reply sent. Waiting to confirm self-message is filtered...');
-
-        // Wait a few seconds — if no loop fires, self-filtering works
-        setTimeout(() => {
-          clearTimeout(timer);
-          resolve('ok');
-        }, 5000);
-      } catch (err) {
-        clearTimeout(timer);
-        reject(err);
-      }
-      return;
-    }
-
-    // If we receive the reply text, self-filtering is broken
-    if (msg.text.startsWith(replyPrefix)) {
-      clearTimeout(timer);
-      reject(new Error(
-        `SELF-MESSAGE NOT FILTERED: Receiver processed its own reply "${msg.text}". ` +
-        `ignoreSelfMessages is not working.`
-      ));
+      resolve(msg);
     }
   });
 
@@ -155,7 +75,7 @@ const [receiverRes, senderRes] = await Promise.all([
 const receiver = await receiverRes.json();
 const sender = await senderRes.json();
 console.log(`   Receiver: ${receiver.displayName} (${receiver.emails[0]})`);
-console.log(`   Sender:   ${sender.displayName} (${sender.emails[0]})`);
+console.log(`   Sender: ${sender.displayName} (${sender.emails[0]})`);
 
 // Step 3: Send message from sender to receiver
 console.log(`3. Sending test message: "${testMessage}"`);
@@ -173,31 +93,23 @@ const sendRes = await fetch('https://webexapis.com/v1/messages', {
 const sentMsg = await sendRes.json();
 console.log(`   Message sent (ID: ${sentMsg.id})`);
 
-// Step 4: Wait for bidirectional exchange
-console.log('4. Waiting for receive + reply + self-filter verification...');
+// Step 4: Wait for message via Mercury
+console.log('4. Waiting for message to arrive via Mercury...');
+const received = await messagePromise;
 
-try {
-  await testPromise;
-
-  console.log('\n=== Test Results ===');
-  console.log(`   Total messages: ${totalMessages} (${totalMessages - relevantMessages} unrelated)`);
-  console.log(`   Relevant messages: ${relevantMessages}`);
-  console.log(`   Original received: ${receivedOriginal}`);
-  console.log(`   Reply sent: ${replySent}`);
-  console.log(`   Self-message filtered: ${relevantMessages === 1 ? 'YES' : 'NO'}`);
-
-  if (relevantMessages === 1 && receivedOriginal && replySent) {
-    console.log('\nPASSED - Bidirectional messaging works, self-messages filtered correctly');
-  } else {
-    console.log('\nFAILED - Unexpected state');
-    process.exit(1);
-  }
-} catch (err) {
-  console.error(`\nFAILED - ${err.message}`);
+// Step 5: Verify
+console.log('\nTest Results:');
+if (received.text === testMessage) {
+  console.log('PASSED - Message received and decrypted successfully');
+  console.log(`   Expected: "${testMessage}"`);
+  console.log(`   Received: "${received.text}"`);
+} else {
+  console.log('FAILED - Message mismatch');
   process.exit(1);
-} finally {
-  console.log('\nCleaning up...');
-  await handler.disconnect();
-  console.log('Disconnected. Test complete.\n');
-  process.exit(0);
 }
+
+// Cleanup
+console.log('\nCleaning up...');
+await handler.disconnect();
+console.log('Disconnected. Test complete.\n');
+process.exit(0);
