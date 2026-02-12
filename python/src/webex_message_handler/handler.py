@@ -92,6 +92,9 @@ class WebexMessageHandler:
             max_reconnect_attempts=config.max_reconnect_attempts,
         )
 
+        self._ignore_self_messages = config.ignore_self_messages
+        self._bot_person_id: str | None = None
+
         self._kms_client: KmsClient | None = None
         self._message_decryptor: MessageDecryptor | None = None
         self._registration: DeviceRegistration | None = None
@@ -219,6 +222,10 @@ class WebexMessageHandler:
             self._registration = await self._device_manager.register(self._token)
             self._logger.info("Device registered")
 
+            # Step 1.5: Fetch bot person info if self-message filtering is enabled
+            if self._ignore_self_messages:
+                await self._fetch_bot_person_id()
+
             # Step 2: Create KMS client
             self._kms_client = KmsClient(
                 token=self._token,
@@ -272,6 +279,7 @@ class WebexMessageHandler:
         self._registration = None
         self._kms_client = None
         self._message_decryptor = None
+        self._bot_person_id = None
 
     async def reconnect(self, new_token: str) -> None:
         """Update the access token and re-establish the connection.
@@ -311,6 +319,29 @@ class WebexMessageHandler:
             device_registered=self._registration is not None,
             reconnect_attempt=reconnect_attempt,
         )
+
+    async def _fetch_bot_person_id(self) -> None:
+        """Fetch the bot's person ID for self-message filtering."""
+        try:
+            self._logger.debug("Fetching bot person info for self-message filtering")
+            response = await self._http_do(
+                FetchRequest(
+                    url="https://webexapis.com/v1/people/me",
+                    method="GET",
+                    headers={
+                        "Authorization": f"Bearer {self._token}",
+                        "Content-Type": "application/json",
+                    },
+                )
+            )
+            if not response.ok:
+                self._logger.warning(f"Failed to fetch bot person info: HTTP {response.status}")
+                return
+            data = await response.json()
+            self._bot_person_id = data.get("id")
+            self._logger.info(f"Bot person ID cached for self-message filtering: {self._bot_person_id}")
+        except Exception as exc:
+            self._logger.warning(f"Error fetching bot person info: {exc}")
 
     def _setup_mercury_listeners(self) -> None:
         # Forward KMS messages from Mercury to the KMS client
@@ -377,6 +408,11 @@ class WebexMessageHandler:
                 room_type=self._infer_room_type(decrypted),
                 raw=decrypted,
             )
+            # Filter self-messages if enabled
+            if self._ignore_self_messages and self._bot_person_id and message.person_id == self._bot_person_id:
+                self._logger.debug(f"Ignoring self-message from bot ({self._bot_person_id})")
+                return
+
             self._emit("message:created", message)
             return
 

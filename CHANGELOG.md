@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3] - 2026-02-11
+
+### Changed (All Languages)
+- **`ignoreSelfMessages` now defaults to `true`** — Bots automatically filter their own messages out of the box, preventing infinite response loops without any configuration
+  - Set `ignoreSelfMessages: false` to opt out (e.g., for auditing)
+- Added `ignoreSelfMessages` feature to Python, Go, and Rust (previously Node.js only)
+
+### Added
+- Real integration tests for message loop prevention (Node.js)
+
 ## [0.3.2] - 2026-02-11
 
 ### Added (Node.js)
@@ -75,6 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Proxy support via agent/connector parameters
 - Available in 4 languages: Node.js, Python, Go, Rust
 
+[0.3.3]: https://github.com/3rg0n/webex-message-handler/compare/node/v0.3.2...node/v0.3.3
 [0.3.2]: https://github.com/3rg0n/webex-message-handler/compare/node/v0.3.1...node/v0.3.2
 [0.3.1]: https://github.com/3rg0n/webex-message-handler/compare/node/v0.3.0...node/v0.3.1
 [0.3.0]: https://github.com/3rg0n/webex-message-handler/compare/node/v0.2.0...node/v0.3.0

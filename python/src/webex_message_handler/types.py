@@ -103,6 +103,9 @@ class WebexMessageHandlerConfig:
     max_reconnect_attempts: int = 10
     """Max consecutive reconnection attempts (default: 10)."""
 
+    ignore_self_messages: bool = True
+    """Automatically filter out messages sent by this bot to prevent loops (default: True)."""
+
 
 # --- Device Registration ---
 

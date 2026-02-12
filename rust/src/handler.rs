@@ -95,6 +95,8 @@ pub struct WebexMessageHandler {
     registration: Arc<Mutex<Option<DeviceRegistration>>>,
     connected: Arc<Mutex<bool>>,
     connecting: Arc<Mutex<bool>>,
+    ignore_self_messages: bool,
+    bot_person_id: Arc<Mutex<Option<String>>>,
 
     #[allow(dead_code)]
     config: Config,
@@ -158,6 +160,8 @@ impl WebexMessageHandler {
 
         let (event_tx, event_rx) = mpsc::unbounded_channel();
 
+        let ignore_self_messages = config.ignore_self_messages;
+
         Ok(Self {
             token: Arc::new(Mutex::new(config.token.clone())),
             http_do: http_do.clone(),
@@ -168,6 +172,8 @@ impl WebexMessageHandler {
             registration: Arc::new(Mutex::new(None)),
             connected: Arc::new(Mutex::new(false)),
             connecting: Arc::new(Mutex::new(false)),
+            ignore_self_messages,
+            bot_person_id: Arc::new(Mutex::new(None)),
             config,
             event_tx,
             event_rx: Arc::new(Mutex::new(Some(event_rx))),
@@ -214,6 +220,45 @@ impl WebexMessageHandler {
         }
     }
 
+    async fn fetch_bot_person_id(&self) {
+        info!("Fetching bot person info for self-message filtering");
+        let token = self.token.lock().await.clone();
+        let req = FetchRequest {
+            url: "https://webexapis.com/v1/people/me".into(),
+            method: "GET".into(),
+            headers: {
+                let mut h = std::collections::HashMap::new();
+                h.insert("Authorization".into(), format!("Bearer {}", token));
+                h.insert("Content-Type".into(), "application/json".into());
+                h
+            },
+            body: None,
+        };
+
+        match (self.http_do)(req).await {
+            Ok(resp) => {
+                if !resp.ok {
+                    warn!("Failed to fetch bot person info: HTTP {}", resp.status);
+                    return;
+                }
+                match serde_json::from_slice::<serde_json::Value>(&resp.body) {
+                    Ok(data) => {
+                        if let Some(id) = data.get("id").and_then(|v| v.as_str()) {
+                            info!("Bot person ID cached for self-message filtering: {}", id);
+                            *self.bot_person_id.lock().await = Some(id.to_string());
+                        }
+                    }
+                    Err(e) => {
+                        warn!("Error parsing bot person info: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("Error fetching bot person info: {}", e);
+            }
+        }
+    }
+
     async fn connect_internal(&self) -> Result<(), WebexError> {
         let token = self.token.lock().await.clone();
 
@@ -223,6 +268,11 @@ impl WebexMessageHandler {
             dm.register(&token).await?
         };
         info!("Device registered");
+
+        // Step 1.5: Fetch bot person info if self-message filtering is enabled
+        if self.ignore_self_messages {
+            self.fetch_bot_person_id().await;
+        }
 
         // Step 2: Create KMS client
         let kms = KmsClient::new(
@@ -280,6 +330,7 @@ impl WebexMessageHandler {
         let registration = self.registration.clone();
         let device_manager = self.device_manager.clone();
         let token = self.token.clone();
+        let bot_person_id = self.bot_person_id.clone();
 
         tokio::spawn(async move {
             while let Some(event) = mercury_rx.recv().await {
@@ -297,10 +348,12 @@ impl WebexMessageHandler {
                         // processing KMS responses (needed for key retrieval during decryption).
                         let kms_client_clone = kms_client.clone();
                         let event_tx_clone = event_tx.clone();
+                        let bot_person_id = bot_person_id.clone();
                         tokio::spawn(async move {
                             let mut kms_guard = kms_client_clone.lock().await;
                             if let Some(ref mut kms) = *kms_guard {
-                                Self::handle_activity_static(kms, &activity, &event_tx_clone).await;
+                                let bot_id = bot_person_id.lock().await.clone();
+                                Self::handle_activity_static(kms, &activity, &event_tx_clone, bot_id.as_deref()).await;
                             } else {
                                 warn!("Received activity but KMS client not initialized");
                             }
@@ -360,6 +413,7 @@ impl WebexMessageHandler {
         kms: &mut KmsClient,
         activity: &MercuryActivity,
         event_tx: &mpsc::UnboundedSender<HandlerEvent>,
+        bot_person_id: Option<&str>,
     ) {
         // message:created — verb=post + objectType=comment
         if activity.verb == "post" && activity.object.object_type == "comment" {
@@ -381,6 +435,15 @@ impl WebexMessageHandler {
                         room_type: infer_room_type(&decrypted),
                         raw: decrypted,
                     };
+
+                    // Filter self-messages if enabled
+                    if let Some(bot_id) = bot_person_id {
+                        if msg.person_id == bot_id {
+                            info!("Ignoring self-message from bot ({})", bot_id);
+                            return;
+                        }
+                    }
+
                     let _ = event_tx.send(HandlerEvent::MessageCreated(msg));
                 }
                 Err(e) => {
@@ -424,6 +487,7 @@ impl WebexMessageHandler {
         *self.registration.lock().await = None;
         *self.kms_client.lock().await = None;
         *self.kms_response_handler.lock().await = None;
+        *self.bot_person_id.lock().await = None;
     }
 
     /// Update the access token and re-establish the connection.

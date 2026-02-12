@@ -77,6 +77,10 @@ type Config struct {
 
 	// MaxReconnectAttempts is the max consecutive reconnection attempts (default: 10).
 	MaxReconnectAttempts int
+
+	// IgnoreSelfMessages filters out messages sent by this bot to prevent loops (default: true).
+	// Set to false explicitly via IgnoreSelfMessagesPtr if you need to receive bot's own messages.
+	IgnoreSelfMessages *bool
 }
 
 // DeviceRegistration holds the result of WDM device registration.

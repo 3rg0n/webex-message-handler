@@ -2,6 +2,7 @@ package webexmessagehandler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,8 +24,10 @@ type WebexMessageHandler struct {
 	messageDecryptor *MessageDecryptor
 	registration     *DeviceRegistration
 
-	connected  bool
-	connecting bool
+	connected          bool
+	connecting         bool
+	ignoreSelfMessages bool
+	botPersonID        string
 
 	// Event callbacks
 	onMessageCreated func(msg DecryptedMessage)
@@ -92,10 +95,16 @@ func New(cfg Config) (*WebexMessageHandler, error) {
 		httpClient = http.DefaultClient
 	}
 
+	ignoreSelf := true
+	if cfg.IgnoreSelfMessages != nil {
+		ignoreSelf = *cfg.IgnoreSelfMessages
+	}
+
 	h := &WebexMessageHandler{
-		token:      cfg.Token,
-		logger:     logger,
-		httpClient: httpClient,
+		token:              cfg.Token,
+		logger:             logger,
+		httpClient:         httpClient,
+		ignoreSelfMessages: ignoreSelf,
 	}
 
 	// Create adapters based on mode
@@ -210,6 +219,11 @@ func (h *WebexMessageHandler) Connect(ctx context.Context) error {
 	h.registration = reg
 	h.logger.Info("Device registered")
 
+	// Step 1.5: Fetch bot person info if self-message filtering is enabled
+	if h.ignoreSelfMessages {
+		h.fetchBotPersonID(ctx)
+	}
+
 	// Step 2: Create KMS client
 	h.kmsClient = NewKmsClient(KmsClientConfig{
 		Token:                h.token,
@@ -265,6 +279,7 @@ func (h *WebexMessageHandler) Disconnect(ctx context.Context) error {
 	h.registration = nil
 	h.kmsClient = nil
 	h.messageDecryptor = nil
+	h.botPersonID = ""
 	return nil
 }
 
@@ -310,6 +325,45 @@ func (h *WebexMessageHandler) Status() HandlerStatus {
 		DeviceRegistered: h.registration != nil,
 		ReconnectAttempt: reconnectAttempt,
 	}
+}
+
+func (h *WebexMessageHandler) fetchBotPersonID(ctx context.Context) {
+	h.logger.Debug("Fetching bot person info for self-message filtering")
+	resp, err := h.httpDo(ctx, FetchRequest{
+		URL:    "https://webexapis.com/v1/people/me",
+		Method: "GET",
+		Headers: map[string]string{
+			"Authorization": "Bearer " + h.token,
+			"Content-Type":  "application/json",
+		},
+	})
+	if err != nil {
+		h.logger.Warn(fmt.Sprintf("Error fetching bot person info: %v", err))
+		return
+	}
+	defer resp.Body.Close()
+
+	if !resp.OK {
+		h.logger.Warn(fmt.Sprintf("Failed to fetch bot person info: HTTP %d", resp.Status))
+		return
+	}
+
+	var result struct {
+		ID string `json:"id"`
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		h.logger.Warn(fmt.Sprintf("Error reading bot person info: %v", err))
+		return
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		h.logger.Warn(fmt.Sprintf("Error parsing bot person info: %v", err))
+		return
+	}
+
+	h.botPersonID = result.ID
+	h.logger.Info(fmt.Sprintf("Bot person ID cached for self-message filtering: %s", h.botPersonID))
 }
 
 func (h *WebexMessageHandler) setupMercuryListeners() {
@@ -383,6 +437,12 @@ func (h *WebexMessageHandler) handleActivity(ctx context.Context, activity Mercu
 			Created:     decrypted.Published,
 			RoomType:    inferRoomType(decrypted),
 			Raw:         &decrypted,
+		}
+
+		// Filter self-messages if enabled
+		if h.ignoreSelfMessages && h.botPersonID != "" && msg.PersonID == h.botPersonID {
+			h.logger.Debug(fmt.Sprintf("Ignoring self-message from bot (%s)", h.botPersonID))
+			return nil
 		}
 
 		if h.onMessageCreated != nil {
