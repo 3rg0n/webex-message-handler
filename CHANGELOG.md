@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Example file for proxy configuration in injected mode (`examples/proxy-injected-mode.ts`)
 - 14 comprehensive proxy configuration tests
 - 5 tests for ignoreSelfMessages feature
+- 4 message loop prevention validation tests demonstrating the infinite loop scenario
 
 ### Fixed (Node.js)
 - Documented critical WebSocket proxy requirement: `ws` library needs explicit `agent` option
