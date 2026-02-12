@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     pass
 
 import base64
+import json as _json
 
 # Type alias for event callbacks
 EventCallback = Callable[..., Any]
@@ -143,27 +144,35 @@ class WebexMessageHandler:
     ) -> FetchFunction:
         """Create HTTP adapter using native aiohttp."""
         async def http_do(request: FetchRequest) -> FetchResponse:
-            async with aiohttp.ClientSession(connector=connector) as session:
-                async with session.request(
+            session = aiohttp.ClientSession(connector=connector, connector_owner=False)
+            try:
+                response = await session.request(
                     request.method,
                     request.url,
                     headers=request.headers,
                     data=request.body,
-                ) as response:
-                    # Create a simple response wrapper
-                    class NativeFetchResponse:
-                        def __init__(self, resp: aiohttp.ClientResponse):
-                            self.status = resp.status
-                            self.ok = 200 <= resp.status < 300
-                            self._response = resp
+                )
+                # Read the body eagerly so we can close the session
+                body_bytes = await response.read()
+                status = response.status
+                ok = 200 <= status < 300
+                await session.close()
+            except Exception:
+                await session.close()
+                raise
 
-                        async def json(self) -> Any:
-                            return await self._response.json()
+            class EagerFetchResponse:
+                def __init__(self) -> None:
+                    self.status = status
+                    self.ok = ok
 
-                        async def text(self) -> str:
-                            return await self._response.text()
+                async def json(self) -> Any:
+                    return _json.loads(body_bytes)
 
-                    return NativeFetchResponse(response)  # type: ignore[return-value]
+                async def text(self) -> str:
+                    return body_bytes.decode("utf-8")
+
+            return EagerFetchResponse()  # type: ignore[return-value]
 
         return http_do
 
