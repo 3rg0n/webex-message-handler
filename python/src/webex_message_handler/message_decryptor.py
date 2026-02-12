@@ -20,7 +20,7 @@ class MessageDecryptor:
 
     def __init__(self, *, kms_client: KmsClient, logger: Logger | None = None) -> None:
         self._kms_client = kms_client
-        self._logger: Logger = logger or noop_logger  # type: ignore[assignment]
+        self._logger: Logger = logger or noop_logger
 
     async def decrypt_activity(self, activity: MercuryActivity) -> MercuryActivity:
         """Decrypt an encrypted Mercury activity.

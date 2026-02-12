@@ -49,8 +49,7 @@ class KmsClient:
         self._user_id = user_id
         self._encryption_service_url = encryption_service_url
         self._http_do = http_do
-        self._logger: Logger = logger or noop_logger  # type: ignore[assignment]
-        self._connector = connector
+        self._logger: Logger = logger or noop_logger
 
         self._kms_cluster: str = ""
         self._ephemeral_key: jwk.JWK | None = None
@@ -267,17 +266,17 @@ class KmsClient:
 
     async def _send_kms_request(self, request_id: str, wrapped: str) -> str:
         """Send a KMS request via HTTP and wait for the response via Mercury."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         future: asyncio.Future[str] = loop.create_future()
-        timeout_handle = loop.call_later(
-            KMS_RESPONSE_TIMEOUT,
-            lambda: (
-                self._pending_requests.pop(request_id, None),
+
+        def _on_timeout() -> None:
+            self._pending_requests.pop(request_id, None)
+            if not future.done():
                 future.set_exception(
                     KmsError(f"KMS request {request_id} timed out after {KMS_RESPONSE_TIMEOUT}s")
-                ) if not future.done() else None,
-            ),
-        )
+                )
+
+        timeout_handle = loop.call_later(KMS_RESPONSE_TIMEOUT, _on_timeout)
 
         self._pending_requests[request_id] = _PendingRequest(future=future, timeout_handle=timeout_handle)
 
@@ -337,8 +336,9 @@ def _jwe_encrypt(plaintext: bytes, key: jwk.JWK, alg: str, enc: str) -> str:
     kid = key.get("kid")
     if kid:
         protected_header["kid"] = kid
-    jwe_obj = jwe.JWE(plaintext, recipient=key, protected=protected_header)
-    return jwe_obj.serialize(compact=True)
+    jwe_obj = jwe.JWE(plaintext, recipient=key, protected=protected_header)  # type: ignore[arg-type]
+    result: str = jwe_obj.serialize(compact=True)
+    return result
 
 
 def _unwrap_kms_response(token: str, key: jwk.JWK) -> bytes:
@@ -353,10 +353,12 @@ def _unwrap_kms_response(token: str, key: jwk.JWK) -> bytes:
         # JWE compact: header.encrypted_key.iv.ciphertext.tag
         jwe_obj = jwe.JWE()
         jwe_obj.deserialize(token, key=key)
-        return jwe_obj.payload
+        payload: bytes = jwe_obj.payload
+        return payload
     elif len(parts) == 3:
         # JWS compact: header.payload.signature — extract payload
-        return base64url_decode(parts[1])
+        decoded: bytes = base64url_decode(parts[1])
+        return decoded
     else:
         raise KmsError(f"Invalid KMS response format: expected 3 or 5 parts, got {len(parts)}")
 

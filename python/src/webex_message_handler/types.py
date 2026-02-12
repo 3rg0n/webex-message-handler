@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal, Protocol
 
@@ -33,11 +34,11 @@ class FetchResponse:
 
     async def json(self) -> Any:
         """Parse response as JSON."""
-        ...
+        raise NotImplementedError
 
     async def text(self) -> str:
         """Get response body as text."""
-        ...
+        raise NotImplementedError
 
 
 FetchFunction = Callable[[FetchRequest], Awaitable[FetchResponse]]
@@ -59,7 +60,12 @@ class InjectedWebSocket(Protocol):
         """Whether the WebSocket is closed."""
         ...
 
-    def __aiter__(self):
+    @property
+    def close_code(self) -> int | None:
+        """Close code from the server, if closed."""
+        ...
+
+    def __aiter__(self) -> AsyncIterator[Any]:
         """Async iterator for receiving messages."""
         ...
 

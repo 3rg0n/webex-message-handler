@@ -10,6 +10,8 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
+import aiohttp
+
 from .errors import AuthError, MercuryConnectionError
 from .logger import Logger, noop_logger
 from .types import InjectedWebSocket, MercuryActivity, MercuryActor, MercuryObject, MercuryTarget, WebSocketFactory
@@ -32,7 +34,7 @@ class MercurySocket:
         reconnect_backoff_max: float = 32.0,
         max_reconnect_attempts: int = 10,
     ) -> None:
-        self._logger: Logger = logger or noop_logger  # type: ignore[assignment]
+        self._logger: Logger = logger or noop_logger
         self._ws_factory = ws_factory
         self._ping_interval = ping_interval
         self._pong_timeout = pong_timeout
@@ -174,7 +176,7 @@ class MercurySocket:
         params["outboundWireFormat"] = "text"
         params["bufferStates"] = "true"
         params["aliasHttpStatus"] = "true"
-        params["clientTimestamp"] = str(int(asyncio.get_event_loop().time() * 1000))
+        params["clientTimestamp"] = str(int(asyncio.get_running_loop().time() * 1000))
         new_query = urlencode(params)
         return urlunparse(parsed._replace(query=new_query))
 
@@ -199,7 +201,7 @@ class MercurySocket:
                     self._logger.debug(f"Sent ping: {self._pending_pong_id}")
 
                     # Schedule pong timeout
-                    loop = asyncio.get_event_loop()
+                    loop = asyncio.get_running_loop()
                     self._pong_timeout_handle = loop.call_later(
                         self._pong_timeout,
                         lambda: asyncio.ensure_future(self._on_pong_timeout()),
@@ -246,7 +248,7 @@ class MercurySocket:
         # Send ACK
         if self._ws and not self._ws.closed:
             ack = json.dumps({"messageId": message.get("id"), "type": "ack"})
-            asyncio.ensure_future(self._ws.send_str(ack))
+            asyncio.ensure_future(self._ws.send(ack))
 
         # Route KMS messages
         if event_type.startswith("encryption."):

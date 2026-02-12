@@ -31,12 +31,13 @@ class _NoopLogger:
         pass
 
 
-noop_logger: Logger = _NoopLogger()  # type: ignore[assignment]
+noop_logger: Logger = _NoopLogger()
 
 # console_logger is a standard logging.Logger that writes to stderr
-console_logger: Logger = logging.getLogger("webex_message_handler")  # type: ignore[assignment]
-if not console_logger.handlers:  # type: ignore[union-attr]
+_std_logger = logging.getLogger("webex_message_handler")
+if not _std_logger.handlers:
     _handler = logging.StreamHandler()
     _handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
-    console_logger.addHandler(_handler)  # type: ignore[union-attr]
-    console_logger.setLevel(logging.DEBUG)  # type: ignore[union-attr]
+    _std_logger.addHandler(_handler)
+    _std_logger.setLevel(logging.DEBUG)
+console_logger: Logger = _std_logger

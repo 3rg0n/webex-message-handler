@@ -31,7 +31,7 @@ class DeviceManager:
         logger: Logger | None = None,
         http_do: FetchFunction,
     ) -> None:
-        self._logger: Logger = logger or noop_logger  # type: ignore[assignment]
+        self._logger: Logger = logger or noop_logger
         self._http_do = http_do
         self._device_url: str | None = None
 

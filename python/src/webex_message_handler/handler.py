@@ -35,6 +35,35 @@ if TYPE_CHECKING:
 EventCallback = Callable[..., Any]
 
 
+class _AiohttpWebSocketAdapter:
+    """Wraps aiohttp ClientWebSocketResponse to match InjectedWebSocket protocol.
+
+    Maps send() → send_str() and exposes close_code for mercury_socket.
+    """
+
+    def __init__(self, ws: aiohttp.ClientWebSocketResponse, session: aiohttp.ClientSession) -> None:
+        self._ws = ws
+        self._session = session
+
+    async def send(self, data: str) -> None:
+        await self._ws.send_str(data)
+
+    async def close(self, code: int = 1000) -> None:
+        await self._ws.close(code=code)
+        await self._session.close()
+
+    @property
+    def closed(self) -> bool:
+        return self._ws.closed
+
+    @property
+    def close_code(self) -> int | None:
+        return self._ws.close_code
+
+    def __aiter__(self):  # type: ignore[no-untyped-def]
+        return self._ws.__aiter__()
+
+
 class WebexMessageHandler:
     """Receives and decrypts Webex messages over Mercury WebSocket.
 
@@ -67,7 +96,7 @@ class WebexMessageHandler:
             raise ValueError(f'Invalid mode "{mode}" — must be "native" or "injected"')
 
         self._token = config.token
-        self._logger: Logger = config.logger or noop_logger  # type: ignore[assignment]
+        self._logger: Logger = config.logger or noop_logger
         self._connector = config.connector
 
         # Create adapters based on mode
@@ -118,27 +147,32 @@ class WebexMessageHandler:
     ) -> FetchFunction:
         """Create HTTP adapter using native aiohttp."""
         async def http_do(request: FetchRequest) -> FetchResponse:
-            async with aiohttp.ClientSession(connector=connector) as session:
+            async with aiohttp.ClientSession(connector=connector, connector_owner=False, trust_env=True) as session:
                 async with session.request(
                     request.method,
                     request.url,
                     headers=request.headers,
                     data=request.body,
                 ) as response:
-                    # Create a simple response wrapper
+                    # Eagerly read body before context manager closes the response
+                    body_bytes = await response.read()
+                    status = response.status
+                    ok = 200 <= status < 300
+                    content_type = response.content_type or ""
+
                     class NativeFetchResponse:
-                        def __init__(self, resp: aiohttp.ClientResponse):
-                            self.status = resp.status
-                            self.ok = 200 <= resp.status < 300
-                            self._response = resp
+                        def __init__(self) -> None:
+                            self.status = status
+                            self.ok = ok
 
                         async def json(self) -> Any:
-                            return await self._response.json()
+                            import json as _json
+                            return _json.loads(body_bytes)
 
                         async def text(self) -> str:
-                            return await self._response.text()
+                            return body_bytes.decode("utf-8")
 
-                    return NativeFetchResponse(response)  # type: ignore[return-value]
+                    return NativeFetchResponse()  # type: ignore[return-value]
 
         return http_do
 
@@ -147,13 +181,9 @@ class WebexMessageHandler:
     ) -> WebSocketFactory:
         """Create WebSocket adapter using native aiohttp."""
         async def ws_factory(url: str) -> InjectedWebSocket:
-            session = aiohttp.ClientSession(connector=connector)
+            session = aiohttp.ClientSession(connector=connector, connector_owner=False, trust_env=True)
             ws = await session.ws_connect(url)
-
-            # Attach session for cleanup
-            ws._session = session  # type: ignore[attr-defined]
-
-            return ws  # type: ignore[return-value]
+            return _AiohttpWebSocketAdapter(ws, session)
 
         return ws_factory
 
@@ -269,6 +299,9 @@ class WebexMessageHandler:
 
         await self._mercury_socket.disconnect()
 
+        # Unregister device after closing WebSocket but before releasing resources.
+        # The HTTP adapter still works because connector_owner=False keeps the
+        # shared connector alive even after the WS session closes.
         if self._registration:
             try:
                 await self._device_manager.unregister(self._token)
