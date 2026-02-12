@@ -1,4 +1,4 @@
-module github.com/ecopelan/webex-message-handler-go
+module github.com/3rg0n/webex-message-handler/go
 
 go 1.24
 

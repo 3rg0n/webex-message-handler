@@ -15,7 +15,7 @@ import (
 	"os"
 	"time"
 
-	webex "github.com/ecopelan/webex-message-handler-go"
+	webex "github.com/3rg0n/webex-message-handler/go"
 )
 
 func main() {

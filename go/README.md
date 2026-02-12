@@ -7,7 +7,7 @@ Go port of the [TypeScript webex-message-handler](https://github.com/ecopelan/we
 ## Install
 
 ```bash
-go get github.com/ecopelan/webex-message-handler-go
+go get github.com/3rg0n/webex-message-handler/go
 ```
 
 Requires Go 1.21+.
@@ -23,7 +23,7 @@ import (
 	"log/slog"
 	"os"
 
-	webex "github.com/ecopelan/webex-message-handler-go"
+	webex "github.com/3rg0n/webex-message-handler/go"
 )
 
 func main() {
@@ -75,7 +75,7 @@ import (
 	"net/url"
 	"os"
 
-	webex "github.com/ecopelan/webex-message-handler-go"
+	webex "github.com/3rg0n/webex-message-handler/go"
 )
 
 func main() {

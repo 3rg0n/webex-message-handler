@@ -5,7 +5,7 @@ Lightweight Go package for receiving and decrypting Webex messages over Mercury 
 ## Installation
 
 ```bash
-go get github.com/ecopelan/webex-message-handler-go
+go get github.com/3rg0n/webex-message-handler/go
 ```
 
 ## Quick Start

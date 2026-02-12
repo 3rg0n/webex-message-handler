@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	webex "github.com/ecopelan/webex-message-handler-go"
+	webex "github.com/3rg0n/webex-message-handler/go"
 )
 
 // Integration test: Send a message via REST API and receive it via Mercury WebSocket.
