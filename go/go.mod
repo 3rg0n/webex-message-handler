@@ -1,6 +1,6 @@
 module github.com/ecopelan/webex-message-handler-go
 
-go 1.21
+go 1.24
 
 require (
 	github.com/go-jose/go-jose/v4 v4.0.4

@@ -2,7 +2,6 @@ package webexmessagehandler
 
 import (
 	"context"
-	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -11,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/big"
 	"net/http"
 	"strings"
 	"sync"
@@ -492,11 +490,9 @@ func deriveSharedKey(localKey *ecdsa.PrivateKey, remoteJWK jose.JSONWebKey) (*jo
 		return nil, fmt.Errorf("failed to convert local key to ECDH: %w", err)
 	}
 
-	// Manually construct the remote ECDH public key
-	remoteBytes := elliptic.Marshal(elliptic.P256(), remotePub.X, remotePub.Y)
-	remoteECDH, err := ecdh.P256().NewPublicKey(remoteBytes)
+	remoteECDH, err := remotePub.ECDH()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create remote ECDH key: %w", err)
+		return nil, fmt.Errorf("failed to convert remote key to ECDH: %w", err)
 	}
 
 	// Perform ECDH
@@ -511,9 +507,6 @@ func deriveSharedKey(localKey *ecdsa.PrivateKey, remoteJWK jose.JSONWebKey) (*jo
 	if _, err := io.ReadFull(hkdfReader, derived); err != nil {
 		return nil, fmt.Errorf("HKDF derivation failed: %w", err)
 	}
-
-	// XOR trick not needed — raw bytes are the symmetric key
-	_ = big.NewInt(0) // import used elsewhere
 
 	return &jose.JSONWebKey{
 		Key:       derived,
