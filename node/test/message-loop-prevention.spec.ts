@@ -1,187 +1,309 @@
-import { WebexMessageHandler } from '../src/handler.js';
-import type { DecryptedMessage } from '../src/types.js';
+import { EventEmitter } from 'events';
+import { WebexMessageHandler } from '../src/handler';
+import type { MercuryActivity, DeviceRegistration } from '../src/types';
 
 /**
- * Integration tests for message loop prevention using ignoreSelfMessages feature.
+ * Integration test for message loop prevention.
  *
- * These tests simulate the real-world scenario where:
- * 1. User sends message → Bot receives it
- * 2. Bot responds → Response goes back to Webex
- * 3. Mercury echoes bot's response back → Bot receives its own message
- * 4. Without filtering, bot responds again (infinite loop)
- * 5. With ignoreSelfMessages, bot ignores its own messages
+ * Uses the same jest.mock pattern as handler.spec.ts to mock sub-components
+ * (DeviceManager, MercurySocket, KmsClient, MessageDecryptor) while letting
+ * the handler's REAL filtering logic (_handleActivity) run.
+ *
+ * This tests the actual handler code path, not a simulation.
  */
-describe('Message Loop Prevention Integration Test', () => {
-  const BOT_PERSON_ID = 'bot-person-123';
-  const BOT_EMAIL = 'testbot@webex.bot';
-  const USER_PERSON_ID = 'user-person-456';
-  const USER_EMAIL = 'user@example.com';
-  const ROOM_ID = 'room-789';
 
-  // Helper to create a decrypted message (simulates what handler emits after decryption)
-  const createDecryptedMessage = (personId: string, personEmail: string, text: string): DecryptedMessage => ({
-    id: `msg-${Date.now()}-${Math.random()}`,
-    roomId: ROOM_ID,
-    personId,
-    personEmail,
-    text,
-    created: new Date().toISOString(),
-    raw: {} as any, // Not needed for this test
+const BOT_PERSON_ID = 'Y2lzY29zcGFyazovL3VzL1BFT1BMRS9ib3QtaWQ';
+const USER_PERSON_ID = 'Y2lzY29zcGFyazovL3VzL1BFT1BMRS91c2VyLWlk';
+const SAFETY_LIMIT = 10;
+
+// --- Mock sub-components (same pattern as handler.spec.ts) ---
+
+const mockDeviceManager = {
+  register: jest.fn(),
+  refresh: jest.fn(),
+  unregister: jest.fn(),
+};
+
+class MockMercurySocket extends EventEmitter {
+  connected = false;
+  currentReconnectAttempts = 0;
+  connect = jest.fn();
+  disconnect = jest.fn();
+}
+
+const mockKmsClient = {
+  initialize: jest.fn(),
+  handleKmsMessage: jest.fn(),
+};
+
+const mockMessageDecryptor = {
+  decryptActivity: jest.fn(),
+};
+
+jest.mock('../src/device-manager', () => ({
+  DeviceManager: jest.fn(() => mockDeviceManager),
+}));
+
+jest.mock('../src/mercury-socket', () => ({
+  MercurySocket: jest.fn(() => new MockMercurySocket()),
+}));
+
+jest.mock('../src/kms-client', () => ({
+  KmsClient: jest.fn(() => mockKmsClient),
+}));
+
+jest.mock('../src/message-decryptor', () => ({
+  MessageDecryptor: jest.fn(() => mockMessageDecryptor),
+}));
+
+// --- Test data ---
+
+const mockRegistration: DeviceRegistration = {
+  webSocketUrl: 'wss://mercury.example.com/socket',
+  deviceUrl: 'https://device.example.com',
+  userId: 'user-123',
+  services: {
+    encryptionServiceUrl: 'https://encryption.example.com',
+    messenger: 'https://messenger.example.com',
+  },
+  encryptionServiceUrl: 'https://encryption.example.com',
+};
+
+function createActivity(personId: string, text: string): MercuryActivity {
+  return {
+    id: `activity-${Date.now()}-${Math.random()}`,
+    verb: 'post',
+    actor: {
+      id: personId,
+      objectType: 'person',
+      emailAddress: personId === BOT_PERSON_ID ? 'bot@webex.bot' : 'user@example.com',
+    },
+    object: {
+      id: `comment-${Date.now()}`,
+      objectType: 'comment',
+      displayName: text,
+      content: `<p>${text}</p>`,
+    },
+    target: {
+      id: 'room-101',
+      objectType: 'conversation',
+      tags: ['GROUP'],
+    },
+    published: new Date().toISOString(),
+  };
+}
+
+// --- Tests ---
+
+describe('Message Loop Prevention (Real Handler Integration)', () => {
+  // Mock global fetch for /people/me (used by _fetchBotPersonId)
+  const originalFetch = global.fetch;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockDeviceManager.register.mockResolvedValue(mockRegistration);
+    mockDeviceManager.unregister.mockResolvedValue(undefined);
+    mockKmsClient.initialize.mockResolvedValue(undefined);
+    // Decryptor passes activity through (simulates successful decryption)
+    mockMessageDecryptor.decryptActivity.mockImplementation((activity) =>
+      Promise.resolve(activity)
+    );
+    // Mock fetch for /people/me
+    global.fetch = jest.fn(async (url: any) => {
+      if (String(url).includes('/people/me')) {
+        return {
+          status: 200,
+          ok: true,
+          json: async () => ({
+            id: BOT_PERSON_ID,
+            emails: ['bot@webex.bot'],
+            displayName: 'Test Bot',
+            type: 'bot',
+          }),
+          text: async () => '',
+        } as any;
+      }
+      return originalFetch(url);
+    }) as any;
   });
 
-  it('should demonstrate infinite loop WITHOUT ignoreSelfMessages', () => {
-    const messagesReceived: string[] = [];
-    const MAX_ITERATIONS = 5; // Safety limit to prevent actual infinite loop
-
-    /**
-     * Simulates bot behavior without self-message filtering.
-     * This demonstrates a real-world issue where bot keeps responding to itself.
-     */
-    function simulateBotWithoutFiltering(initialMessage: DecryptedMessage) {
-      let iteration = 0;
-
-      function processMessage(msg: DecryptedMessage) {
-        messagesReceived.push(`${msg.personId}: ${msg.text}`);
-        iteration++;
-
-        // Bot always responds (no filtering)
-        if (iteration < MAX_ITERATIONS) {
-          // Simulate bot sending response, which comes back as bot's own message
-          const botResponse = createDecryptedMessage(
-            BOT_PERSON_ID,
-            BOT_EMAIL,
-            `Response to: ${msg.text}`
-          );
-          processMessage(botResponse); // Loop!
-        }
-      }
-
-      processMessage(initialMessage);
-    }
-
-    const userMessage = createDecryptedMessage(USER_PERSON_ID, USER_EMAIL, 'Hello');
-    simulateBotWithoutFiltering(userMessage);
-
-    // Bot processed MAX_ITERATIONS messages (1 user + 4 self-responses)
-    expect(messagesReceived.length).toBe(MAX_ITERATIONS);
-    expect(messagesReceived[0]).toBe(`${USER_PERSON_ID}: Hello`);
-    expect(messagesReceived[1]).toBe(`${BOT_PERSON_ID}: Response to: Hello`);
-    expect(messagesReceived[2]).toContain(BOT_PERSON_ID);
-    expect(messagesReceived[3]).toContain(BOT_PERSON_ID);
-    expect(messagesReceived[4]).toContain(BOT_PERSON_ID);
+  afterEach(() => {
+    global.fetch = originalFetch;
   });
 
-  it('should PREVENT infinite loop WITH self-message filtering', () => {
-    const messagesReceived: string[] = [];
+  it('WITHOUT ignoreSelfMessages: bot processes its own messages (BUG)', async () => {
+    const handler = new WebexMessageHandler({ token: 'test-token' });
+    await handler.connect();
 
-    /**
-     * Simulates bot behavior WITH self-message filtering (ignoreSelfMessages feature).
-     * This is what our library does - filters out bot's own messages.
-     */
-    function simulateBotWithFiltering(initialMessage: DecryptedMessage, botPersonId: string) {
-      function processMessage(msg: DecryptedMessage) {
-        // Filter self-messages (this is what ignoreSelfMessages does)
-        if (msg.personId === botPersonId) {
-          return; // Silently ignore bot's own messages
-        }
+    const mercury = handler['mercurySocket'] as unknown as MockMercurySocket;
+    const messagesReceived: Array<{ personId: string; text: string }> = [];
 
-        messagesReceived.push(`${msg.personId}: ${msg.text}`);
+    // Persistent listener: bot ALWAYS responds to ANY message
+    handler.on('message:created', (msg) => {
+      messagesReceived.push({ personId: msg.personId, text: msg.text });
 
-        // Bot responds to user messages
-        const botResponse = createDecryptedMessage(
-          botPersonId,
-          BOT_EMAIL,
-          `Response to: ${msg.text}`
-        );
-
-        // Bot's response comes back, but gets filtered
-        processMessage(botResponse); // No loop! Filtered out.
+      // Bot "responds" — Mercury echoes it back as a new activity
+      if (messagesReceived.length < SAFETY_LIMIT) {
+        const botEcho = createActivity(BOT_PERSON_ID, `Bot reply #${messagesReceived.length}`);
+        mockMessageDecryptor.decryptActivity.mockResolvedValueOnce(botEcho);
+        mercury.emit('activity', botEcho);
       }
+    });
 
-      processMessage(initialMessage);
+    // User sends initial message
+    const userMsg = createActivity(USER_PERSON_ID, 'Hello bot');
+    mockMessageDecryptor.decryptActivity.mockResolvedValueOnce(userMsg);
+    mercury.emit('activity', userMsg);
+
+    // Let the event loop process all messages
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await handler.disconnect();
+
+    // BUG: Bot processed its own echo messages, creating a loop
+    expect(messagesReceived.length).toBe(SAFETY_LIMIT);
+    expect(messagesReceived[0].personId).toBe(USER_PERSON_ID);
+    expect(messagesReceived[0].text).toBe('Hello bot');
+
+    // All subsequent messages are from the bot itself (the loop!)
+    for (let i = 1; i < messagesReceived.length; i++) {
+      expect(messagesReceived[i].personId).toBe(BOT_PERSON_ID);
     }
+  });
 
-    const userMessage = createDecryptedMessage(USER_PERSON_ID, USER_EMAIL, 'Hello');
-    simulateBotWithFiltering(userMessage, BOT_PERSON_ID);
+  it('WITH ignoreSelfMessages: bot ignores its own messages (FIX)', async () => {
+    const handler = new WebexMessageHandler({
+      token: 'test-token',
+      ignoreSelfMessages: true,
+    });
+    await handler.connect();
 
-    // Bot only processed the user message, not its own response
+    // Verify /people/me was called and bot ID was cached
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/people/me'),
+      expect.anything()
+    );
+    expect(handler['botPersonId']).toBe(BOT_PERSON_ID);
+
+    const mercury = handler['mercurySocket'] as unknown as MockMercurySocket;
+    const messagesReceived: Array<{ personId: string; text: string }> = [];
+
+    // Same persistent listener: bot ALWAYS responds to ANY message
+    handler.on('message:created', (msg) => {
+      messagesReceived.push({ personId: msg.personId, text: msg.text });
+
+      // Bot "responds" — Mercury echoes it back
+      const botEcho = createActivity(BOT_PERSON_ID, `Bot reply #${messagesReceived.length}`);
+      mockMessageDecryptor.decryptActivity.mockResolvedValueOnce(botEcho);
+      mercury.emit('activity', botEcho);
+    });
+
+    // User sends initial message
+    const userMsg = createActivity(USER_PERSON_ID, 'Hello bot');
+    mockMessageDecryptor.decryptActivity.mockResolvedValueOnce(userMsg);
+    mercury.emit('activity', userMsg);
+
+    // Let the event loop process
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await handler.disconnect();
+
+    // FIX: Bot only processed the user's message, ignored its own echo
     expect(messagesReceived.length).toBe(1);
-    expect(messagesReceived[0]).toBe(`${USER_PERSON_ID}: Hello`);
+    expect(messagesReceived[0].personId).toBe(USER_PERSON_ID);
+    expect(messagesReceived[0].text).toBe('Hello bot');
   });
 
-  it('should demonstrate multiple users vs bot messages', () => {
-    const messagesReceived: string[] = [];
-    const ALICE_ID = 'alice-123';
-    const BOB_ID = 'bob-456';
+  it('WITH ignoreSelfMessages: multiple user messages work, bot echoes filtered', async () => {
+    const handler = new WebexMessageHandler({
+      token: 'test-token',
+      ignoreSelfMessages: true,
+    });
+    await handler.connect();
 
-    function processWithFiltering(msg: DecryptedMessage, botPersonId: string) {
-      if (msg.personId === botPersonId) {
-        return; // Filter bot's own messages
-      }
-      messagesReceived.push(`${msg.personId}: ${msg.text}`);
+    const mercury = handler['mercurySocket'] as unknown as MockMercurySocket;
+    const messagesReceived: Array<{ personId: string; text: string }> = [];
+
+    handler.on('message:created', (msg) => {
+      messagesReceived.push({ personId: msg.personId, text: msg.text });
+
+      // Bot responds to every message
+      const botEcho = createActivity(BOT_PERSON_ID, `Reply to: ${msg.text}`);
+      mockMessageDecryptor.decryptActivity.mockResolvedValueOnce(botEcho);
+      mercury.emit('activity', botEcho);
+    });
+
+    // 3 different users send messages
+    for (const text of ['Hello', 'How are you?', 'Goodbye']) {
+      const msg = createActivity(USER_PERSON_ID, text);
+      mockMessageDecryptor.decryptActivity.mockResolvedValueOnce(msg);
+      mercury.emit('activity', msg);
+      await new Promise(resolve => setImmediate(resolve));
     }
 
-    // Simulate conversation with multiple users and bot responses
-    const messages = [
-      createDecryptedMessage(ALICE_ID, 'alice@example.com', 'Hi bot'),
-      createDecryptedMessage(BOT_PERSON_ID, BOT_EMAIL, 'Hi Alice!'),
-      createDecryptedMessage(BOB_ID, 'bob@example.com', 'Hello everyone'),
-      createDecryptedMessage(BOT_PERSON_ID, BOT_EMAIL, 'Hi Bob!'),
-      createDecryptedMessage(ALICE_ID, 'alice@example.com', 'Thanks bot'),
-      createDecryptedMessage(BOT_PERSON_ID, BOT_EMAIL, "You're welcome!"),
-    ];
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await handler.disconnect();
 
-    messages.forEach(msg => processWithFiltering(msg, BOT_PERSON_ID));
-
-    // Only user messages processed, bot's own messages filtered
+    // Only user messages were processed (3), all bot echoes filtered
     expect(messagesReceived.length).toBe(3);
-    expect(messagesReceived[0]).toBe(`${ALICE_ID}: Hi bot`);
-    expect(messagesReceived[1]).toBe(`${BOB_ID}: Hello everyone`);
-    expect(messagesReceived[2]).toBe(`${ALICE_ID}: Thanks bot`);
+    expect(messagesReceived[0].text).toBe('Hello');
+    expect(messagesReceived[1].text).toBe('How are you?');
+    expect(messagesReceived[2].text).toBe('Goodbye');
+    messagesReceived.forEach(msg => {
+      expect(msg.personId).toBe(USER_PERSON_ID);
+    });
   });
 
-  it('should show why production bots experienced infinite loop issues', () => {
-    /**
-     * Real-world Issue:
-     * 1. getBotPerson() API call failed or was slow
-     * 2. Bot couldn't determine its own person ID
-     * 3. Bot processed its own messages → responded to itself
-     * 4. Infinite loop
-     *
-     * Manual fix: Cache bot person ID (requires extra code)
-     * Our fix: Built-in ignoreSelfMessages with automatic caching (zero-config)
-     */
+  it('WITHOUT ignoreSelfMessages: /people/me is NOT called', async () => {
+    const handler = new WebexMessageHandler({ token: 'test-token' });
+    await handler.connect();
 
-    const messagesWithoutBotId: string[] = [];
-    const messagesWithBotId: string[] = [];
+    // /people/me should never be called
+    const fetchCalls = (global.fetch as jest.Mock).mock.calls;
+    const peopleMeCalls = fetchCalls.filter((call: any[]) =>
+      String(call[0]).includes('/people/me')
+    );
+    expect(peopleMeCalls.length).toBe(0);
+    expect(handler['botPersonId']).toBeNull();
 
-    // Scenario 1: Bot doesn't know its own ID (production bug scenario)
-    function processWithoutBotId(msg: DecryptedMessage) {
-      messagesWithoutBotId.push(msg.text);
-      // Bot can't filter because it doesn't know its ID!
-      // So it processes EVERYTHING including its own messages
-    }
+    await handler.disconnect();
+  });
 
-    // Scenario 2: Bot knows its ID (with filtering feature)
-    function processWithBotId(msg: DecryptedMessage, botPersonId: string) {
-      if (msg.personId === botPersonId) return;
-      messagesWithBotId.push(msg.text);
-    }
+  it('/people/me failure degrades gracefully (no filtering, no crash)', async () => {
+    // Override fetch to fail for /people/me
+    global.fetch = jest.fn(async () => ({
+      status: 500,
+      ok: false,
+      json: async () => ({ message: 'Internal Server Error' }),
+      text: async () => 'Internal Server Error',
+    })) as any;
 
-    const messages = [
-      createDecryptedMessage(USER_PERSON_ID, USER_EMAIL, 'Hello'),
-      createDecryptedMessage(BOT_PERSON_ID, BOT_EMAIL, 'Hi there!'),
-      createDecryptedMessage(BOT_PERSON_ID, BOT_EMAIL, 'Hi there!'), // Loop!
-    ];
+    const handler = new WebexMessageHandler({
+      token: 'test-token',
+      ignoreSelfMessages: true,
+    });
 
-    messages.forEach(msg => processWithoutBotId(msg));
-    messages.forEach(msg => processWithBotId(msg, BOT_PERSON_ID));
+    // Should not throw even though /people/me fails
+    await handler.connect();
 
-    // Without bot ID: processes all 3 messages (including loop)
-    expect(messagesWithoutBotId.length).toBe(3);
+    // Bot person ID not cached — filtering won't work
+    expect(handler['botPersonId']).toBeNull();
 
-    // With bot ID: only processes the user message
-    expect(messagesWithBotId.length).toBe(1);
-    expect(messagesWithBotId[0]).toBe('Hello');
+    const mercury = handler['mercurySocket'] as unknown as MockMercurySocket;
+    const messagesReceived: string[] = [];
+
+    handler.on('message:created', (msg) => {
+      messagesReceived.push(msg.personId);
+    });
+
+    // Bot message comes in — without cached ID, filtering can't work
+    const botMsg = createActivity(BOT_PERSON_ID, 'Bot message');
+    mockMessageDecryptor.decryptActivity.mockResolvedValueOnce(botMsg);
+    mercury.emit('activity', botMsg);
+
+    await new Promise(resolve => setImmediate(resolve));
+    await handler.disconnect();
+
+    // Message was NOT filtered (graceful degradation)
+    expect(messagesReceived.length).toBe(1);
+    expect(messagesReceived[0]).toBe(BOT_PERSON_ID);
   });
 });
