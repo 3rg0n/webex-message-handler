@@ -1,15 +1,8 @@
 import { WebexMessageHandler } from '../src/handler.js';
 import { ProxyAgent } from 'undici';
-import type http from 'http';
-import type https from 'https';
 
 describe('Proxy Support', () => {
-  let mockHttpRequest: jest.Mock;
-  let mockHttpsRequest: jest.Mock;
-
   beforeEach(() => {
-    mockHttpRequest = jest.fn();
-    mockHttpsRequest = jest.fn();
     jest.clearAllMocks();
   });
 
@@ -17,55 +10,19 @@ describe('Proxy Support', () => {
     jest.restoreAllMocks();
   });
 
-  describe('Native Mode with Proxy Agent', () => {
-    it('should accept ProxyAgent from undici', () => {
+  describe('Native Mode with Dispatcher', () => {
+    it('should accept ProxyAgent as dispatcher', () => {
       const proxyAgent = new ProxyAgent('http://proxy.example.com:8080');
 
       expect(() => {
         new WebexMessageHandler({
           token: 'test-token',
-          agent: proxyAgent,
+          dispatcher: proxyAgent,
         });
       }).not.toThrow();
     });
 
-    it('should accept http.Agent', () => {
-      const httpAgent = {
-        options: {},
-        requests: {},
-        sockets: {},
-        freeSockets: {},
-        maxSockets: 50,
-        maxFreeSockets: 10,
-      } as unknown as http.Agent;
-
-      expect(() => {
-        new WebexMessageHandler({
-          token: 'test-token',
-          agent: httpAgent,
-        });
-      }).not.toThrow();
-    });
-
-    it('should accept https.Agent', () => {
-      const httpsAgent = {
-        options: {},
-        requests: {},
-        sockets: {},
-        freeSockets: {},
-        maxSockets: 50,
-        maxFreeSockets: 10,
-      } as unknown as https.Agent;
-
-      expect(() => {
-        new WebexMessageHandler({
-          token: 'test-token',
-          agent: httpsAgent,
-        });
-      }).not.toThrow();
-    });
-
-    it('should reject agent in injected mode', () => {
+    it('should reject dispatcher in injected mode', () => {
       const proxyAgent = new ProxyAgent('http://proxy.example.com:8080');
       const mockFetch = jest.fn().mockResolvedValue({
         status: 200,
@@ -79,14 +36,14 @@ describe('Proxy Support', () => {
         new WebexMessageHandler({
           token: 'test-token',
           mode: 'injected',
-          agent: proxyAgent,
+          dispatcher: proxyAgent,
           fetch: mockFetch,
           webSocketFactory: mockWsFactory,
         });
-      }).toThrow('Cannot use native proxy parameters (agent) in injected mode');
+      }).toThrow('Cannot use native proxy parameters (dispatcher) in injected mode');
     });
 
-    it('should work without agent (direct connection)', () => {
+    it('should work without dispatcher (direct connection)', () => {
       expect(() => {
         new WebexMessageHandler({
           token: 'test-token',
@@ -123,11 +80,7 @@ describe('Proxy Support', () => {
     });
 
     it('should pass requests through custom fetch', () => {
-      // Test validates that custom fetch function receives proper requests
-      // without actually attempting connection
-      let capturedRequest: any = null;
-      const mockFetch = jest.fn().mockImplementation(async (request) => {
-        capturedRequest = request;
+      const mockFetch = jest.fn().mockImplementation(async (_request) => {
         return {
           status: 200,
           ok: true,
@@ -157,25 +110,21 @@ describe('Proxy Support', () => {
         webSocketFactory: mockWsFactory,
       });
 
-      // Verify handler was created with injected functions
       expect(handler).toBeDefined();
       expect(mockFetch).not.toHaveBeenCalled();
       expect(mockWsFactory).not.toHaveBeenCalled();
-
-      // Note: Actual connection testing requires full mock setup
-      // This test validates configuration acceptance
     });
   });
 
   describe('Proxy Configuration Validation', () => {
-    it('should accept mode="native" with agent', () => {
+    it('should accept mode="native" with dispatcher', () => {
       const proxyAgent = new ProxyAgent('http://proxy.example.com:8080');
 
       expect(() => {
         new WebexMessageHandler({
           token: 'test-token',
           mode: 'native',
-          agent: proxyAgent,
+          dispatcher: proxyAgent,
         });
       }).not.toThrow();
     });
@@ -229,28 +178,25 @@ describe('Proxy Support', () => {
     });
   });
 
-  describe('Proxy Agent Types', () => {
+  describe('Proxy Dispatcher Types', () => {
     it('should document ProxyAgent as recommended', () => {
-      // This test documents the recommended approach
       const proxyAgent = new ProxyAgent('http://proxy.example.com:8080');
 
       const handler = new WebexMessageHandler({
         token: 'test-token',
-        agent: proxyAgent,
+        dispatcher: proxyAgent,
       });
 
       expect(handler).toBeDefined();
-      // ProxyAgent is the recommended choice for Node.js v18+ with native fetch
     });
 
     it('should support environment variable pattern', () => {
-      // Common pattern: read proxy from environment
       const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
-      const agent = proxyUrl ? new ProxyAgent(proxyUrl) : undefined;
+      const dispatcher = proxyUrl ? new ProxyAgent(proxyUrl) : undefined;
 
       const handler = new WebexMessageHandler({
         token: 'test-token',
-        agent,
+        dispatcher,
       });
 
       expect(handler).toBeDefined();

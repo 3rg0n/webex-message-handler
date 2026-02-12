@@ -1,12 +1,13 @@
 import { EventEmitter } from 'events';
-import WebSocket from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 import type { MercuryEnvelope, MercuryActivity, InjectedWebSocket } from './types.js';
 import { AuthError, MercuryConnectionError } from './errors.js';
 import type { Logger } from './logger.js';
 import { noopLogger } from './logger.js';
 
-type WsFactoryFn = (url: string) => WebSocket | InjectedWebSocket;
+const WS_OPEN = 1;
+
+type WsFactoryFn = (url: string) => InjectedWebSocket;
 
 interface MercuryWireMessage {
   id?: string;
@@ -29,7 +30,7 @@ export interface MercurySocketOptions {
 }
 
 export class MercurySocket extends EventEmitter {
-  private ws: WebSocket | InjectedWebSocket | null = null;
+  private ws: InjectedWebSocket | null = null;
   private logger: Logger;
   private wsFactory: WsFactoryFn;
   private pingInterval: number;
@@ -73,7 +74,7 @@ export class MercurySocket extends EventEmitter {
         this.ws = this.wsFactory(preparedUrl);
         let settled = false;
 
-        (this.ws as any).on('open', () => {
+        this.ws.on('open', () => {
           this.logger.debug('WebSocket opened, sending authorization');
           const authMessage = JSON.stringify({
             id: uuidv4(),
@@ -83,11 +84,10 @@ export class MercurySocket extends EventEmitter {
           this.ws!.send(authMessage);
         });
 
-        (this.ws as any).on('message', (rawData: WebSocket.Data | string) => {
+        this.ws.on('message', (rawData: string) => {
           try {
-            const rawStr = typeof rawData === 'string' ? rawData : rawData.toString();
-            this.logger.debug('WS message received (' + rawStr.length + ' bytes)');
-            const message = JSON.parse(rawStr) as MercuryWireMessage;
+            this.logger.debug('WS message received (' + rawData.length + ' bytes)');
+            const message = JSON.parse(rawData) as MercuryWireMessage;
             this._handleMessage(message);
 
             // Resolve the connect() promise once Mercury signals readiness
@@ -103,7 +103,7 @@ export class MercurySocket extends EventEmitter {
           }
         });
 
-        (this.ws as any).on('error', (error: Error) => {
+        this.ws.on('error', (error: Error) => {
           this.logger.error('WebSocket error:', error);
           if (!settled) {
             settled = true;
@@ -115,7 +115,7 @@ export class MercurySocket extends EventEmitter {
           }
         });
 
-        (this.ws as any).on('close', (code: number, reason: Buffer | string) => {
+        this.ws.on('close', (code: number, reason: string) => {
           if (!settled) {
             settled = true;
             reject(
@@ -125,8 +125,7 @@ export class MercurySocket extends EventEmitter {
               )
             );
           }
-          const reasonStr = typeof reason === 'string' ? reason : reason.toString();
-          this._handleClose(code, reasonStr);
+          this._handleClose(code, reason);
         });
       } catch (error) {
         reject(error);
@@ -154,7 +153,7 @@ export class MercurySocket extends EventEmitter {
 
   private _startPingLoop(): void {
     this.pingIntervalHandle = setInterval(() => {
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      if (this.ws && this.ws.readyState === WS_OPEN) {
         this.pendingPongId = uuidv4();
         const pingMessage = JSON.stringify({
           id: this.pendingPongId,
@@ -213,7 +212,7 @@ export class MercurySocket extends EventEmitter {
       messageId: message.id,
       type: 'ack',
     });
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    if (this.ws && this.ws.readyState === WS_OPEN) {
       this.ws.send(ackMessage);
     }
 
@@ -337,7 +336,7 @@ export class MercurySocket extends EventEmitter {
   }
 
   private _closeWebSocket(): void {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    if (this.ws && this.ws.readyState === WS_OPEN) {
       this.ws.close(1000);
     }
   }
@@ -353,7 +352,7 @@ export class MercurySocket extends EventEmitter {
   }
 
   get connected(): boolean {
-    return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+    return this.ws !== null && this.ws.readyState === WS_OPEN;
   }
 
   get currentReconnectAttempts(): number {

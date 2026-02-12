@@ -14,7 +14,7 @@ console.log(`Using proxy: ${proxyUrl}\n`);
 
 const handler = new WebexMessageHandler({
   token,
-  agent: new ProxyAgent(proxyUrl),
+  dispatcher: new ProxyAgent(proxyUrl),
   logger: consoleLogger,
 });
 

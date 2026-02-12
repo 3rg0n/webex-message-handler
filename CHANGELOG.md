@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-02-12
+
+### Breaking Changes (Node.js)
+- **`agent` config field replaced with `dispatcher`** — Accepts an undici `Dispatcher` (e.g., `ProxyAgent`). A single dispatcher now proxies both HTTP fetch and WebSocket connections.
+- **Node.js engine requirement raised to `>=22.4.0`** — Native `WebSocket` (stable since Node.js 22.4.0) replaces the `ws` npm package.
+- **Removed `ws` dependency** — WebSocket connections now use the built-in `WebSocket` global. The `undici` package is now a production dependency (for `Dispatcher` type and `ProxyAgent` re-export).
+- **Removed `@types/ws` dev dependency**
+
+### Changed (Node.js)
+- Internal WebSocket adapter wraps native `WebSocket` (EventTarget API) into `InjectedWebSocket` (.on() API), preserving the existing mercury-socket interface
+- Simplified proxy support: one `ProxyAgent` handles both fetch and WebSocket in native mode
+
 ## [0.3.3] - 2026-02-11
 
 ### Changed (All Languages)
@@ -85,6 +97,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Proxy support via agent/connector parameters
 - Available in 4 languages: Node.js, Python, Go, Rust
 
+[0.4.0]: https://github.com/3rg0n/webex-message-handler/compare/node/v0.3.3...node/v0.4.0
 [0.3.3]: https://github.com/3rg0n/webex-message-handler/compare/node/v0.3.2...node/v0.3.3
 [0.3.2]: https://github.com/3rg0n/webex-message-handler/compare/node/v0.3.1...node/v0.3.2
 [0.3.1]: https://github.com/3rg0n/webex-message-handler/compare/node/v0.3.0...node/v0.3.1

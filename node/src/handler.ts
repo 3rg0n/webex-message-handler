@@ -1,7 +1,5 @@
 import { EventEmitter } from 'events';
-import type * as http from 'http';
-import type * as https from 'https';
-import WebSocket from 'ws';
+import { WebSocket as UndiciWebSocket, type Dispatcher } from 'undici';
 import type {
   WebexMessageHandlerConfig,
   WebexMessageHandlerEvents,
@@ -24,7 +22,36 @@ import { noopLogger } from './logger.js';
 
 // Internal adapter types
 type HttpDoFn = (request: FetchRequest) => Promise<FetchResponse>;
-type WsFactoryFn = (url: string) => WebSocket | InjectedWebSocket;
+type WsFactoryFn = (url: string) => InjectedWebSocket;
+
+/** Wraps native WebSocket (EventTarget API) into InjectedWebSocket (.on() API) */
+function wrapNativeWebSocket(url: string, dispatcher?: Dispatcher): InjectedWebSocket {
+  const ws = new UndiciWebSocket(url, { dispatcher });
+  return {
+    get readyState() { return ws.readyState; },
+    send(data: string) { ws.send(data); },
+    close(code?: number) { ws.close(code); },
+    on(event: string, listener: (...args: unknown[]) => void) {
+      switch (event) {
+        case 'open':
+          ws.addEventListener('open', () => listener());
+          break;
+        case 'message':
+          ws.addEventListener('message', (e) => listener(e.data));
+          break;
+        case 'close':
+          ws.addEventListener('close', (e) => listener(e.code, e.reason));
+          break;
+        case 'error':
+          ws.addEventListener('error', (e) => {
+            const message = 'message' in e ? String(e.message) : 'WebSocket error';
+            listener(new Error(message));
+          });
+          break;
+      }
+    },
+  } as InjectedWebSocket;
+}
 
 export interface TypedEventEmitter<T> {
   on<K extends keyof T>(event: K, listener: T[K]): this;
@@ -65,8 +92,8 @@ export class WebexMessageHandler
       if (!config.fetch || !config.webSocketFactory) {
         throw new Error('Injected mode requires both "fetch" and "webSocketFactory"');
       }
-      if (config.agent) {
-        throw new Error('Cannot use native proxy parameters (agent) in injected mode');
+      if (config.dispatcher) {
+        throw new Error('Cannot use native proxy parameters (dispatcher) in injected mode');
       }
     } else if (mode === 'native') {
       if (config.fetch || config.webSocketFactory) {
@@ -82,8 +109,8 @@ export class WebexMessageHandler
 
     // Create adapters based on mode
     if (mode === 'native') {
-      this.httpDo = this._createNativeHttpAdapter(config.agent);
-      this.wsFactory = this._createNativeWsAdapter(config.agent);
+      this.httpDo = this._createNativeHttpAdapter(config.dispatcher as Dispatcher | undefined);
+      this.wsFactory = this._createNativeWsAdapter(config.dispatcher as Dispatcher | undefined);
     } else {
       // injected mode - use provided fetch and webSocketFactory
       this.httpDo = config.fetch!; // Already validated in mode check
@@ -106,14 +133,14 @@ export class WebexMessageHandler
     this._setupMercuryListeners();
   }
 
-  private _createNativeHttpAdapter(agent?: http.Agent | https.Agent): HttpDoFn {
+  private _createNativeHttpAdapter(dispatcher?: Dispatcher): HttpDoFn {
     return async (request: FetchRequest): Promise<FetchResponse> => {
       const response = await fetch(request.url, {
         method: request.method,
         headers: request.headers,
         body: request.body,
         // @ts-expect-error - dispatcher is an undici option for Node.js fetch
-        dispatcher: agent,
+        dispatcher,
       });
 
       return {
@@ -125,9 +152,9 @@ export class WebexMessageHandler
     };
   }
 
-  private _createNativeWsAdapter(agent?: http.Agent | https.Agent): WsFactoryFn {
-    return (url: string): WebSocket => {
-      return new WebSocket(url, { agent });
+  private _createNativeWsAdapter(dispatcher?: Dispatcher): WsFactoryFn {
+    return (url: string): InjectedWebSocket => {
+      return wrapNativeWebSocket(url, dispatcher);
     };
   }
 

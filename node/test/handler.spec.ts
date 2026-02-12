@@ -861,14 +861,14 @@ describe('WebexMessageHandler', () => {
   });
 
   describe('mode validation', () => {
-    it('should accept native mode with agent', () => {
-      const agent = { keepAlive: true } as any;
+    it('should accept native mode with dispatcher', () => {
+      const dispatcher = { keepAlive: true } as any;
 
       expect(() => {
         new WebexMessageHandler({
           token: mockToken,
           mode: 'native',
-          agent,
+          dispatcher,
         });
       }).not.toThrow();
     });
@@ -919,10 +919,10 @@ describe('WebexMessageHandler', () => {
       }).toThrow('Injected mode requires both "fetch" and "webSocketFactory"');
     });
 
-    it('should throw if injected mode has agent parameter', () => {
+    it('should throw if injected mode has dispatcher parameter', () => {
       const mockFetch = jest.fn();
       const mockWsFactory = jest.fn();
-      const agent = { keepAlive: true } as any;
+      const dispatcher = { keepAlive: true } as any;
 
       expect(() => {
         new WebexMessageHandler({
@@ -930,9 +930,9 @@ describe('WebexMessageHandler', () => {
           mode: 'injected',
           fetch: mockFetch,
           webSocketFactory: mockWsFactory,
-          agent,
+          dispatcher,
         });
-      }).toThrow('Cannot use native proxy parameters (agent) in injected mode');
+      }).toThrow('Cannot use native proxy parameters (dispatcher) in injected mode');
     });
 
     it('should throw if native mode has fetch parameter', () => {

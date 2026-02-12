@@ -1,6 +1,4 @@
 import type { Logger } from './logger.js';
-import type * as http from 'http';
-import type * as https from 'https';
 
 // --- Configuration ---
 
@@ -39,8 +37,12 @@ export interface WebexMessageHandlerConfig {
   logger?: Logger;
   /** Networking mode: 'native' uses built-in fetch/WebSocket, 'injected' uses provided functions */
   mode?: NetworkMode;
-  /** Optional HTTP/HTTPS agent for proxy support (native mode only) */
-  agent?: http.Agent | https.Agent;
+  /**
+   * Optional undici Dispatcher for native mode proxy support (HTTP + WebSocket).
+   * A single `ProxyAgent` proxies both `fetch()` and the native `WebSocket`.
+   * Example: `new ProxyAgent('http://proxy:8080')`
+   */
+  dispatcher?: object;
   /** Custom fetch function for all HTTP requests (injected mode) */
   fetch?: FetchFunction;
   /** Custom WebSocket factory (injected mode) */

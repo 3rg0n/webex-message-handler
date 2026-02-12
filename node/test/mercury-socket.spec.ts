@@ -21,7 +21,7 @@ class MockWebSocket extends EventEmitter {
 
   close(code?: number, reason?: string): void {
     this.readyState = (this.constructor as typeof MockWebSocket).CLOSED;
-    this.emit('close', code || 1000, Buffer.from(reason || ''));
+    this.emit('close', code || 1000, reason || '');
   }
 
   simulateOpen(): void {
@@ -39,7 +39,7 @@ class MockWebSocket extends EventEmitter {
 
   simulateClose(code: number, reason: string = ''): void {
     this.readyState = MockWebSocket.CLOSED;
-    this.emit('close', code, Buffer.from(reason));
+    this.emit('close', code, reason);
   }
 }
 

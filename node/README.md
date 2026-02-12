@@ -80,41 +80,40 @@ const handler = new WebexMessageHandler({
 
 ## Proxy Support (Enterprise)
 
-For corporate environments behind a proxy, pass a configured agent:
+In native mode, a single undici `ProxyAgent` proxies both HTTP (`fetch()`) and the native `WebSocket`:
 
 ```typescript
 import { WebexMessageHandler } from 'webex-message-handler';
 import { ProxyAgent } from 'undici';
 
-const agent = process.env.HTTPS_PROXY
-  ? new ProxyAgent(process.env.HTTPS_PROXY)
-  : undefined;
-
 const handler = new WebexMessageHandler({
   token: process.env.WEBEX_BOT_TOKEN!,
-  agent, // Pass configured agent for proxy support
+  dispatcher: new ProxyAgent(process.env.HTTPS_PROXY!),
 });
 
 await handler.connect();
 ```
 
-**Recommended:** Use undici's `ProxyAgent` for best compatibility with Node.js v18+ native `fetch()`. While `https-proxy-agent` may work, undici's `ProxyAgent` provides more reliable proxy support since Node.js fetch uses undici internally.
+You can also read the proxy URL from standard environment variables:
 
-The library accepts any `http.Agent`, `https.Agent`, or undici `Dispatcher`, allowing you to use any proxy library or custom agent configuration.
+```typescript
+const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
 
-### Advanced: Proxy with Injected Mode
+const handler = new WebexMessageHandler({
+  token: process.env.WEBEX_BOT_TOKEN!,
+  dispatcher: proxyUrl ? new ProxyAgent(proxyUrl) : undefined,
+});
+```
 
-For maximum control over proxy configuration (e.g., different proxies for HTTP vs WebSocket, custom logging), use injected mode:
+### Injected Mode (Full Control)
+
+For advanced scenarios where you need complete control over HTTP and WebSocket networking:
 
 ```typescript
 import { WebexMessageHandler } from 'webex-message-handler';
 import { ProxyAgent } from 'undici';
-import { HttpsProxyAgent } from 'https-proxy-agent';
-import WebSocket from 'ws';
 
-const proxyUrl = process.env.HTTPS_PROXY!;
-const httpProxy = new ProxyAgent(proxyUrl);
-const wsProxy = new HttpsProxyAgent(proxyUrl);
+const proxy = new ProxyAgent(process.env.HTTPS_PROXY!);
 
 const handler = new WebexMessageHandler({
   token: process.env.WEBEX_BOT_TOKEN!,
@@ -124,7 +123,7 @@ const handler = new WebexMessageHandler({
       method: request.method,
       headers: request.headers,
       body: request.body,
-      dispatcher: httpProxy, // HTTP via proxy
+      dispatcher: proxy,
     });
     return {
       status: response.status,
@@ -134,15 +133,12 @@ const handler = new WebexMessageHandler({
     };
   },
   webSocketFactory: (url) => {
-    // CRITICAL: ws library needs 'agent' option for proxy
-    return new WebSocket(url, { agent: wsProxy });
+    // Return any object implementing InjectedWebSocket
+    // (send, close, readyState, on)
+    return createYourCustomWebSocket(url);
   },
 });
-
-await handler.connect();
 ```
-
-> **Important:** WebSocket connections require an `agent` option to route through a proxy. The `ws` library will bypass proxies without this configuration.
 
 ## API Reference
 
@@ -163,7 +159,7 @@ new WebexMessageHandler(config: WebexMessageHandlerConfig)
 | `token` | `string` | required | Webex bot access token |
 | `logger` | `Logger` | noop | Custom logger (`consoleLogger` provided) |
 | `ignoreSelfMessages` | `boolean` | `true` | Filter out messages sent by this bot |
-| `agent` | `http.Agent \| https.Agent` | undefined | HTTP/HTTPS agent for proxy support |
+| `dispatcher` | `object` (undici `Dispatcher`) | undefined | Proxy dispatcher for native mode (e.g., `ProxyAgent`) |
 | `pingInterval` | `number` | `15000` | Mercury ping interval (ms) |
 | `pongTimeout` | `number` | `14000` | Pong response timeout (ms) |
 | `reconnectBackoffMax` | `number` | `32000` | Max reconnect backoff (ms) |
