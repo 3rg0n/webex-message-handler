@@ -28,6 +28,7 @@ type MercurySocket struct {
 	baseURL           string
 	connectionReady   bool
 	shouldReconnect   bool
+	reconnecting      bool
 	reconnectAttempts int
 	pendingPongID     string
 
@@ -237,7 +238,9 @@ func (ms *MercurySocket) startPingLoop(ctx context.Context) {
 			}
 
 			pongID := uuid.New().String()
+			ms.mu.Lock()
 			ms.pendingPongID = pongID
+			ms.mu.Unlock()
 
 			pingMsg, _ := json.Marshal(map[string]string{
 				"id":   pongID,
@@ -250,13 +253,20 @@ func (ms *MercurySocket) startPingLoop(ctx context.Context) {
 
 			// Wait for pong with timeout
 			go func(expectedID string) {
-				time.Sleep(ms.pongTimeout)
-				if ms.pendingPongID == expectedID {
-					ms.logger.Warn(fmt.Sprintf("Pong timeout for ping %s, reconnecting", expectedID))
-					ms.pendingPongID = ""
-					ms.closeWebSocket()
-					go ms.reconnect(context.Background())
+				select {
+				case <-time.After(ms.pongTimeout):
+				case <-ctx.Done():
+					return
 				}
+				ms.mu.Lock()
+				if ms.pendingPongID != expectedID {
+					ms.mu.Unlock()
+					return
+				}
+				ms.pendingPongID = ""
+				ms.mu.Unlock()
+				ms.logger.Warn(fmt.Sprintf("Pong timeout for ping %s, reconnecting", expectedID))
+				ms.triggerReconnect()
 			}(pongID)
 		}
 	}
@@ -272,7 +282,7 @@ func (ms *MercurySocket) handleMessage(message map[string]interface{}) {
 		ms.handleActivityEnvelope(message)
 	case msgType == "shutdown":
 		ms.logger.Info("Received shutdown message from Mercury")
-		go ms.reconnect(context.Background())
+		go ms.triggerReconnect()
 	default:
 		ms.logger.Debug(fmt.Sprintf("Unhandled Mercury message type: %s", msgType))
 	}
@@ -289,10 +299,12 @@ func (ms *MercurySocket) hasEventType(message map[string]interface{}) bool {
 
 func (ms *MercurySocket) handlePong(message map[string]interface{}) {
 	id, _ := message["id"].(string)
+	ms.mu.Lock()
 	if ms.pendingPongID != "" && id == ms.pendingPongID {
 		ms.logger.Debug(fmt.Sprintf("Received pong: %s", id))
 		ms.pendingPongID = ""
 	}
+	ms.mu.Unlock()
 }
 
 func (ms *MercurySocket) handleActivityEnvelope(message map[string]interface{}) {
@@ -366,7 +378,7 @@ func (ms *MercurySocket) handleClose(code websocket.StatusCode, reason string) {
 	}
 
 	if ms.shouldReconnect {
-		go ms.reconnect(context.Background())
+		go ms.triggerReconnect()
 	} else {
 		if ms.onDisconnected != nil {
 			ms.onDisconnected("manual")
@@ -375,6 +387,12 @@ func (ms *MercurySocket) handleClose(code websocket.StatusCode, reason string) {
 }
 
 func (ms *MercurySocket) reconnect(ctx context.Context) {
+	defer func() {
+		ms.mu.Lock()
+		ms.reconnecting = false
+		ms.mu.Unlock()
+	}()
+
 	if !ms.shouldReconnect {
 		return
 	}
@@ -423,21 +441,37 @@ func (ms *MercurySocket) reconnect(ctx context.Context) {
 func (ms *MercurySocket) closeWebSocket() {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
+	if ms.cancelFn != nil {
+		ms.cancelFn()
+		ms.cancelFn = nil
+	}
 	if ms.conn != nil {
 		ms.conn.Close(websocket.StatusNormalClosure, "")
 		ms.conn = nil
 	}
+	ms.pendingPongID = ""
+}
+
+// triggerReconnect safely closes the socket and starts a reconnection,
+// preventing concurrent reconnection attempts.
+func (ms *MercurySocket) triggerReconnect() {
+	ms.mu.Lock()
+	if ms.reconnecting || !ms.shouldReconnect {
+		ms.mu.Unlock()
+		return
+	}
+	ms.reconnecting = true
+	ms.mu.Unlock()
+
+	ms.closeWebSocket()
+	ms.reconnect(context.Background())
 }
 
 // Disconnect disconnects from Mercury.
 func (ms *MercurySocket) Disconnect() {
 	ms.logger.Info("Disconnecting from Mercury")
 	ms.shouldReconnect = false
-	ms.pendingPongID = ""
 	ms.closeWebSocket()
-	if ms.cancelFn != nil {
-		ms.cancelFn()
-	}
 	ms.connectionReady = false
 	if ms.onDisconnected != nil {
 		ms.onDisconnected("client")
