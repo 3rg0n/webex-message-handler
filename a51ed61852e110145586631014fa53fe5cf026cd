@@ -1,0 +1,23 @@
+go/mercury_socket.go
+  25ccca6093f1ae3d 31,241,243,256-259,261-269,285,302,307,381,390-395,444-447,452-461,463-467
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.12",
+  "base_commit_sha": "a51ed61852e110145586631014fa53fe5cf026cd",
+  "prompts": {
+    "25ccca6093f1ae3d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a5afcede-bc5a-454b-af42-844223f3840c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Ergon Copeland <62959009+3rg0n@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 567,
+      "total_deletions": 533,
+      "accepted_lines": 119,
+      "overriden_lines": 0
+    }
+  }
+}
