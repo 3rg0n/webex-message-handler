@@ -1,0 +1,37 @@
+node/src/handler.ts
+  25ccca6093f1ae3d 248-250
+python/src/webex_message_handler/mercury_socket.py
+  25ccca6093f1ae3d 52,218,294,296-299,301-304,307-308,311,313,317,321-323,325-326,328-330,342-349
+go/handler.go
+  25ccca6093f1ae3d 11,34-38,216,218,222,228,233,235,238-239,241,247,249,255,264,268,270,276-280,282,287-290,294-295,355-356,364-366,421-425,488-492,497,515-521,615-621,625-627,631-632,637,639-640
+rust/src/kms_client.rs
+  25ccca6093f1ae3d 234-242
+node/src/kms-client.ts
+  25ccca6093f1ae3d 48-50,113,116,126,130-131,133-135,148,151-152,155,160,167,176,183,189,191-192,199,203-207,209,214,243,264
+rust/src/handler.rs
+  25ccca6093f1ae3d 182,227,249-251,435-437,441-443,446-448,451-453,496-498,512,516-518,527,536-539
+rust/src/mercury_socket.rs
+  25ccca6093f1ae3d 12,215-219
+node/src/mercury-socket.ts
+  25ccca6093f1ae3d 90-96,172-177
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.12",
+  "base_commit_sha": "9439a1bace5425517b0f1e0d3a61091d9757a785",
+  "prompts": {
+    "25ccca6093f1ae3d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a5afcede-bc5a-454b-af42-844223f3840c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Ergon Copeland <62959009+3rg0n@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 5103,
+      "total_deletions": 4855,
+      "accepted_lines": 1001,
+      "overriden_lines": 12
+    }
+  }
+}
