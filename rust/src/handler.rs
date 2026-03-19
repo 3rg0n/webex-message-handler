@@ -179,7 +179,7 @@ impl WebexMessageHandler {
                 (http_adapter, None)
             }
             NetworkMode::Injected => {
-                let http_adapter = config.fetch.clone().unwrap();
+                let http_adapter = config.fetch.clone().expect("Injected mode requires fetch adapter");
                 let ws_factory = config.web_socket_factory.clone();
                 (http_adapter, ws_factory)
             }
@@ -224,12 +224,10 @@ impl WebexMessageHandler {
     pub async fn connect(&self) -> Result<(), WebexError> {
         {
             let connecting = self.connecting.lock().await;
+            let connected = self.connected.lock().await;
             if *connecting {
                 return Err(WebexError::Internal("connect() already in progress".into()));
             }
-        }
-        {
-            let connected = self.connected.lock().await;
             if *connected {
                 return Err(WebexError::Internal(
                     "Already connected. Call disconnect() first, or use reconnect().".into(),
@@ -248,7 +246,9 @@ impl WebexMessageHandler {
             Ok(()) => {
                 *self.connected.lock().await = true;
                 info!("Connected to Webex");
-                let _ = self.event_tx.send(HandlerEvent::Connected);
+                if self.event_tx.send(HandlerEvent::Connected).is_err() {
+                    warn!("Event receiver dropped, cannot send Connected event");
+                }
                 Ok(())
             }
             Err(e) => Err(e),
@@ -432,17 +432,25 @@ impl WebexMessageHandler {
                         }
 
                         *connected.lock().await = true;
-                        let _ = event_tx.send(HandlerEvent::Connected);
+                        if event_tx.send(HandlerEvent::Connected).is_err() {
+                            warn!("Event receiver dropped, cannot send Connected event");
+                        }
                     }
                     MercuryEvent::Disconnected(reason) => {
                         *connected.lock().await = false;
-                        let _ = event_tx.send(HandlerEvent::Disconnected(reason));
+                        if event_tx.send(HandlerEvent::Disconnected(reason)).is_err() {
+                            warn!("Event receiver dropped, cannot send Disconnected event");
+                        }
                     }
                     MercuryEvent::Reconnecting(attempt) => {
-                        let _ = event_tx.send(HandlerEvent::Reconnecting(attempt));
+                        if event_tx.send(HandlerEvent::Reconnecting(attempt)).is_err() {
+                            warn!("Event receiver dropped, cannot send Reconnecting event");
+                        }
                     }
                     MercuryEvent::Error(msg) => {
-                        let _ = event_tx.send(HandlerEvent::Error(msg));
+                        if event_tx.send(HandlerEvent::Error(msg)).is_err() {
+                            warn!("Event receiver dropped, cannot send Error event");
+                        }
                     }
                 }
             }
@@ -485,11 +493,15 @@ impl WebexMessageHandler {
                         }
                     }
 
-                    let _ = event_tx.send(HandlerEvent::MessageCreated(msg));
+                    if event_tx.send(HandlerEvent::MessageCreated(msg)).is_err() {
+                        warn!("Event receiver dropped, cannot send MessageCreated event");
+                    }
                 }
                 Err(e) => {
                     error!("Error decrypting activity: {e}");
-                    let _ = event_tx.send(HandlerEvent::Error(e.to_string()));
+                    if event_tx.send(HandlerEvent::Error(e.to_string())).is_err() {
+                        warn!("Event receiver dropped, cannot send Error event");
+                    }
                 }
             }
             return;
@@ -497,11 +509,13 @@ impl WebexMessageHandler {
 
         // message:deleted — verb=delete + objectType=activity
         if activity.verb == "delete" && activity.object.object_type == "activity" {
-            let _ = event_tx.send(HandlerEvent::MessageDeleted(DeletedMessage {
+            if event_tx.send(HandlerEvent::MessageDeleted(DeletedMessage {
                 message_id: activity.object.id.clone(),
                 room_id: activity.target.id.clone(),
                 person_id: activity.actor.id.clone(),
-            }));
+            })).is_err() {
+                warn!("Event receiver dropped, cannot send MessageDeleted event");
+            }
             return;
         }
 
@@ -510,7 +524,7 @@ impl WebexMessageHandler {
         if membership_verbs.contains(&activity.verb.as_str())
             && activity.object.object_type == "person"
         {
-            let _ = event_tx.send(HandlerEvent::MembershipCreated(MembershipActivity {
+            let event = HandlerEvent::MembershipCreated(MembershipActivity {
                 id: activity.id.clone(),
                 actor_id: activity.actor.id.clone(),
                 person_id: activity.object.id.clone(),
@@ -519,7 +533,10 @@ impl WebexMessageHandler {
                 created: activity.published.clone(),
                 room_type: infer_room_type(activity),
                 raw: activity.clone(),
-            }));
+            });
+            if event_tx.send(event).is_err() {
+                warn!("Event receiver dropped, cannot send MembershipCreated event");
+            }
         }
     }
 

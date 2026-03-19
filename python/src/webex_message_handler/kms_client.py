@@ -165,6 +165,14 @@ class KmsClient:
             else:
                 remote_ecdh_key = jwk.JWK(**json.loads(remote_jwk_data))
 
+            # Validate remote key type and curve
+            key_type = remote_ecdh_key.get("kty")
+            key_curve = remote_ecdh_key.get("crv")
+            if key_type != "EC" or key_curve != "P-256":
+                raise KmsError(
+                    f"Invalid remote key type: kty={key_type}, crv={key_curve}"
+                )
+
             # Get the remote key URI for use as kid on the derived key
             remote_key_uri = (
                 response_data.get("body", {}).get("key", {}).get("uri")
@@ -288,6 +296,9 @@ class KmsClient:
                 ) if not future.done() else None,
             ),
         )
+
+        if len(self._pending_requests) >= 100:
+            self._logger.warning("KMS pending requests queue is large (%d), possible leak", len(self._pending_requests))
 
         self._pending_requests[request_id] = _PendingRequest(future=future, timeout_handle=timeout_handle)
 

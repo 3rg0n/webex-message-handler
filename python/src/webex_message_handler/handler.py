@@ -190,7 +190,7 @@ class WebexMessageHandler:
         """Create WebSocket adapter using native aiohttp."""
         async def ws_factory(url: str) -> InjectedWebSocket:
             session = aiohttp.ClientSession(connector=connector)
-            ws = await session.ws_connect(url)
+            ws = await session.ws_connect(url, max_msg_size=1 * 1024 * 1024)  # 1MB
 
             # Attach session for cleanup
             ws._session = session  # type: ignore[attr-defined]
@@ -239,7 +239,12 @@ class WebexMessageHandler:
             try:
                 result = callback(*args)
                 if asyncio.iscoroutine(result):
-                    asyncio.ensure_future(result)
+                    task = asyncio.ensure_future(result)
+                    task.add_done_callback(
+                        lambda t, ev=event: self._logger.error(
+                            f"Error in async {ev} listener: {t.exception()}"
+                        ) if not t.cancelled() and t.exception() else None
+                    )
             except Exception as exc:
                 self._logger.error(f"Error in {event} listener: {exc}")
 

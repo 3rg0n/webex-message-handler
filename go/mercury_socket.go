@@ -100,12 +100,39 @@ func (ms *MercurySocket) OnKmsResponse(fn func(data map[string]interface{})) { m
 // OnError sets the error event callback.
 func (ms *MercurySocket) OnError(fn func(err error)) { ms.onError = fn }
 
+// Helper methods to protect boolean field access with mutex
+func (ms *MercurySocket) setConnectionReady(v bool) {
+	ms.mu.Lock()
+	ms.connectionReady = v
+	ms.mu.Unlock()
+}
+
+func (ms *MercurySocket) isConnectionReady() bool {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+	return ms.connectionReady
+}
+
+func (ms *MercurySocket) setShouldReconnect(v bool) {
+	ms.mu.Lock()
+	ms.shouldReconnect = v
+	ms.mu.Unlock()
+}
+
+func (ms *MercurySocket) isShouldReconnect() bool {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+	return ms.shouldReconnect
+}
+
 // Connect connects to Mercury WebSocket.
 func (ms *MercurySocket) Connect(ctx context.Context, wsURL, token string) error {
 	ms.token = token
 	ms.baseURL = wsURL
-	ms.shouldReconnect = true
+	ms.setShouldReconnect(true)
+	ms.mu.Lock()
 	ms.reconnectAttempts = 0
+	ms.mu.Unlock()
 	return ms.connectInternal(ctx)
 }
 
@@ -113,7 +140,7 @@ func (ms *MercurySocket) connectInternal(ctx context.Context) error {
 	preparedURL := ms.prepareURL(ms.baseURL)
 	ms.logger.Debug(fmt.Sprintf("Connecting to Mercury at %s", preparedURL))
 
-	ms.connectionReady = false
+	ms.setConnectionReady(false)
 
 	connCtx, cancel := context.WithCancel(ctx)
 	ms.cancelFn = cancel
@@ -160,7 +187,7 @@ func (ms *MercurySocket) connectInternal(ctx context.Context) error {
 		for {
 			_, data, err := conn.Read(connCtx)
 			if err != nil {
-				if !ms.connectionReady {
+				if !ms.isConnectionReady() {
 					errCh <- NewMercuryConnectionError("WebSocket closed during setup", 0)
 				} else {
 					ms.handleClose(websocket.StatusNormalClosure, "")
@@ -177,8 +204,8 @@ func (ms *MercurySocket) connectInternal(ctx context.Context) error {
 
 			ms.handleMessage(message)
 
-			if !ms.connectionReady && ms.isConnectionReady(message) {
-				ms.connectionReady = true
+			if !ms.isConnectionReady() && ms.isConnectionReadyMessage(message) {
+				ms.setConnectionReady(true)
 				ms.logger.Debug("Mercury connection ready")
 				go ms.startPingLoop(connCtx)
 				close(readyCh)
@@ -212,7 +239,7 @@ func (ms *MercurySocket) prepareURL(baseURL string) string {
 	return u.String()
 }
 
-func (ms *MercurySocket) isConnectionReady(message map[string]interface{}) bool {
+func (ms *MercurySocket) isConnectionReadyMessage(message map[string]interface{}) bool {
 	data, _ := message["data"].(map[string]interface{})
 	if data == nil {
 		return false
@@ -322,7 +349,9 @@ func (ms *MercurySocket) handleActivityEnvelope(message map[string]interface{}) 
 	if conn != nil {
 		msgID, _ := message["id"].(string)
 		ack, _ := json.Marshal(map[string]string{"messageId": msgID, "type": "ack"})
-		conn.Write(context.Background(), websocket.MessageText, ack)
+		if err := conn.Write(context.Background(), websocket.MessageText, ack); err != nil {
+			ms.logger.Debug(fmt.Sprintf("Failed to send ACK for message %s: %v", msgID, err))
+		}
 	}
 
 	// Route KMS messages
@@ -351,11 +380,11 @@ func (ms *MercurySocket) handleActivityEnvelope(message map[string]interface{}) 
 
 func (ms *MercurySocket) handleClose(code websocket.StatusCode, reason string) {
 	ms.logger.Info(fmt.Sprintf("WebSocket closed with code %d: %s", code, reason))
-	ms.connectionReady = false
+	ms.setConnectionReady(false)
 
 	if code == 4401 {
 		ms.logger.Error("Mercury authorization failed")
-		ms.shouldReconnect = false
+		ms.setShouldReconnect(false)
 		if ms.onError != nil {
 			ms.onError(NewAuthError("Mercury authorization failed"))
 		}
@@ -367,7 +396,7 @@ func (ms *MercurySocket) handleClose(code websocket.StatusCode, reason string) {
 
 	if code == 4400 || code == 4403 {
 		ms.logger.Error(fmt.Sprintf("Mercury permanent failure (code %d)", code))
-		ms.shouldReconnect = false
+		ms.setShouldReconnect(false)
 		if ms.onError != nil {
 			ms.onError(NewMercuryConnectionError(fmt.Sprintf("Mercury permanent failure (code %d)", code), int(code)))
 		}
@@ -377,7 +406,7 @@ func (ms *MercurySocket) handleClose(code websocket.StatusCode, reason string) {
 		return
 	}
 
-	if ms.shouldReconnect {
+	if ms.isShouldReconnect() {
 		go ms.triggerReconnect()
 	} else {
 		if ms.onDisconnected != nil {
@@ -393,48 +422,65 @@ func (ms *MercurySocket) reconnect(ctx context.Context) {
 		ms.mu.Unlock()
 	}()
 
-	if !ms.shouldReconnect {
-		return
-	}
+	for {
+		ms.mu.RLock()
+		shouldReconnect := ms.shouldReconnect
+		attempts := ms.reconnectAttempts
+		maxAttempts := ms.maxReconnectAttempts
+		ms.mu.RUnlock()
 
-	if ms.reconnectAttempts >= ms.maxReconnectAttempts {
-		ms.logger.Error(fmt.Sprintf("Max reconnection attempts (%d) exceeded", ms.maxReconnectAttempts))
-		ms.shouldReconnect = false
-		if ms.onDisconnected != nil {
-			ms.onDisconnected("max-attempts-exceeded")
+		if !shouldReconnect {
+			return
+		}
+
+		if attempts >= maxAttempts {
+			ms.logger.Error(fmt.Sprintf("Max reconnection attempts (%d) exceeded", maxAttempts))
+			ms.mu.Lock()
+			ms.shouldReconnect = false
+			ms.mu.Unlock()
+			if ms.onDisconnected != nil {
+				ms.onDisconnected("max-attempts-exceeded")
+			}
+			return
+		}
+
+		ms.mu.Lock()
+		ms.reconnectAttempts++
+		currentAttempt := ms.reconnectAttempts
+		ms.mu.Unlock()
+
+		delay := math.Min(
+			math.Pow(2, float64(currentAttempt-1)),
+			ms.reconnectBackoffMax.Seconds(),
+		)
+
+		ms.logger.Info(fmt.Sprintf("Reconnecting (attempt %d/%d) in %.0fs", currentAttempt, maxAttempts, delay))
+		if ms.onReconnecting != nil {
+			ms.onReconnecting(currentAttempt)
+		}
+
+		time.Sleep(time.Duration(delay * float64(time.Second)))
+
+		ms.mu.RLock()
+		shouldReconnect = ms.shouldReconnect
+		ms.mu.RUnlock()
+		if !shouldReconnect {
+			return
+		}
+
+		if err := ms.connectInternal(ctx); err != nil {
+			ms.logger.Error(fmt.Sprintf("Reconnection failed: %v", err))
+			continue // retry instead of recursive call
+		}
+
+		ms.logger.Info("Successfully reconnected to Mercury")
+		ms.mu.Lock()
+		ms.reconnectAttempts = 0
+		ms.mu.Unlock()
+		if ms.onConnected != nil {
+			ms.onConnected()
 		}
 		return
-	}
-
-	ms.reconnectAttempts++
-	delay := math.Min(
-		math.Pow(2, float64(ms.reconnectAttempts-1)),
-		ms.reconnectBackoffMax.Seconds(),
-	)
-
-	ms.logger.Info(fmt.Sprintf("Reconnecting (attempt %d/%d) in %.0fs", ms.reconnectAttempts, ms.maxReconnectAttempts, delay))
-	if ms.onReconnecting != nil {
-		ms.onReconnecting(ms.reconnectAttempts)
-	}
-
-	time.Sleep(time.Duration(delay * float64(time.Second)))
-
-	if !ms.shouldReconnect {
-		return
-	}
-
-	if err := ms.connectInternal(ctx); err != nil {
-		ms.logger.Error(fmt.Sprintf("Reconnection failed: %v", err))
-		if ms.shouldReconnect {
-			ms.reconnect(ctx)
-		}
-		return
-	}
-
-	ms.logger.Info("Successfully reconnected to Mercury")
-	ms.reconnectAttempts = 0
-	if ms.onConnected != nil {
-		ms.onConnected()
 	}
 }
 
@@ -470,9 +516,9 @@ func (ms *MercurySocket) triggerReconnect() {
 // Disconnect disconnects from Mercury.
 func (ms *MercurySocket) Disconnect() {
 	ms.logger.Info("Disconnecting from Mercury")
-	ms.shouldReconnect = false
+	ms.setShouldReconnect(false)
 	ms.closeWebSocket()
-	ms.connectionReady = false
+	ms.setConnectionReady(false)
 	if ms.onDisconnected != nil {
 		ms.onDisconnected("client")
 	}
@@ -487,6 +533,8 @@ func (ms *MercurySocket) Connected() bool {
 
 // CurrentReconnectAttempts returns the current reconnection attempt count.
 func (ms *MercurySocket) CurrentReconnectAttempts() int {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
 	return ms.reconnectAttempts
 }
 

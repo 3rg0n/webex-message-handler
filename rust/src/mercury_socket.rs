@@ -9,7 +9,7 @@ use std::time::Duration;
 use tokio::sync::{mpsc, Mutex, Notify};
 use tokio::time;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use url::Url;
 use uuid::Uuid;
 
@@ -212,6 +212,11 @@ impl MercurySocket {
                     Ok(Message::Text(text)) => {
                         let text_str: &str = &text;
                         debug!("WS message received ({} bytes)", text_str.len());
+                        // Enforce WebSocket message size limit (1 MB)
+                        if text_str.len() > 1_048_576 {
+                            warn!("Dropping oversized Mercury message ({} bytes)", text_str.len());
+                            continue;
+                        }
                         if let Ok(parsed) = serde_json::from_str::<Value>(text_str) {
                             Self::handle_message_static(&parsed, &event_tx, &write_clone).await;
                         } else {

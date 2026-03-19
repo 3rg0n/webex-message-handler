@@ -45,6 +45,9 @@ export class KmsClient {
   // Pending KMS requests waiting for responses via Mercury
   private pendingRequests: Map<string, PendingRequest> = new Map();
 
+  // Mutex to serialize KMS requests and ensure FIFO is safe
+  private _kmsRequestMutex: Promise<void> = Promise.resolve();
+
   constructor(config: KmsClientConfig) {
     this.token = config.token;
     this.deviceUrl = config.deviceUrl;
@@ -52,6 +55,22 @@ export class KmsClient {
     this.encryptionServiceUrl = config.encryptionServiceUrl;
     this.logger = config.logger ?? noopLogger;
     this.httpDo = config.httpDo;
+  }
+
+  /**
+   * Execute a function with the KMS request lock held.
+   * This ensures only one KMS request is in-flight at a time, making FIFO safe.
+   */
+  private async _withKmsLock<T>(fn: () => Promise<T>): Promise<T> {
+    const prev = this._kmsRequestMutex;
+    let resolve: () => void;
+    this._kmsRequestMutex = new Promise(r => { resolve = r; });
+    await prev;
+    try {
+      return await fn();
+    } finally {
+      resolve!();
+    }
   }
 
   /**
@@ -91,104 +110,115 @@ export class KmsClient {
   }
 
   async initialize(): Promise<void> {
-    try {
-      this.logger.info('Initializing KMS client');
+    return this._withKmsLock(async () => {
+      try {
+        this.logger.info('Initializing KMS client');
 
-      // Step 1: Fetch KMS details
-      const kmsDetailsUrl = `${this.encryptionServiceUrl}/kms/${this.userId}`;
-      const kmsDetailsResponse = await this.httpDo({
-        url: kmsDetailsUrl,
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${this.token}`,
-        },
-      });
+        // Step 1: Fetch KMS details
+        const kmsDetailsUrl = `${this.encryptionServiceUrl}/kms/${this.userId}`;
+        const kmsDetailsResponse = await this.httpDo({
+          url: kmsDetailsUrl,
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${this.token}`,
+          },
+        });
 
-      if (!kmsDetailsResponse.ok) {
+        if (!kmsDetailsResponse.ok) {
+          throw new KmsError(
+            `Failed to fetch KMS details: ${kmsDetailsResponse.status}`
+          );
+        }
+
+        const kmsDetails = (await kmsDetailsResponse.json()) as KmsDetailsResponse;
+        this.kmsCluster = kmsDetails.kmsCluster;
+
+        // Step 2: Create KMS Context
+        const context = new KMS.Context();
+        context.clientInfo = {
+          clientId: this.deviceUrl,
+          credential: {
+            userId: this.userId,
+            bearer: this.token,
+          },
+        };
+        const rsaPublicKey = typeof kmsDetails.rsaPublicKey === 'string'
+          ? JSON.parse(kmsDetails.rsaPublicKey)
+          : kmsDetails.rsaPublicKey;
+        context.serverInfo = {
+          key: rsaPublicKey,
+        };
+
+        // Step 3: Generate local ephemeral ECDH keypair
+        const localEcdhKey = await context.createECDHKey();
+        context.ephemeralKey = localEcdhKey;
+
+        // Step 4: Create ECDH request
+        // The SDK calls localECDHKey.asKey() → jose JWK Key, then .toJSON() for just the public JWK
+        const localJoseKey = await localEcdhKey.asKey();
+        const publicJwk = localJoseKey.toJSON();
+
+        const ecdhRequest = new KMS.Request({
+          method: 'create',
+          uri: `${this.kmsCluster}/ecdhe`,
+        } as { method: string; uri: string });
+        (ecdhRequest.body as Record<string, unknown>).jwk = publicJwk;
+        await ecdhRequest.wrap(context, { serverKey: true });
+
+        // Step 5: POST ECDH request and wait for response via Mercury
+        const wrappedEcdhResponse = await this._sendKmsRequest(
+          ecdhRequest.requestId,
+          ecdhRequest.wrapped
+        );
+
+        // Step 6: Unwrap ECDH response and derive shared key
+        const ecdhResponse = new KMS.Response(wrappedEcdhResponse);
+        await ecdhResponse.unwrap(context);
+
+        const remoteKey = ecdhResponse.body?.key;
+        if (!remoteKey) {
+          throw new KmsError('No key in ECDH response, body keys: ' + Object.keys(ecdhResponse.body || {}).join(', '));
+        }
+
+        // Validate remote ECDH public key (kty and crv can be at top level or nested in jwk)
+        const keyToValidate = (remoteKey as unknown as Record<string, unknown>)?.jwk || remoteKey as unknown as Record<string, unknown>;
+        const kty = (keyToValidate as Record<string, unknown>)?.kty;
+        const crv = (keyToValidate as Record<string, unknown>)?.crv;
+        if (kty !== 'EC' || crv !== 'P-256') {
+          throw new KmsError(`Invalid KMS remote key: kty=${kty}, crv=${crv}`);
+        }
+
+        const sharedKey = await context.deriveEphemeralKey(remoteKey as unknown as Record<string, unknown>);
+        context.ephemeralKey = sharedKey;
+
+        // Step 7: Store context and expiration
+        this.context = context;
+        if (context.ephemeralKey?.expirationDate) {
+          this.contextExpiration = context.ephemeralKey.expirationDate as unknown as Date;
+        }
+
+        this.logger.info('KMS client initialized successfully');
+      } catch (error) {
+        if (error instanceof KmsError) {
+          throw error;
+        }
         throw new KmsError(
-          `Failed to fetch KMS details: ${kmsDetailsResponse.status}`
+          `KMS initialization failed: ${error instanceof Error ? error.message : String(error)}`
         );
       }
-
-      const kmsDetails = (await kmsDetailsResponse.json()) as KmsDetailsResponse;
-      this.kmsCluster = kmsDetails.kmsCluster;
-
-      // Step 2: Create KMS Context
-      const context = new KMS.Context();
-      context.clientInfo = {
-        clientId: this.deviceUrl,
-        credential: {
-          userId: this.userId,
-          bearer: this.token,
-        },
-      };
-      const rsaPublicKey = typeof kmsDetails.rsaPublicKey === 'string'
-        ? JSON.parse(kmsDetails.rsaPublicKey)
-        : kmsDetails.rsaPublicKey;
-      context.serverInfo = {
-        key: rsaPublicKey,
-      };
-
-      // Step 3: Generate local ephemeral ECDH keypair
-      const localEcdhKey = await context.createECDHKey();
-      context.ephemeralKey = localEcdhKey;
-
-      // Step 4: Create ECDH request
-      // The SDK calls localECDHKey.asKey() → jose JWK Key, then .toJSON() for just the public JWK
-      const localJoseKey = await localEcdhKey.asKey();
-      const publicJwk = localJoseKey.toJSON();
-
-      const ecdhRequest = new KMS.Request({
-        method: 'create',
-        uri: `${this.kmsCluster}/ecdhe`,
-      } as { method: string; uri: string });
-      (ecdhRequest.body as Record<string, unknown>).jwk = publicJwk;
-      await ecdhRequest.wrap(context, { serverKey: true });
-
-      // Step 5: POST ECDH request and wait for response via Mercury
-      const wrappedEcdhResponse = await this._sendKmsRequest(
-        ecdhRequest.requestId,
-        ecdhRequest.wrapped
-      );
-
-      // Step 6: Unwrap ECDH response and derive shared key
-      const ecdhResponse = new KMS.Response(wrappedEcdhResponse);
-      await ecdhResponse.unwrap(context);
-
-      const remoteKey = ecdhResponse.body?.key;
-      if (!remoteKey) {
-        throw new KmsError('No key in ECDH response, body keys: ' + Object.keys(ecdhResponse.body || {}).join(', '));
-      }
-      const sharedKey = await context.deriveEphemeralKey(remoteKey as unknown as Record<string, unknown>);
-      context.ephemeralKey = sharedKey;
-
-      // Step 7: Store context and expiration
-      this.context = context;
-      if (context.ephemeralKey?.expirationDate) {
-        this.contextExpiration = context.ephemeralKey.expirationDate as unknown as Date;
-      }
-
-      this.logger.info('KMS client initialized successfully');
-    } catch (error) {
-      if (error instanceof KmsError) {
-        throw error;
-      }
-      throw new KmsError(
-        `KMS initialization failed: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
+    });
   }
 
   async getKey(keyUri: string): Promise<JWK.Key> {
     try {
-      // Check cache
+      // Check cache first (no lock needed)
       const cachedKey = this.keyCache.get(keyUri);
       if (cachedKey) {
         this.logger.debug(`Cache hit for key: ${keyUri}`);
         return cachedKey;
       }
 
-      // Check if context is expired
+      // Check if context is expired (requires re-initialization without lock first)
       if (this.isContextExpired()) {
         this.logger.info('Context expired, re-initializing');
         await this.initialize();
@@ -198,33 +228,40 @@ export class KmsClient {
         throw new KmsError('KMS context not initialized');
       }
 
-      // Create and wrap retrieve request
-      const request = new KMS.Request({
-        method: 'retrieve',
-        uri: keyUri,
+      // Retrieve key with lock (context is now guaranteed to exist)
+      return await this._withKmsLock(async () => {
+        if (!this.context) {
+          throw new KmsError('KMS context not initialized');
+        }
+
+        // Create and wrap retrieve request
+        const request = new KMS.Request({
+          method: 'retrieve',
+          uri: keyUri,
+        });
+        await request.wrap(this.context);
+
+        // POST and wait for response via Mercury
+        const wrappedKeyResponse = await this._sendKmsRequest(
+          request.requestId,
+          request.wrapped
+        );
+
+        // Unwrap response
+        const response = new KMS.Response(wrappedKeyResponse);
+        await response.unwrap(this.context);
+
+        const keyObject = response.body.key;
+        if (!keyObject) {
+          throw new KmsError('No key found in KMS response');
+        }
+
+        // Convert to jose key, cache, and return
+        const joseKey = await jose.JWK.asKey(keyObject.jwk);
+        this.keyCache.set(keyUri, joseKey);
+        this.logger.info(`Key retrieved and cached: ${keyUri}`);
+        return joseKey;
       });
-      await request.wrap(this.context);
-
-      // POST and wait for response via Mercury
-      const wrappedKeyResponse = await this._sendKmsRequest(
-        request.requestId,
-        request.wrapped
-      );
-
-      // Unwrap response
-      const response = new KMS.Response(wrappedKeyResponse);
-      await response.unwrap(this.context);
-
-      const keyObject = response.body.key;
-      if (!keyObject) {
-        throw new KmsError('No key found in KMS response');
-      }
-
-      // Convert to jose key, cache, and return
-      const joseKey = await jose.JWK.asKey(keyObject.jwk);
-      this.keyCache.set(keyUri, joseKey);
-      this.logger.info(`Key retrieved and cached: ${keyUri}`);
-      return joseKey;
     } catch (error) {
       if (error instanceof KmsError) {
         throw error;

@@ -87,6 +87,13 @@ export class MercurySocket extends EventEmitter {
         this.ws.on('message', (rawData: string) => {
           try {
             this.logger.debug('WS message received (' + rawData.length + ' bytes)');
+
+            // Validate message size (max 1MB)
+            if (typeof rawData === 'string' && rawData.length > 1_048_576) {
+              this.logger.warn(`Dropping oversized Mercury message (${rawData.length} bytes)`);
+              return;
+            }
+
             const message = JSON.parse(rawData) as MercuryWireMessage;
             this._handleMessage(message);
 
@@ -161,6 +168,12 @@ export class MercurySocket extends EventEmitter {
         });
         this.ws.send(pingMessage);
         this.logger.debug(`Sent ping: ${this.pendingPongId}`);
+
+        // Clear any previous pong timeout before setting a new one
+        if (this.pongTimeoutHandle) {
+          clearTimeout(this.pongTimeoutHandle);
+          this.pongTimeoutHandle = null;
+        }
 
         // Set timeout for pong response
         this.pongTimeoutHandle = setTimeout(() => {

@@ -230,6 +230,18 @@ func (kc *KmsClient) Initialize(ctx context.Context) error {
 		return NewKmsErrorWithCause("Failed to parse remote ECDH key", err)
 	}
 
+	// Validate remote key is a valid P-256 ECDSA public key
+	if remoteJWK.Key == nil {
+		return NewKmsError("Remote ECDH key is nil after unmarshaling")
+	}
+	remotePub, ok := remoteJWK.Key.(*ecdsa.PublicKey)
+	if !ok {
+		return NewKmsError("Remote ECDH key is not an ECDSA public key")
+	}
+	if remotePub.Curve != elliptic.P256() {
+		kc.logger.Warn("Remote ECDH key is not using P-256 curve")
+	}
+
 	// Extract remote key URI for kid
 	remoteKeyURI := extractKeyURI(responseData)
 

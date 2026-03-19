@@ -231,6 +231,15 @@ impl KmsClient {
         let remote_jwk_data = extract_jwk_from_response(&response_data)
             .ok_or_else(|| WebexError::kms("No key in ECDH response"))?;
 
+        // Validate remote key type before attempting to parse
+        let kty = remote_jwk_data.get("kty").and_then(|v| v.as_str()).unwrap_or("");
+        let crv = remote_jwk_data.get("crv").and_then(|v| v.as_str()).unwrap_or("");
+        if kty != "EC" || crv != "P-256" {
+            return Err(WebexError::kms(format!(
+                "Invalid remote key type: kty={}, crv={}", kty, crv
+            )));
+        }
+
         // Parse remote public key
         let remote_x = remote_jwk_data["x"]
             .as_str()

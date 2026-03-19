@@ -49,6 +49,7 @@ class MercurySocket:
         self._should_reconnect = True
         self._reconnect_attempts = 0
         self._pending_pong_id: str | None = None
+        self._reconnecting = False
 
         self._ping_task: asyncio.Task[None] | None = None
         self._read_task: asyncio.Task[None] | None = None
@@ -214,7 +215,8 @@ class MercurySocket:
         self._logger.warning(f"Pong timeout for ping {self._pending_pong_id}, reconnecting")
         self._pending_pong_id = None
         await self._close_websocket()
-        await self._reconnect()
+        if not self._reconnecting:
+            await self._reconnect()
 
     def _handle_message(self, message: dict[str, Any]) -> None:
         try:
@@ -289,37 +291,43 @@ class MercurySocket:
             self._emit("disconnected", "manual")
 
     async def _reconnect(self) -> None:
-        if not self._should_reconnect:
+        if self._reconnecting:
             return
-
-        if self._reconnect_attempts >= self._max_reconnect_attempts:
-            self._logger.error(f"Max reconnection attempts ({self._max_reconnect_attempts}) exceeded")
-            self._should_reconnect = False
-            self._emit("disconnected", "max-attempts-exceeded")
-            return
-
-        self._reconnect_attempts += 1
-        delay = min(1.0 * math.pow(2, self._reconnect_attempts - 1), self._reconnect_backoff_max)
-
-        self._logger.info(
-            f"Reconnecting (attempt {self._reconnect_attempts}/{self._max_reconnect_attempts}) in {delay}s"
-        )
-        self._emit("reconnecting", self._reconnect_attempts)
-
-        await asyncio.sleep(delay)
-
-        if not self._should_reconnect:
-            return
-
+        self._reconnecting = True
         try:
-            await self._connect_internal()
-            self._logger.info("Successfully reconnected to Mercury")
-            self._reconnect_attempts = 0
-            self._emit("connected")
-        except Exception as exc:
-            self._logger.error(f"Reconnection failed: {exc}")
-            if self._should_reconnect:
-                await self._reconnect()
+            if not self._should_reconnect:
+                return
+
+            if self._reconnect_attempts >= self._max_reconnect_attempts:
+                self._logger.error(f"Max reconnection attempts ({self._max_reconnect_attempts}) exceeded")
+                self._should_reconnect = False
+                self._emit("disconnected", "max-attempts-exceeded")
+                return
+
+            self._reconnect_attempts += 1
+            delay = min(1.0 * math.pow(2, self._reconnect_attempts - 1), self._reconnect_backoff_max)
+
+            self._logger.info(
+                f"Reconnecting (attempt {self._reconnect_attempts}/{self._max_reconnect_attempts}) in {delay}s"
+            )
+            self._emit("reconnecting", self._reconnect_attempts)
+
+            await asyncio.sleep(delay)
+
+            if not self._should_reconnect:
+                return
+
+            try:
+                await self._connect_internal()
+                self._logger.info("Successfully reconnected to Mercury")
+                self._reconnect_attempts = 0
+                self._emit("connected")
+            except Exception as exc:
+                self._logger.error(f"Reconnection failed: {exc}")
+                if self._should_reconnect:
+                    await self._reconnect()
+        finally:
+            self._reconnecting = False
 
     def _stop_ping_loop(self) -> None:
         if self._ping_task and not self._ping_task.done():
@@ -331,8 +339,14 @@ class MercurySocket:
         self._pending_pong_id = None
 
     async def _close_websocket(self) -> None:
-        if self._ws and not self._ws.closed:
-            await self._ws.close(code=1000)
+        if self._ws is not None:
+            # Close attached session if present (native mode)
+            session = getattr(self._ws, '_session', None)
+            if session and not session.closed:
+                await session.close()
+            if not self._ws.closed:
+                await self._ws.close(code=1000)
+            self._ws = None
 
     async def _cleanup_ws(self) -> None:
         self._stop_ping_loop()

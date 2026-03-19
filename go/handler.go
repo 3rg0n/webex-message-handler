@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -29,6 +30,11 @@ type WebexMessageHandler struct {
 	connecting         bool
 	ignoreSelfMessages bool
 	botPersonID        string
+
+	// Mutex to protect state fields accessed from multiple goroutines
+	mu         sync.RWMutex
+	activityCtx context.Context
+	activityCancel context.CancelFunc
 
 	// Event callbacks
 	onMessageCreated    func(msg DecryptedMessage)
@@ -207,34 +213,46 @@ func (h *WebexMessageHandler) OnError(fn func(err error)) {
 
 // Connect establishes the full connection pipeline.
 func (h *WebexMessageHandler) Connect(ctx context.Context) error {
+	h.mu.Lock()
 	if h.connecting {
+		h.mu.Unlock()
 		return fmt.Errorf("connect() already in progress")
 	}
 	if h.connected {
+		h.mu.Unlock()
 		return fmt.Errorf("already connected. Call Disconnect() first, or use Reconnect()")
 	}
 
 	h.logger.Info("Connecting to Webex...")
 	h.connecting = true
+	h.mu.Unlock()
 
 	// Step 1: Register device
 	reg, err := h.deviceManager.Register(ctx, h.token)
 	if err != nil {
+		h.mu.Lock()
 		h.connecting = false
+		h.mu.Unlock()
 		return err
 	}
+
+	h.mu.Lock()
 	h.registration = reg
+	h.mu.Unlock()
 	h.logger.Info("Device registered")
 
 	// Step 1.5: Fetch bot person info if self-message filtering is enabled
 	if h.ignoreSelfMessages {
 		if err := h.fetchBotPersonID(ctx); err != nil {
+			h.mu.Lock()
 			h.connecting = false
+			h.mu.Unlock()
 			return err
 		}
 	}
 
 	// Step 2: Create KMS client
+	h.mu.Lock()
 	h.kmsClient = NewKmsClient(KmsClientConfig{
 		Token:                h.token,
 		DeviceURL:            reg.DeviceURL,
@@ -243,26 +261,38 @@ func (h *WebexMessageHandler) Connect(ctx context.Context) error {
 		Logger:               h.logger,
 		HTTPDo:               h.httpDo,
 	})
+	h.mu.Unlock()
 
 	// Step 3: Connect Mercury (KMS responses arrive here)
 	if err := h.mercurySocket.Connect(ctx, reg.WebSocketURL, h.token); err != nil {
+		h.mu.Lock()
 		h.connecting = false
+		h.mu.Unlock()
 		return err
 	}
 	h.logger.Info("Mercury connected")
 
 	// Step 4: Initialize KMS (ECDH handshake)
-	if err := h.kmsClient.Initialize(ctx); err != nil {
+	h.mu.RLock()
+	kmsClient := h.kmsClient
+	h.mu.RUnlock()
+	if err := kmsClient.Initialize(ctx); err != nil {
+		h.mu.Lock()
 		h.connecting = false
+		h.mu.Unlock()
 		return err
 	}
 	h.logger.Info("KMS initialized")
 
-	// Step 5: Create message decryptor
-	h.messageDecryptor = NewMessageDecryptor(h.kmsClient, h.logger)
+	// Step 5: Create message decryptor and initialize activity context
+	h.mu.Lock()
+	h.messageDecryptor = NewMessageDecryptor(kmsClient, h.logger)
+	h.activityCtx, h.activityCancel = context.WithCancel(context.Background())
 
 	h.connecting = false
 	h.connected = true
+	h.mu.Unlock()
+
 	h.logger.Info("Connected to Webex")
 	if h.onConnected != nil {
 		h.onConnected()
@@ -274,11 +304,21 @@ func (h *WebexMessageHandler) Connect(ctx context.Context) error {
 // Disconnect tears down the connection cleanly.
 func (h *WebexMessageHandler) Disconnect(ctx context.Context) error {
 	h.logger.Info("Disconnecting from Webex...")
+
+	h.mu.Lock()
 	h.connected = false
+	if h.activityCancel != nil {
+		h.activityCancel()
+	}
+	h.mu.Unlock()
 
 	h.mercurySocket.Disconnect()
 
-	if h.registration != nil {
+	h.mu.RLock()
+	reg := h.registration
+	h.mu.RUnlock()
+
+	if reg != nil {
 		if err := h.deviceManager.Unregister(ctx, h.token); err != nil {
 			h.logger.Warn(fmt.Sprintf("Failed to unregister device: %v", err))
 		} else {
@@ -286,10 +326,13 @@ func (h *WebexMessageHandler) Disconnect(ctx context.Context) error {
 		}
 	}
 
+	h.mu.Lock()
 	h.registration = nil
 	h.kmsClient = nil
 	h.messageDecryptor = nil
 	h.botPersonID = ""
+	h.mu.Unlock()
+
 	return nil
 }
 
@@ -309,12 +352,17 @@ func (h *WebexMessageHandler) Reconnect(ctx context.Context, newToken string) er
 
 // Connected returns whether the handler is fully connected.
 func (h *WebexMessageHandler) Connected() bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 	return h.connected && h.mercurySocket.Connected()
 }
 
 // Status returns a structured health check of all connection subsystems.
 func (h *WebexMessageHandler) Status() HandlerStatus {
 	reconnectAttempt := h.mercurySocket.CurrentReconnectAttempts()
+
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 
 	var status ConnectionStatus
 	switch {
@@ -370,8 +418,11 @@ func (h *WebexMessageHandler) fetchBotPersonID(ctx context.Context) error {
 		return fmt.Errorf("failed to parse bot identity response: %w", err)
 	}
 
-	h.botPersonID = extractPersonUUID(result.ID)
-	h.logger.Info(fmt.Sprintf("Bot person ID cached for self-message filtering: %s", h.botPersonID))
+	personID := extractPersonUUID(result.ID)
+	h.mu.Lock()
+	h.botPersonID = personID
+	h.mu.Unlock()
+	h.logger.Info(fmt.Sprintf("Bot person ID cached for self-message filtering: %s", personID))
 	return nil
 }
 
@@ -386,7 +437,13 @@ func (h *WebexMessageHandler) setupMercuryListeners() {
 	// Handle activities
 	h.mercurySocket.OnActivity(func(activity MercuryActivity) {
 		go func() {
-			if err := h.handleActivity(context.Background(), activity); err != nil {
+			h.mu.RLock()
+			activityCtx := h.activityCtx
+			h.mu.RUnlock()
+			if activityCtx == nil {
+				activityCtx = context.Background()
+			}
+			if err := h.handleActivity(activityCtx, activity); err != nil {
 				h.logger.Error(fmt.Sprintf("Error handling activity: %v", err))
 				if h.onError != nil {
 					h.onError(err)
@@ -402,7 +459,9 @@ func (h *WebexMessageHandler) setupMercuryListeners() {
 
 	// Forward disconnected
 	h.mercurySocket.OnDisconnected(func(reason string) {
+		h.mu.Lock()
 		h.connected = false
+		h.mu.Unlock()
 		if h.onDisconnected != nil {
 			h.onDisconnected(reason)
 		}
@@ -426,12 +485,16 @@ func (h *WebexMessageHandler) setupMercuryListeners() {
 func (h *WebexMessageHandler) handleActivity(ctx context.Context, activity MercuryActivity) error {
 	// message:created — verb=post + objectType=comment
 	if activity.Verb == "post" && activity.Object.ObjectType == "comment" {
-		if h.messageDecryptor == nil {
+		h.mu.RLock()
+		messageDecryptor := h.messageDecryptor
+		h.mu.RUnlock()
+
+		if messageDecryptor == nil {
 			h.logger.Warn("Received activity but decryptor not initialized")
 			return nil
 		}
 
-		decrypted, err := h.messageDecryptor.DecryptActivity(ctx, activity)
+		decrypted, err := messageDecryptor.DecryptActivity(ctx, activity)
 		if err != nil {
 			return err
 		}
@@ -449,8 +512,13 @@ func (h *WebexMessageHandler) handleActivity(ctx context.Context, activity Mercu
 		}
 
 		// Filter self-messages if enabled
-		if h.ignoreSelfMessages && h.botPersonID != "" && extractPersonUUID(msg.PersonID) == h.botPersonID {
-			h.logger.Debug(fmt.Sprintf("Ignoring self-message from bot (%s)", h.botPersonID))
+		h.mu.RLock()
+		shouldFilterSelf := h.ignoreSelfMessages
+		botPersonID := h.botPersonID
+		h.mu.RUnlock()
+
+		if shouldFilterSelf && botPersonID != "" && extractPersonUUID(msg.PersonID) == botPersonID {
+			h.logger.Debug(fmt.Sprintf("Ignoring self-message from bot (%s)", botPersonID))
 			return nil
 		}
 
@@ -544,22 +612,32 @@ func (h *WebexMessageHandler) onMercuryReconnect() {
 	h.logger.Info("Mercury reconnected, refreshing device and KMS")
 	ctx := context.Background()
 
-	if h.registration != nil {
-		reg, err := h.deviceManager.Refresh(ctx, h.token)
+	h.mu.RLock()
+	reg := h.registration
+	kmsClient := h.kmsClient
+	h.mu.RUnlock()
+
+	if reg != nil {
+		newReg, err := h.deviceManager.Refresh(ctx, h.token)
 		if err != nil {
 			h.logger.Warn(fmt.Sprintf("Device refresh on reconnect failed: %v", err))
 		} else {
-			h.registration = reg
+			h.mu.Lock()
+			h.registration = newReg
+			h.mu.Unlock()
 		}
 	}
 
-	if h.kmsClient != nil {
-		if err := h.kmsClient.Initialize(ctx); err != nil {
+	if kmsClient != nil {
+		if err := kmsClient.Initialize(ctx); err != nil {
 			h.logger.Warn(fmt.Sprintf("KMS re-init on reconnect failed: %v", err))
 		}
 	}
 
+	h.mu.Lock()
 	h.connected = true
+	h.mu.Unlock()
+
 	if h.onConnected != nil {
 		h.onConnected()
 	}

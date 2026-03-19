@@ -245,6 +245,9 @@ export class WebexMessageHandler
     this.logger.info('Disconnecting from Webex...');
     this._connected = false;
 
+    // Clean up Mercury event listeners
+    this.mercurySocket.removeAllListeners();
+
     await this.mercurySocket.disconnect();
 
     if (this.registration) {
