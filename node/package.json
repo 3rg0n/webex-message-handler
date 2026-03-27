@@ -1,6 +1,6 @@
 {
   "name": "webex-message-handler",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Lightweight Webex Mercury WebSocket + KMS decryption for receiving bot messages without the full Webex SDK",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
