@@ -155,7 +155,7 @@ func (dm *DeviceManager) Unregister(ctx context.Context, token string) error {
 		return NewDeviceRegistrationError("Failed to unregister device", 0)
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body)
+	_, _ = io.Copy(io.Discard, resp.Body)
 
 	if resp.Status == 401 {
 		dm.logger.Error("Device unregistration failed: Unauthorized")

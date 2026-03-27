@@ -170,7 +170,9 @@ func (kc *KmsClient) Initialize(ctx context.Context) error {
 	requestID := uuid.New().String()
 	publicBytes, _ := publicJWK.MarshalJSON()
 	var publicJWKMap map[string]interface{}
-	json.Unmarshal(publicBytes, &publicJWKMap)
+	if err := json.Unmarshal(publicBytes, &publicJWKMap); err != nil {
+		return NewKmsErrorWithCause("Failed to marshal local JWK", err)
+	}
 
 	ecdhRequestBody := map[string]interface{}{
 		"client": map[string]interface{}{
@@ -391,8 +393,8 @@ func (kc *KmsClient) sendKmsRequest(ctx context.Context, requestID, wrapped stri
 		kc.mu.Unlock()
 		return "", NewKmsErrorWithCause("KMS HTTP request failed", err)
 	}
-	io.Copy(io.Discard, httpResp.Body)
-	httpResp.Body.Close()
+	_, _ = io.Copy(io.Discard, httpResp.Body)
+	_ = httpResp.Body.Close()
 
 	if !httpResp.OK {
 		cancel()

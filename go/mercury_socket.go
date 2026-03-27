@@ -492,7 +492,7 @@ func (ms *MercurySocket) closeWebSocket() {
 		ms.cancelFn = nil
 	}
 	if ms.conn != nil {
-		ms.conn.Close(websocket.StatusNormalClosure, "")
+		_ = ms.conn.Close(websocket.StatusNormalClosure, "")
 		ms.conn = nil
 	}
 	ms.pendingPongID = ""

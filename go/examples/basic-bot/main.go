@@ -64,7 +64,7 @@ func main() {
 	go func() {
 		<-sigCh
 		fmt.Println("Shutting down...")
-		handler.Disconnect(ctx)
+		_ = handler.Disconnect(ctx)
 		cancel()
 	}()
 
