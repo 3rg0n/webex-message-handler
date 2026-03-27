@@ -1,6 +1,7 @@
 package webexmessagehandler
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 )
@@ -191,7 +192,7 @@ func TestHandleActivityMessageCreated(t *testing.T) {
 	}
 
 	// No encryptionKeyUrl means decryptor will pass through
-	err := h.handleActivity(nil, activity)
+	err := h.handleActivity(context.TODO(), activity)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -245,7 +246,7 @@ func TestHandleActivityMessageDeleted(t *testing.T) {
 		},
 	}
 
-	err := h.handleActivity(nil, activity)
+	err := h.handleActivity(context.TODO(), activity)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -291,7 +292,7 @@ func TestHandleActivityMembershipCreated(t *testing.T) {
 				Published: "2024-01-01T00:00:00.000Z",
 			}
 
-			err := h.handleActivity(nil, activity)
+			err := h.handleActivity(context.TODO(), activity)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -339,7 +340,7 @@ func TestHandleActivityMembershipNotTriggeredForNonPersonObject(t *testing.T) {
 		},
 	}
 
-	err := h.handleActivity(nil, activity)
+	err := h.handleActivity(context.TODO(), activity)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -363,7 +364,7 @@ func TestHandleActivityMembershipNotTriggeredForNonMembershipVerb(t *testing.T) 
 		},
 	}
 
-	err := h.handleActivity(nil, activity)
+	err := h.handleActivity(context.TODO(), activity)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -388,7 +389,7 @@ func TestHandleActivityIgnoresNonMessage(t *testing.T) {
 		},
 	}
 
-	err := h.handleActivity(nil, activity)
+	err := h.handleActivity(context.TODO(), activity)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -413,7 +414,7 @@ func TestHandleActivityIgnoresPostNonComment(t *testing.T) {
 		},
 	}
 
-	err := h.handleActivity(nil, activity)
+	err := h.handleActivity(context.TODO(), activity)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

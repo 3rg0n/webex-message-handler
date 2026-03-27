@@ -112,7 +112,8 @@ class MercurySocket:
 
         # Start read loop in background
         async def _read_loop() -> None:
-            assert self._ws is not None
+            if self._ws is None:
+                raise RuntimeError("WebSocket not initialized before starting read loop")
             try:
                 async for msg in self._ws:
                     if msg.type == aiohttp.WSMsgType.TEXT:

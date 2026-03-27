@@ -28,7 +28,7 @@ sha2 = "0.10"
 rand = "0.8"
 aes-gcm = "0.10"
 aes-kw = "0.2"
-rsa = { version = "0.9", features = ["sha2"] }
+rsa = { version = "0.9", features = ["sha2"] } # RUSTSEC-2023-0071 is NOT exploitable: RSA used for encryption only, never decryption
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }

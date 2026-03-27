@@ -415,7 +415,8 @@ def _derive_ecdh_shared_key(local_key: jwk.JWK, remote_key: jwk.JWK, *, kid: str
         x_int = int.from_bytes(x_bytes, "big")
         y_int = int.from_bytes(y_bytes, "big")
         remote_crypto_key = EllipticCurvePublicNumbers(x_int, y_int, SECP256R1()).public_key()
-    except Exception:
+    except (KeyError, ValueError, TypeError):
+        # Failed to parse JWK or convert coordinates — will be caught below
         pass
 
     if remote_crypto_key is None:

@@ -56,8 +56,8 @@ def extract_person_uuid(person_id: str) -> str:
             uuid = decoded.rsplit("/", 1)[-1]
             if uuid:
                 return uuid
-    except Exception:
-        # Not base64 — treat as raw UUID
+    except (ValueError, UnicodeDecodeError):
+        # Not base64 or invalid UTF-8 — treat as raw UUID
         pass
     return person_id
 
