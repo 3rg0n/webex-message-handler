@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"nhooyr.io/websocket"
+	"github.com/coder/websocket"
 )
 
 // MercurySocket manages the Mercury WebSocket connection.
@@ -151,7 +151,7 @@ func (ms *MercurySocket) connectInternal(ctx context.Context) error {
 		return NewMercuryConnectionError("Failed to connect to Mercury socket", 0)
 	}
 
-	// Extract raw connection for nhooyr.io/websocket operations
+	// Extract raw connection for coder/websocket operations
 	var conn *websocket.Conn
 	if nativeWS, ok := ws.(*nativeWebSocket); ok {
 		conn = nativeWS.Conn

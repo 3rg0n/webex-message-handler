@@ -4,10 +4,10 @@ import (
 	"context"
 	"net/http"
 
-	"nhooyr.io/websocket"
+	"github.com/coder/websocket"
 )
 
-// nativeWebSocket wraps nhooyr.io/websocket to implement our WebSocket interface.
+// nativeWebSocket wraps github.com/coder/websocket to implement our WebSocket interface.
 // For internal MercurySocket use, it exposes the raw connection.
 type nativeWebSocket struct {
 	Conn *websocket.Conn // Exported for internal use by MercurySocket
