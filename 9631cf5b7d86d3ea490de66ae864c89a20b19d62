@@ -1,0 +1,29 @@
+go/mercury_socket.go
+  25ccca6093f1ae3d 495
+go/examples/basic-bot/main.go
+  25ccca6093f1ae3d 67
+go/device_manager.go
+  25ccca6093f1ae3d 158
+go/kms_client.go
+  25ccca6093f1ae3d 173-175,396-397
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.21",
+  "base_commit_sha": "9631cf5b7d86d3ea490de66ae864c89a20b19d62",
+  "prompts": {
+    "25ccca6093f1ae3d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a5afcede-bc5a-454b-af42-844223f3840c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Ergon Copeland <62959009+3rg0n@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 1330,
+      "total_deletions": 1328,
+      "accepted_lines": 1328,
+      "overriden_lines": 0
+    }
+  }
+}
