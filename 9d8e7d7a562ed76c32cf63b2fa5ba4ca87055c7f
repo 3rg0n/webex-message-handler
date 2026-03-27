@@ -1,0 +1,25 @@
+go/native_websocket.go
+  25ccca6093f1ae3d 7,10
+go/mercury_socket.go
+  25ccca6093f1ae3d 14,154
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.21",
+  "base_commit_sha": "9d8e7d7a562ed76c32cf63b2fa5ba4ca87055c7f",
+  "prompts": {
+    "25ccca6093f1ae3d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a5afcede-bc5a-454b-af42-844223f3840c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Ergon Copeland <62959009+3rg0n@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 606,
+      "total_deletions": 606,
+      "accepted_lines": 605,
+      "overriden_lines": 0
+    }
+  }
+}
