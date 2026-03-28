@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-03-28
+
+### Fixed (All Languages)
+- **ECDH remote key validation** — verify KMS returns EC P-256 key, reject invalid keys
+- **WebSocket message size limit** — drop messages >1MB to prevent memory exhaustion
+
+### Fixed (Go)
+- **Handler state race conditions** — added RWMutex protecting `connected`, `connecting`, `botPersonID`, `registration`, `kmsClient`, `messageDecryptor`
+- **Stack overflow in reconnect** — replaced recursive `reconnect()` with iterative loop
+- **MercurySocket field races** — protected `connectionReady`, `shouldReconnect`, `reconnectAttempts` with mutex helpers
+- **Activity context lifecycle** — cancelable context instead of `context.Background()`
+- **gosec clean** — all G104 unhandled error findings resolved
+- **Migrated websocket lib** — `nhooyr.io/websocket` → `github.com/coder/websocket`
+- Upgraded go-jose v4.0.4→v4.0.5 (DoS fix), golang.org/x/crypto v0.31→v0.49
+
+### Fixed (Python)
+- **Concurrent reconnection race** — added `_reconnecting` guard flag
+- **aiohttp session leak** — close `ClientSession` on WebSocket close
+- **Silent async exceptions** — listener errors now logged via `add_done_callback`
+- **bandit clean** — narrowed broad exceptions, replaced assert with runtime check
+- **KMS queue monitoring** — warn when pending requests exceed 100
+
+### Fixed (Node.js)
+- **Pong timeout race** — clear old timeout before setting new one
+- **Listener memory leak** — `removeAllListeners()` on disconnect
+- **KMS FIFO safety** — serialize requests with mutex so ordering is guaranteed
+- Upgraded undici 7.21→7.24.6 (HTTP smuggling, WS parser overflow, memory exhaustion)
+
+### Fixed (Rust)
+- **Connect/disconnect TOCTOU** — combined state checks into single lock acquisition
+- **Dropped event logging** — warn when event channel receiver is gone
+- Upgraded quinn-proto (DoS fix), rustls-webpki (CRL validation fix)
+- Documented rsa Marvin side-channel as false positive (encrypt-only usage)
+
 ## [0.5.1] - 2026-03-16
 
 ### Fixed (Go)

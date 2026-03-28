@@ -6,10 +6,10 @@ Available in four languages with identical functionality:
 
 | Language | Directory | Tests |
 |----------|-----------|-------|
-| Node.js / TypeScript | [`node/`](node/) | 25 passing |
-| Python | [`python/`](python/) | 41 passing |
-| Go | [`go/`](go/) | 68 passing |
-| Rust | [`rust/`](rust/) | 12 passing |
+| Node.js / TypeScript | [`node/`](node/) | 136 passing |
+| Python | [`python/`](python/) | 58 passing |
+| Go | [`go/`](go/) | 76 passing |
+| Rust | [`rust/`](rust/) | 22 passing |
 
 ## Why?
 
