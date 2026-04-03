@@ -110,6 +110,78 @@ while let Some(event) = rx.recv().await {
 }
 ```
 
+## OAuth Integration Tokens
+
+The library accepts any valid Webex access token — bot tokens and OAuth integration tokens work identically. The library does not implement the OAuth authorization flow itself; your application handles token acquisition and refresh. When a token expires, the library emits an `error` event with an `AuthError` and a `disconnected` event with reason `"auth-failed"`, then stops reconnecting. Use `reconnect(newToken)` to resume with a fresh token.
+
+### Node.js
+
+```typescript
+const handler = new WebexMessageHandler({ token: currentAccessToken });
+
+handler.on('error', async (err) => {
+  if (err.name === 'AuthError') {
+    const freshToken = await myOAuthClient.refresh();
+    await handler.reconnect(freshToken);
+  }
+});
+
+await handler.connect();
+```
+
+### Python
+
+```python
+handler = WebexMessageHandler(token=current_access_token)
+
+@handler.on("error")
+async def on_error(err):
+    if isinstance(err, AuthError):
+        fresh_token = await my_oauth_client.refresh()
+        await handler.reconnect(fresh_token)
+
+await handler.connect()
+```
+
+### Go
+
+```go
+handler, _ := webexmessagehandler.New(webexmessagehandler.Config{
+    Token: currentAccessToken,
+})
+handler.OnError(func(err error) {
+    var authErr *webexmessagehandler.AuthError
+    if errors.As(err, &authErr) {
+        freshToken := myOAuthClient.Refresh()
+        handler.Reconnect(ctx, freshToken)
+    }
+})
+handler.Connect(ctx)
+```
+
+### Rust
+
+```rust
+let handler = WebexMessageHandler::new(Config {
+    token: current_access_token,
+    ..Default::default()
+})?;
+
+let mut rx = handler.take_event_rx().await.unwrap();
+handler.connect().await?;
+
+while let Some(event) = rx.recv().await {
+    match event {
+        WebexEvent::Error(msg) if msg.contains("authorization") => {
+            let fresh_token = my_oauth_client.refresh().await?;
+            handler.reconnect(&fresh_token).await?;
+        }
+        WebexEvent::MessageCreated(msg) => { /* ... */ }
+        _ => {}
+    }
+}
+```
+
 ## Networking & Proxy Support
 
 All implementations support two networking modes:
