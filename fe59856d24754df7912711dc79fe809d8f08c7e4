@@ -1,0 +1,25 @@
+README.md
+  25ccca6093f1ae3d 113-184
+CHANGELOG.md
+  25ccca6093f1ae3d 8-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.5",
+  "base_commit_sha": "fe59856d24754df7912711dc79fe809d8f08c7e4",
+  "prompts": {
+    "25ccca6093f1ae3d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a5afcede-bc5a-454b-af42-844223f3840c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Ergon Copeland",
+      "messages": [],
+      "total_additions": 77,
+      "total_deletions": 0,
+      "accepted_lines": 77,
+      "overriden_lines": 0
+    }
+  }
+}
