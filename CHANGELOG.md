@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **README: OAuth integration token pattern** — documented `reconnect(newToken)` usage for OAuth token refresh with `AuthError` handling examples in all four languages
+- **GitHub Advanced Security** — enabled CodeQL (JS/TS, Go, Python), secret scanning with push protection, Dependabot alerts and security updates
+
+### Fixed
+- **Go: go-jose/v4** v4.0.5→v4.1.4 — fixes JWE decryption panic and DoS in parsing
+- **Node.js: lodash** 4.17.23→4.18.1 — fixes code injection via `_.template` and prototype pollution via `_.unset`/`_.omit` (pnpm override for transitive dep of node-jose)
 
 ## [0.6.1] - 2026-03-28
 
