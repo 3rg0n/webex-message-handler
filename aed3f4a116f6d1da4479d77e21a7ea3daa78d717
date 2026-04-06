@@ -1,0 +1,23 @@
+THREAT_MODEL.md
+  25ccca6093f1ae3d 228,244,249,256,260,268-303
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.5",
+  "base_commit_sha": "aed3f4a116f6d1da4479d77e21a7ea3daa78d717",
+  "prompts": {
+    "25ccca6093f1ae3d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a5afcede-bc5a-454b-af42-844223f3840c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Ergon Copeland",
+      "messages": [],
+      "total_additions": 41,
+      "total_deletions": 5,
+      "accepted_lines": 41,
+      "overriden_lines": 0
+    }
+  }
+}
