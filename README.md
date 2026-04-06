@@ -9,7 +9,7 @@ Available in four languages with identical functionality:
 | Node.js / TypeScript | [`node/`](node/) | 136 passing |
 | Python | [`python/`](python/) | 58 passing |
 | Go | [`go/`](go/) | 76 passing |
-| Rust | [`rust/`](rust/) | 22 passing |
+| Rust | [`rust/`](rust/) | 30 passing |
 
 ## Why?
 
