@@ -31,8 +31,9 @@ jobs:
       - name: Generate SBOM
         run: |
           pip install cyclonedx-bom
-          cyclonedx-py environment --output sbom.json --of json
+          cyclonedx-py environment -o sbom.json
         working-directory: ./python
+        continue-on-error: true
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # release/v1
