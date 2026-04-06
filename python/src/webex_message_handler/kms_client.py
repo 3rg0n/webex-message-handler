@@ -23,6 +23,7 @@ from jwcrypto.common import base64url_decode, base64url_encode
 from .errors import KmsError
 from .logger import Logger, noop_logger
 from .types import FetchFunction, FetchRequest
+from .url_validation import validate_webex_url
 
 KMS_RESPONSE_TIMEOUT = 30.0  # seconds
 
@@ -59,6 +60,9 @@ class KmsClient:
 
         # Pending KMS requests waiting for Mercury responses (FIFO)
         self._pending_requests: dict[str, _PendingRequest] = {}
+
+        # Lock to serialize KMS HTTP requests
+        self._kms_request_lock = asyncio.Lock()
 
     def handle_kms_message(self, data: dict[str, Any]) -> None:
         """Handle a KMS response that arrived via Mercury WebSocket.
@@ -102,6 +106,9 @@ class KmsClient:
             kms_details = await response.json()
 
             self._kms_cluster = kms_details["kmsCluster"]
+            # Validate KMS cluster URL
+            validate_webex_url(self._kms_cluster, "https")
+
             rsa_public_key_raw = kms_details["rsaPublicKey"]
             if isinstance(rsa_public_key_raw, str):
                 rsa_public_key_raw = json.loads(rsa_public_key_raw)
@@ -274,6 +281,12 @@ class KmsClient:
                 key_data = json.loads(key_data)
 
             content_key = jwk.JWK(**key_data)
+
+            # Bound key cache size
+            if len(self._key_cache) > 100:
+                self._logger.warning(f"Key cache size exceeded (size={len(self._key_cache)}), clearing cache")
+                self._key_cache.clear()
+
             self._key_cache[key_uri] = content_key
             self._logger.info(f"Key retrieved and cached: {key_uri}")
             return content_key
@@ -285,54 +298,56 @@ class KmsClient:
 
     async def _send_kms_request(self, request_id: str, wrapped: str) -> str:
         """Send a KMS request via HTTP and wait for the response via Mercury."""
-        loop = asyncio.get_event_loop()
-        future: asyncio.Future[str] = loop.create_future()
-        timeout_handle = loop.call_later(
-            KMS_RESPONSE_TIMEOUT,
-            lambda: (
-                self._pending_requests.pop(request_id, None),
-                future.set_exception(
-                    KmsError(f"KMS request {request_id} timed out after {KMS_RESPONSE_TIMEOUT}s")
-                ) if not future.done() else None,
-            ),
-        )
-
+        # Bound pending KMS requests
         if len(self._pending_requests) >= 100:
-            self._logger.warning("KMS pending requests queue is large (%d), possible leak", len(self._pending_requests))
+            raise KmsError("Too many pending KMS requests")
 
-        self._pending_requests[request_id] = _PendingRequest(future=future, timeout_handle=timeout_handle)
-
-        # POST the request
-        try:
-            response = await self._http_do(
-                FetchRequest(
-                    url=f"{self._encryption_service_url}/kms/messages",
-                    method="POST",
-                    headers={
-                        "Authorization": f"Bearer {self._token}",
-                        "Content-Type": "application/json",
-                    },
-                    body=json.dumps({
-                        "destination": self._kms_cluster,
-                        "kmsMessages": [wrapped],
-                    }),
-                )
+        async with self._kms_request_lock:
+            loop = asyncio.get_event_loop()
+            future: asyncio.Future[str] = loop.create_future()
+            timeout_handle = loop.call_later(
+                KMS_RESPONSE_TIMEOUT,
+                lambda: (
+                    self._pending_requests.pop(request_id, None),
+                    future.set_exception(
+                        KmsError(f"KMS request {request_id} timed out after {KMS_RESPONSE_TIMEOUT}s")
+                    ) if not future.done() else None,
+                ),
             )
-            self._logger.debug(f"KMS HTTP POST response: {response.status}")
-            if not response.ok:
+
+            self._pending_requests[request_id] = _PendingRequest(future=future, timeout_handle=timeout_handle)
+
+            # POST the request
+            try:
+                response = await self._http_do(
+                    FetchRequest(
+                        url=f"{self._encryption_service_url}/kms/messages",
+                        method="POST",
+                        headers={
+                            "Authorization": f"Bearer {self._token}",
+                            "Content-Type": "application/json",
+                        },
+                        body=json.dumps({
+                            "destination": self._kms_cluster,
+                            "kmsMessages": [wrapped],
+                        }),
+                    )
+                )
+                self._logger.debug(f"KMS HTTP POST response: {response.status}")
+                if not response.ok:
+                    self._pending_requests.pop(request_id, None)
+                    timeout_handle.cancel()
+                    error_body = await response.text()
+                    raise KmsError(f"KMS HTTP request failed: {response.status} {error_body}")
+            except KmsError:
+                raise
+            except Exception as exc:
                 self._pending_requests.pop(request_id, None)
                 timeout_handle.cancel()
-                error_body = await response.text()
-                raise KmsError(f"KMS HTTP request failed: {response.status} {error_body}")
-        except KmsError:
-            raise
-        except Exception as exc:
-            self._pending_requests.pop(request_id, None)
-            timeout_handle.cancel()
-            raise KmsError(f"KMS HTTP request failed: {exc}") from exc
+                raise KmsError(f"KMS HTTP request failed: {exc}") from exc
 
-        self._logger.debug(f"KMS request {request_id} sent, waiting for Mercury response...")
-        return await future
+            self._logger.debug(f"KMS request {request_id} sent, waiting for Mercury response...")
+            return await future
 
     def _is_context_expired(self) -> bool:
         if not self._initialized or not self._context_expiration:

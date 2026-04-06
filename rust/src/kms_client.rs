@@ -11,6 +11,7 @@
 use crate::errors::WebexError;
 use crate::jwe;
 use crate::types::{FetchFn, FetchRequest};
+use crate::url_validation::validate_webex_url;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use p256::elliptic_curve::sec1::ToEncodedPoint;
@@ -24,6 +25,8 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 const KMS_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_PENDING_REQUESTS: usize = 100;
+const MAX_KEY_CACHE_SIZE: usize = 100;
 
 /// A pending KMS request awaiting a Mercury response.
 struct PendingRequest {
@@ -171,6 +174,10 @@ impl KmsClient {
             .ok_or_else(|| WebexError::kms("Missing kmsCluster in KMS details"))?
             .to_string();
 
+        // Validate KMS cluster URL
+        validate_webex_url(&self.kms_cluster, "https")
+            .map_err(|e| WebexError::kms(format!("Invalid kmsCluster URL: {e}")))?;
+
         // Parse RSA public key (may be string or object)
         let rsa_jwk_value = match &kms_details["rsaPublicKey"] {
             Value::String(s) => serde_json::from_str::<Value>(s)
@@ -294,6 +301,12 @@ impl KmsClient {
             return Ok(*cached);
         }
 
+        // Check and enforce key cache size limit
+        if self.key_cache.len() > MAX_KEY_CACHE_SIZE {
+            warn!("Key cache exceeded size limit ({}), clearing cache", MAX_KEY_CACHE_SIZE);
+            self.key_cache.clear();
+        }
+
         // Check context expiration
         if self.is_context_expired() {
             info!("Context expired, re-initializing");
@@ -370,9 +383,15 @@ impl KmsClient {
     ) -> Result<String, WebexError> {
         let (tx, rx) = oneshot::channel();
 
-        // Register pending request
+        // Register pending request with bound checking
         {
             let mut pending = self.pending_requests.lock().await;
+            if pending.len() >= MAX_PENDING_REQUESTS {
+                return Err(WebexError::kms(format!(
+                    "Too many pending KMS requests (max: {})",
+                    MAX_PENDING_REQUESTS
+                )));
+            }
             pending.push((
                 request_id.to_string(),
                 PendingRequest { tx },

@@ -2,6 +2,7 @@
 
 use crate::errors::{Result, WebexError};
 use crate::types::{DeviceRegistration, FetchFn, FetchRequest};
+use crate::url_validation::validate_webex_url;
 use serde_json::json;
 use std::collections::HashMap;
 use tracing::{debug, error, info};
@@ -70,6 +71,18 @@ impl DeviceManager {
             .map_err(|e| WebexError::device_registration(format!("Failed to parse response: {e}"), None))?;
 
         reg.encryption_service_url = reg.services.get("encryptionServiceUrl").cloned().unwrap_or_default();
+
+        // Validate URLs from the response
+        if !reg.web_socket_url.is_empty() {
+            validate_webex_url(&reg.web_socket_url, "wss")
+                .map_err(|e| WebexError::device_registration(format!("Invalid web_socket_url: {e}"), None))?;
+        }
+
+        if !reg.encryption_service_url.is_empty() {
+            validate_webex_url(&reg.encryption_service_url, "https")
+                .map_err(|e| WebexError::device_registration(format!("Invalid encryption_service_url: {e}"), None))?;
+        }
+
         self.device_url = Some(reg.device_url.clone());
 
         info!("Device registered successfully");
@@ -116,6 +129,17 @@ impl DeviceManager {
             .map_err(|e| WebexError::device_registration(format!("Failed to parse response: {e}"), None))?;
 
         reg.encryption_service_url = reg.services.get("encryptionServiceUrl").cloned().unwrap_or_default();
+
+        // Validate URLs from the response
+        if !reg.web_socket_url.is_empty() {
+            validate_webex_url(&reg.web_socket_url, "wss")
+                .map_err(|e| WebexError::device_registration(format!("Invalid web_socket_url: {e}"), None))?;
+        }
+
+        if !reg.encryption_service_url.is_empty() {
+            validate_webex_url(&reg.encryption_service_url, "https")
+                .map_err(|e| WebexError::device_registration(format!("Invalid encryption_service_url: {e}"), None))?;
+        }
 
         info!("Device refreshed successfully");
         Ok(reg)

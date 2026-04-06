@@ -8,6 +8,7 @@ from typing import Any
 from .errors import AuthError, DeviceRegistrationError
 from .logger import Logger, noop_logger
 from .types import DeviceRegistration, FetchFunction, FetchRequest
+from .url_validation import validate_webex_url
 
 WDM_API_BASE = "https://wdm-a.wbx2.com/wdm/api/v1/devices"
 
@@ -152,10 +153,18 @@ class DeviceManager:
         if not isinstance(services, dict):
             services = {}
 
+        web_socket_url = data["webSocketUrl"]
+        encryption_service_url = services.get("encryptionServiceUrl", "")
+
+        # Validate URLs from external API response
+        validate_webex_url(web_socket_url, "wss")
+        if encryption_service_url:
+            validate_webex_url(encryption_service_url, "https")
+
         return DeviceRegistration(
-            web_socket_url=data["webSocketUrl"],
+            web_socket_url=web_socket_url,
             device_url=data["url"],
             user_id=data["userId"],
             services=services,
-            encryption_service_url=services.get("encryptionServiceUrl", ""),
+            encryption_service_url=encryption_service_url,
         )

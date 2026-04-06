@@ -9,10 +9,11 @@ use crate::types::{
     Config, ConnectionStatus, DecryptedMessage, DeletedMessage, DeviceRegistration, FetchRequest,
     FetchResponse, HandlerStatus, MembershipActivity, MercuryActivity, NetworkMode,
 };
+use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, Mutex};
 use tracing::{error, info, warn};
 
@@ -132,6 +133,8 @@ pub struct WebexMessageHandler {
     connecting: Arc<Mutex<bool>>,
     ignore_self_messages: bool,
     bot_person_id: Arc<Mutex<Option<String>>>,
+    /// Track recent activity IDs to prevent replay attacks (activity_id -> Instant)
+    recent_activity_ids: Arc<Mutex<HashMap<String, Instant>>>,
 
     #[allow(dead_code)]
     config: Config,
@@ -209,6 +212,7 @@ impl WebexMessageHandler {
             connecting: Arc::new(Mutex::new(false)),
             ignore_self_messages,
             bot_person_id: Arc::new(Mutex::new(None)),
+            recent_activity_ids: Arc::new(Mutex::new(HashMap::new())),
             config,
             event_tx,
             event_rx: Arc::new(Mutex::new(Some(event_rx))),
@@ -372,9 +376,13 @@ impl WebexMessageHandler {
         let device_manager = self.device_manager.clone();
         let token = self.token.clone();
         let bot_person_id = self.bot_person_id.clone();
+        let recent_activity_ids = self.recent_activity_ids.clone();
 
         tokio::spawn(async move {
-            while let Some(event) = mercury_rx.recv().await {
+            let mut sweep_interval = tokio::time::interval(Duration::from_secs(30));
+            loop {
+                tokio::select! {
+                    Some(event) = mercury_rx.recv() => {
                 match event {
                     MercuryEvent::KmsResponse(data) => {
                         // Use the separate response handler to avoid deadlock
@@ -451,6 +459,13 @@ impl WebexMessageHandler {
                         if event_tx.send(HandlerEvent::Error(msg)).is_err() {
                             warn!("Event receiver dropped, cannot send Error event");
                         }
+                    }
+                }
+                    }
+                    _ = sweep_interval.tick() => {
+                        let mut ids = recent_activity_ids.lock().await;
+                        let cutoff = Instant::now() - Duration::from_secs(300);
+                        ids.retain(|_, &mut t| t > cutoff);
                     }
                 }
             }

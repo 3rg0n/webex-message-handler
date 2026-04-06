@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -127,6 +128,9 @@ class WebexMessageHandler:
         self._registration: DeviceRegistration | None = None
         self._connected = False
         self._connecting = False
+
+        # Activity replay protection: map of activity_id -> timestamp
+        self._recent_activity_ids: dict[str, float] = {}
 
         # Event listeners
         self._listeners: dict[str, list[EventCallback]] = {
@@ -441,6 +445,16 @@ class WebexMessageHandler:
             self._emit("error", exc if isinstance(exc, Exception) else Exception(str(exc)))
 
     async def _handle_activity(self, activity: MercuryActivity) -> None:
+        # Activity replay protection: check if we've already seen this activity
+        if activity.id in self._recent_activity_ids:
+            self._logger.warning(f"Duplicate activity detected, skipping: {activity.id}")
+            return
+
+        # Record this activity and perform sweep every 100 activities
+        self._recent_activity_ids[activity.id] = time.time()
+        if len(self._recent_activity_ids) % 100 == 0:
+            self._sweep_old_activity_ids()
+
         # message:created — verb=post + objectType=comment
         if activity.verb == "post" and activity.object.object_type == "comment":
             if not self._message_decryptor:
@@ -473,6 +487,7 @@ class WebexMessageHandler:
 
         # message:deleted — verb=delete + objectType=activity
         if activity.verb == "delete" and activity.object.object_type == "activity":
+            self._logger.info(f"Message deleted: {activity.object.id}")
             self._emit(
                 "message:deleted",
                 DeletedMessage(
@@ -510,6 +525,19 @@ class WebexMessageHandler:
         if "TEAM" in tags or "LOCKED" in tags or "GROUP" in tags:
             return "group"
         return None
+
+    def _sweep_old_activity_ids(self) -> None:
+        """Remove activity IDs older than 300 seconds (5 minutes)."""
+        cutoff_time = time.time() - 300
+        old_ids = [
+            activity_id
+            for activity_id, timestamp in self._recent_activity_ids.items()
+            if timestamp < cutoff_time
+        ]
+        for activity_id in old_ids:
+            del self._recent_activity_ids[activity_id]
+        if old_ids:
+            self._logger.debug(f"Swept {len(old_ids)} old activity IDs from replay protection cache")
 
     async def _on_reconnect(self) -> None:
         self._logger.info("Mercury reconnected, refreshing device and KMS")

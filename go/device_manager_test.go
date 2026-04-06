@@ -19,11 +19,11 @@ func TestDeviceManagerRegisterSuccess(t *testing.T) {
 		}
 
 		resp := wdmDeviceResponse{
-			WebSocketURL: "wss://mercury.example.com/ws",
-			URL:          "https://wdm.example.com/devices/123",
+			WebSocketURL: "wss://mercury-connection-a2.wbx2.com/ws",
+			URL:          "https://wdm-a.wbx2.com/devices/123",
 			UserID:       "user-123",
 			Services: map[string]string{
-				"encryptionServiceUrl": "https://encryption.example.com",
+				"encryptionServiceUrl": "https://encryption-a.wbx2.com/encryption/api/v1",
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -42,17 +42,17 @@ func TestDeviceManagerRegisterSuccess(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if reg.WebSocketURL != "wss://mercury.example.com/ws" {
-		t.Errorf("expected wss://mercury.example.com/ws, got %q", reg.WebSocketURL)
+	if reg.WebSocketURL != "wss://mercury-connection-a2.wbx2.com/ws" {
+		t.Errorf("expected wss://mercury-connection-a2.wbx2.com/ws, got %q", reg.WebSocketURL)
 	}
-	if reg.DeviceURL != "https://wdm.example.com/devices/123" {
-		t.Errorf("expected https://wdm.example.com/devices/123, got %q", reg.DeviceURL)
+	if reg.DeviceURL != "https://wdm-a.wbx2.com/devices/123" {
+		t.Errorf("expected https://wdm-a.wbx2.com/devices/123, got %q", reg.DeviceURL)
 	}
 	if reg.UserID != "user-123" {
 		t.Errorf("expected user-123, got %q", reg.UserID)
 	}
-	if reg.EncryptionServiceURL != "https://encryption.example.com" {
-		t.Errorf("expected https://encryption.example.com, got %q", reg.EncryptionServiceURL)
+	if reg.EncryptionServiceURL != "https://encryption-a.wbx2.com/encryption/api/v1" {
+		t.Errorf("expected https://encryption-a.wbx2.com/encryption/api/v1, got %q", reg.EncryptionServiceURL)
 	}
 }
 
@@ -129,7 +129,7 @@ func TestDeviceManagerUnregisterSuccess(t *testing.T) {
 		}
 		// Register endpoint
 		resp := wdmDeviceResponse{
-			WebSocketURL: "wss://mercury.example.com/ws",
+			WebSocketURL: "wss://mercury-connection-a2.wbx2.com/ws",
 			URL:          serverURL + "/devices/123",
 			UserID:       "user-123",
 			Services:     map[string]string{},
@@ -193,8 +193,8 @@ func TestDeviceManagerUnregister401(t *testing.T) {
 func TestDeviceManagerEmptyServices(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := wdmDeviceResponse{
-			WebSocketURL: "wss://mercury.example.com/ws",
-			URL:          "https://wdm.example.com/devices/123",
+			WebSocketURL: "wss://mercury-connection-a2.wbx2.com/ws",
+			URL:          "https://wdm-a.wbx2.com/devices/123",
 			UserID:       "user-123",
 			// No services
 		}

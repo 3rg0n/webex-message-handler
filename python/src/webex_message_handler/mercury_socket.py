@@ -268,7 +268,7 @@ class MercurySocket:
             self._emit("activity", activity)
 
     def _handle_close(self, code: int, reason: str) -> None:
-        self._logger.info(f"WebSocket closed with code {code}: {reason}")
+        self._logger.info(f"WebSocket closed with code {code}, reason: {reason}")
         self._stop_ping_loop()
         self._connection_ready = False
 

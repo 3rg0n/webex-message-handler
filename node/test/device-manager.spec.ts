@@ -7,7 +7,7 @@ type HttpDoFn = (request: FetchRequest) => Promise<FetchResponse>;
 describe('DeviceManager', () => {
   const mockToken = 'test-token';
   const mockDeviceUrl = 'https://wdm-a.wbx2.com/wdm/api/v1/devices/test-device-id';
-  const mockWebSocketUrl = 'wss://mercury.example.com/socket';
+  const mockWebSocketUrl = 'wss://mercury.webex.com/socket';
   const mockUserId = 'user-123';
 
   const mockWDMResponse = {
@@ -15,8 +15,8 @@ describe('DeviceManager', () => {
     url: mockDeviceUrl,
     userId: mockUserId,
     services: {
-      encryptionServiceUrl: 'https://encryption.example.com',
-      messenger: 'https://messenger.example.com',
+      encryptionServiceUrl: 'https://encryption.webex.com',
+      messenger: 'https://messenger.webex.com',
     },
   };
 
@@ -65,11 +65,11 @@ describe('DeviceManager', () => {
           webSocketUrl: mockWebSocketUrl,
           deviceUrl: mockDeviceUrl,
           userId: mockUserId,
-          encryptionServiceUrl: 'https://encryption.example.com',
+          encryptionServiceUrl: 'https://encryption.webex.com',
         })
       );
-      expect(result.services).toHaveProperty('encryptionServiceUrl', 'https://encryption.example.com');
-      expect(result.services).toHaveProperty('messenger', 'https://messenger.example.com');
+      expect(result.services).toHaveProperty('encryptionServiceUrl', 'https://encryption.webex.com');
+      expect(result.services).toHaveProperty('messenger', 'https://messenger.webex.com');
     });
 
     it('should throw AuthError on 401 response', async () => {
@@ -127,7 +127,7 @@ describe('DeviceManager', () => {
           ok: true,
           json: async () => ({
             ...mockWDMResponse,
-            webSocketUrl: 'wss://mercury-new.example.com/socket',
+            webSocketUrl: 'wss://mercury-connection-new.wbx2.com/socket',
           }),
         },
       ]);
@@ -146,7 +146,7 @@ describe('DeviceManager', () => {
         body: expect.any(String),
       });
 
-      expect(result.webSocketUrl).toBe('wss://mercury-new.example.com/socket');
+      expect(result.webSocketUrl).toBe('wss://mercury-connection-new.wbx2.com/socket');
     });
 
     it('should throw DeviceRegistrationError if device not registered', async () => {

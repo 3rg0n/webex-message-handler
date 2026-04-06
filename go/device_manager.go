@@ -81,7 +81,10 @@ func (dm *DeviceManager) Register(ctx context.Context, token string) (*DeviceReg
 	}
 
 	dm.deviceURL = data.URL
-	reg := dm.parseDeviceResponse(&data)
+	reg, err := dm.parseDeviceResponse(&data)
+	if err != nil {
+		return nil, err
+	}
 	dm.logger.Info("Device registered successfully")
 	return reg, nil
 }
@@ -129,7 +132,10 @@ func (dm *DeviceManager) Refresh(ctx context.Context, token string) (*DeviceRegi
 		return nil, NewDeviceRegistrationError("Failed to parse device response", 0)
 	}
 
-	reg := dm.parseDeviceResponse(&data)
+	reg, err := dm.parseDeviceResponse(&data)
+	if err != nil {
+		return nil, err
+	}
 	dm.logger.Info("Device refreshed successfully")
 	return reg, nil
 }
@@ -179,10 +185,24 @@ type wdmDeviceResponse struct {
 	Services     map[string]string `json:"services"`
 }
 
-func (dm *DeviceManager) parseDeviceResponse(data *wdmDeviceResponse) *DeviceRegistration {
+func (dm *DeviceManager) parseDeviceResponse(data *wdmDeviceResponse) (*DeviceRegistration, error) {
 	services := data.Services
 	if services == nil {
 		services = make(map[string]string)
+	}
+
+	// Validate URLs from external API response
+	if err := validateWebexURL(data.WebSocketURL, "wss"); err != nil {
+		dm.logger.Error(fmt.Sprintf("Invalid webSocketUrl from WDM: %v", err))
+		return nil, NewDeviceRegistrationError(fmt.Sprintf("untrusted webSocketUrl: %v", err), 0)
+	}
+
+	encryptionServiceURL := services["encryptionServiceUrl"]
+	if encryptionServiceURL != "" {
+		if err := validateWebexURL(encryptionServiceURL, "https"); err != nil {
+			dm.logger.Error(fmt.Sprintf("Invalid encryptionServiceUrl from WDM: %v", err))
+			return nil, NewDeviceRegistrationError(fmt.Sprintf("untrusted encryptionServiceUrl: %v", err), 0)
+		}
 	}
 
 	return &DeviceRegistration{
@@ -190,6 +210,6 @@ func (dm *DeviceManager) parseDeviceResponse(data *wdmDeviceResponse) *DeviceReg
 		DeviceURL:            data.URL,
 		UserID:               data.UserID,
 		Services:             services,
-		EncryptionServiceURL: services["encryptionServiceUrl"],
-	}
+		EncryptionServiceURL: encryptionServiceURL,
+	}, nil
 }

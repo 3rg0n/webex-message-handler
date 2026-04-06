@@ -4,6 +4,7 @@ import type { JWK } from 'node-jose';
 import { KmsError } from './errors.js';
 import { Logger, noopLogger } from './logger.js';
 import type { FetchRequest, FetchResponse } from './types.js';
+import { validateWebexUrl } from './url-validation.js';
 
 type HttpDoFn = (request: FetchRequest) => Promise<FetchResponse>;
 
@@ -131,6 +132,16 @@ export class KmsClient {
         }
 
         const kmsDetails = (await kmsDetailsResponse.json()) as KmsDetailsResponse;
+
+        // Validate KMS cluster URL
+        try {
+          validateWebexUrl(kmsDetails.kmsCluster, 'https:');
+        } catch (error) {
+          throw new KmsError(
+            `Invalid KMS cluster URL: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+
         this.kmsCluster = kmsDetails.kmsCluster;
 
         // Step 2: Create KMS Context
@@ -258,6 +269,13 @@ export class KmsClient {
 
         // Convert to jose key, cache, and return
         const joseKey = await jose.JWK.asKey(keyObject.jwk);
+
+        // Check if cache is full and clear if necessary
+        if (this.keyCache.size > 100) {
+          this.logger.warn('Key cache exceeded 100 entries, clearing cache');
+          this.keyCache.clear();
+        }
+
         this.keyCache.set(keyUri, joseKey);
         this.logger.info(`Key retrieved and cached: ${keyUri}`);
         return joseKey;
@@ -277,6 +295,11 @@ export class KmsClient {
    * Returns the wrapped response JWE string.
    */
   private async _sendKmsRequest(requestId: string, wrapped: string): Promise<string> {
+    // Check if too many pending requests
+    if (this.pendingRequests.size >= 100) {
+      throw new KmsError('Too many pending KMS requests');
+    }
+
     // Register a pending request that will be resolved by handleKmsMessage
     const responsePromise = new Promise<string>((resolve, reject) => {
       const timeout = setTimeout(() => {

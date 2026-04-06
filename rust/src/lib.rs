@@ -40,6 +40,7 @@ pub mod kms_client;
 pub mod mercury_socket;
 pub mod message_decryptor;
 pub mod types;
+pub mod url_validation;
 
 // Re-export primary public API
 pub use errors::WebexError;

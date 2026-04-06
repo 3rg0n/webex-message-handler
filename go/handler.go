@@ -36,6 +36,10 @@ type WebexMessageHandler struct {
 	activityCtx context.Context
 	activityCancel context.CancelFunc
 
+	// Activity replay protection: maps activity ID to timestamp when last seen
+	recentActivityIDs map[string]time.Time
+	activityIDsMu     sync.Mutex
+
 	// Event callbacks
 	onMessageCreated    func(msg DecryptedMessage)
 	onMessageDeleted    func(data DeletedMessage)
@@ -113,6 +117,7 @@ func New(cfg Config) (*WebexMessageHandler, error) {
 		logger:             logger,
 		httpClient:         httpClient,
 		ignoreSelfMessages: ignoreSelf,
+		recentActivityIDs:  make(map[string]time.Time),
 	}
 
 	// Create adapters based on mode
@@ -483,6 +488,26 @@ func (h *WebexMessageHandler) setupMercuryListeners() {
 }
 
 func (h *WebexMessageHandler) handleActivity(ctx context.Context, activity MercuryActivity) error {
+	// Activity replay protection: check for duplicate activity ID
+	h.activityIDsMu.Lock()
+	if lastSeen, exists := h.recentActivityIDs[activity.ID]; exists {
+		h.activityIDsMu.Unlock()
+		h.logger.Warn(fmt.Sprintf("Duplicate activity ID detected: %s (last seen at %v), skipping", activity.ID, lastSeen))
+		return nil
+	}
+	h.recentActivityIDs[activity.ID] = time.Now()
+
+	// Clean up entries older than 5 minutes (every 100 activities)
+	if len(h.recentActivityIDs)%100 == 0 {
+		cutoff := time.Now().Add(-5 * time.Minute)
+		for id, timestamp := range h.recentActivityIDs {
+			if timestamp.Before(cutoff) {
+				delete(h.recentActivityIDs, id)
+			}
+		}
+	}
+	h.activityIDsMu.Unlock()
+
 	// message:created — verb=post + objectType=comment
 	if activity.Verb == "post" && activity.Object.ObjectType == "comment" {
 		h.mu.RLock()

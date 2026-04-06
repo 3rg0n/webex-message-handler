@@ -285,6 +285,7 @@ export class MercurySocket extends EventEmitter {
 
     // Normal disconnect or network error - try to reconnect
     if (this.shouldReconnect) {
+      this.logger.info(`Preparing to reconnect after close (code ${code}, reason: ${reason})`);
       this._reconnect();
     } else {
       this.emit('disconnected', 'manual');

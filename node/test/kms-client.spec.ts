@@ -73,13 +73,13 @@ jest.mock('node-jose', () => {
 describe('KmsClient', () => {
   const mockConfig = {
     token: 'test-token',
-    deviceUrl: 'https://device.example.com',
+    deviceUrl: 'https://device-a.wbx2.com',
     userId: 'user-123',
-    encryptionServiceUrl: 'https://encryption.example.com',
+    encryptionServiceUrl: 'https://encryption-a.wbx2.com/encryption/api/v1',
   };
 
   const mockKmsDetailsResponse = {
-    kmsCluster: 'kms://kms.example.com',
+    kmsCluster: 'https://encryption-a.wbx2.com',
     rsaPublicKey: JSON.stringify({ kty: 'RSA', e: 'AQAB', n: 'test-modulus' }),
   };
 
@@ -250,7 +250,7 @@ describe('KmsClient', () => {
         text: async () => '',
       });
 
-      const keyUri = 'kms://kms.example.com/keys/key-123';
+      const keyUri = 'https://encryption-a.wbx2.com/keys/key-123';
       const getKeyPromise = kmsClient.getKey(keyUri);
 
       // Simulate Mercury response for key retrieval
@@ -285,7 +285,7 @@ describe('KmsClient', () => {
         text: async () => '',
       });
 
-      const keyUri = 'kms://kms.example.com/keys/key-123';
+      const keyUri = 'https://encryption-a.wbx2.com/keys/key-123';
       const getKeyPromise = kmsClient.getKey(keyUri);
 
       // Simulate Mercury response
@@ -304,7 +304,7 @@ describe('KmsClient', () => {
       const mockHttpDo = jest.fn() as jest.MockedFunction<HttpDoFn>;
       const kmsClient = new KmsClient({ ...mockConfig, httpDo: mockHttpDo });
 
-      const keyUri = 'kms://kms.example.com/keys/key-123';
+      const keyUri = 'https://encryption-a.wbx2.com/keys/key-123';
 
       await expect(kmsClient.getKey(keyUri)).rejects.toThrow(KmsError);
     });
@@ -325,7 +325,7 @@ describe('KmsClient', () => {
         text: async () => 'Not Found',
       });
 
-      const keyUri = 'kms://kms.example.com/keys/nonexistent';
+      const keyUri = 'https://encryption-a.wbx2.com/keys/nonexistent';
 
       await expect(kmsClient.getKey(keyUri)).rejects.toThrow(KmsError);
     });
@@ -367,7 +367,7 @@ describe('KmsClient', () => {
       mockRequestId = 'key-request-id';
       mockHttpDo.mockRejectedValueOnce(new Error('Network error'));
 
-      const keyUri = 'kms://kms.example.com/keys/key-123';
+      const keyUri = 'https://encryption-a.wbx2.com/keys/key-123';
 
       await expect(kmsClient.getKey(keyUri)).rejects.toThrow(KmsError);
     });

@@ -5,11 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.6.2] - 2026-04-05
+## [0.6.2] - 2026-04-06
 
 ### Added
 - **README: OAuth integration token pattern** — documented `reconnect(newToken)` usage for OAuth token refresh with `AuthError` handling examples in all four languages
 - **GitHub Advanced Security** — enabled CodeQL (JS/TS, Go, Python), secret scanning with push protection, Dependabot alerts and security updates
+- **MAESTRO threat model** — full 7-layer security assessment with 18 findings identified and remediated
+
+### Security (All Languages)
+- **URL validation** — validate all external API URLs (WDM, Mercury, KMS) enforce HTTPS/WSS and Webex domain allowlist
+- **Bounded pending KMS requests** — cap at 100 to prevent memory exhaustion
+- **Bounded key cache** — clear cache when exceeding 100 entries to prevent unbounded growth
+- **Activity replay protection** — deduplicate Mercury activities by ID with 5-minute sliding window
+- **Logging improvements** — include close code/reason in reconnection logs, log message deletion events
+
+### Security (Go)
+- **KMS request serialization** — mutex ensures only one KMS request in-flight, fixing FIFO ordering
+
+### Security (Python)
+- **aiohttp** 3.13.3→3.13.4 — fixes 10 HIGH-severity CVEs (DNS cache exhaustion, multipart DoS, NTLM leak)
+- **cryptography** pinned >=46.0.6 — fixes 2 MEDIUM CVEs in ECDH/KMS critical path
+- **KMS request serialization** — asyncio.Lock ensures request ordering
+
+### Security (CI/CD)
+- **GitHub Actions SHA-pinned** — all 17 action references pinned to commit SHAs across 3 workflows
+- **SBOM generation** — CycloneDX SBOM added to publish workflow
 
 ### Fixed
 - **Go: go-jose/v4** v4.0.5→v4.1.4 — fixes JWE decryption panic and DoS in parsing

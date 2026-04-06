@@ -39,6 +39,7 @@ type KmsClient struct {
 
 	pendingRequests map[string]*pendingRequest
 	mu              sync.Mutex
+	kmsRequestMu    sync.Mutex
 }
 
 type pendingRequest struct {
@@ -143,6 +144,12 @@ func (kc *KmsClient) Initialize(ctx context.Context) error {
 	if err := json.NewDecoder(resp.Body).Decode(&kmsDetails); err != nil {
 		return NewKmsErrorWithCause("Failed to parse KMS details", err)
 	}
+
+	// Validate kmsCluster URL
+	if err := validateWebexURL(kmsDetails.KmsCluster, "https"); err != nil {
+		kc.logger.Error(fmt.Sprintf("Invalid kmsCluster from KMS details: %v", err))
+		return NewKmsErrorWithCause("untrusted kmsCluster", err)
+	}
 	kc.kmsCluster = kmsDetails.KmsCluster
 
 	// Parse RSA public key (may be string or object)
@@ -203,7 +210,7 @@ func (kc *KmsClient) Initialize(ctx context.Context) error {
 		return NewKmsErrorWithCause("Failed to serialize ECDH request", err)
 	}
 
-	// Step 5: POST and wait for Mercury response
+	// Step 5: POST and wait for Mercury response (serialized with mutex)
 	wrappedResponse, err := kc.sendKmsRequest(ctx, requestID, wrapped)
 	if err != nil {
 		return err
@@ -356,6 +363,11 @@ func (kc *KmsClient) GetKey(ctx context.Context, keyURI string) (*jose.JSONWebKe
 	}
 
 	kc.mu.Lock()
+	// Bound cache size — clear if exceeds 100 entries
+	if len(kc.keyCache) > 100 {
+		kc.logger.Warn(fmt.Sprintf("KMS key cache exceeded 100 entries (%d), clearing", len(kc.keyCache)))
+		kc.keyCache = make(map[string]*jose.JSONWebKey)
+	}
 	kc.keyCache[keyURI] = &contentKey
 	kc.mu.Unlock()
 
@@ -368,8 +380,16 @@ func (kc *KmsClient) sendKmsRequest(ctx context.Context, requestID, wrapped stri
 	reqCtx, cancel := context.WithTimeout(ctx, kmsResponseTimeout)
 
 	kc.mu.Lock()
+	if len(kc.pendingRequests) >= 100 {
+		cancel()
+		kc.mu.Unlock()
+		return "", NewKmsError("too many pending KMS requests")
+	}
 	kc.pendingRequests[requestID] = &pendingRequest{ch: ch, cancel: cancel}
 	kc.mu.Unlock()
+
+	// Serialize KMS HTTP requests: only one request in-flight at a time
+	kc.kmsRequestMu.Lock()
 
 	// POST the request
 	body, _ := json.Marshal(map[string]interface{}{
@@ -387,6 +407,7 @@ func (kc *KmsClient) sendKmsRequest(ctx context.Context, requestID, wrapped stri
 		Body: string(body),
 	})
 	if err != nil {
+		kc.kmsRequestMu.Unlock()
 		cancel()
 		kc.mu.Lock()
 		delete(kc.pendingRequests, requestID)
@@ -397,6 +418,7 @@ func (kc *KmsClient) sendKmsRequest(ctx context.Context, requestID, wrapped stri
 	_ = httpResp.Body.Close()
 
 	if !httpResp.OK {
+		kc.kmsRequestMu.Unlock()
 		cancel()
 		kc.mu.Lock()
 		delete(kc.pendingRequests, requestID)
@@ -407,16 +429,26 @@ func (kc *KmsClient) sendKmsRequest(ctx context.Context, requestID, wrapped stri
 	kc.logger.Debug(fmt.Sprintf("KMS request %s sent (HTTP %d), waiting for Mercury response...", requestID, httpResp.Status))
 
 	// Wait for Mercury response
+	response := ""
+	var waitErr error
 	select {
-	case response := <-ch:
-		cancel()
-		return response, nil
+	case response = <-ch:
 	case <-reqCtx.Done():
+		waitErr = NewKmsError(fmt.Sprintf("KMS request %s timed out", requestID))
+	}
+
+	kc.kmsRequestMu.Unlock()
+
+	if waitErr != nil {
 		kc.mu.Lock()
 		delete(kc.pendingRequests, requestID)
 		kc.mu.Unlock()
-		return "", NewKmsError(fmt.Sprintf("KMS request %s timed out", requestID))
+		cancel()
+		return "", waitErr
 	}
+
+	cancel()
+	return response, nil
 }
 
 func (kc *KmsClient) isContextExpired() bool {

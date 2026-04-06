@@ -379,7 +379,7 @@ func (ms *MercurySocket) handleActivityEnvelope(message map[string]interface{}) 
 }
 
 func (ms *MercurySocket) handleClose(code websocket.StatusCode, reason string) {
-	ms.logger.Info(fmt.Sprintf("WebSocket closed with code %d: %s", code, reason))
+	ms.logger.Info(fmt.Sprintf("WebSocket closed with code %d, reason: %q", code, reason))
 	ms.setConnectionReady(false)
 
 	if code == 4401 {

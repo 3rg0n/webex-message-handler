@@ -1,6 +1,7 @@
 import { DeviceRegistration, FetchRequest, FetchResponse } from './types.js';
 import { AuthError, DeviceRegistrationError } from './errors.js';
 import { Logger, noopLogger } from './logger.js';
+import { validateWebexUrl } from './url-validation.js';
 
 type HttpDoFn = (request: FetchRequest) => Promise<FetchResponse>;
 
@@ -191,6 +192,18 @@ export class DeviceManager {
       : {};
 
     const encryptionServiceUrl = services['encryptionServiceUrl'] || '';
+
+    // Validate external API URLs
+    try {
+      validateWebexUrl(data.webSocketUrl, 'wss:');
+      if (encryptionServiceUrl) {
+        validateWebexUrl(encryptionServiceUrl, 'https:');
+      }
+    } catch (error) {
+      throw new DeviceRegistrationError(
+        `Invalid URL in WDM response: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
 
     return {
       webSocketUrl: data.webSocketUrl,

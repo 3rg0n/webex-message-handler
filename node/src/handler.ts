@@ -103,6 +103,7 @@ export class WebexMessageHandler
   private _connecting = false;
   private ignoreSelfMessages: boolean;
   private botPersonId: string | null = null;
+  private recentActivityIds = new Map<string, number>();
 
   constructor(config: WebexMessageHandlerConfig) {
     super();
@@ -363,6 +364,24 @@ export class WebexMessageHandler
   }
 
   private async _handleActivity(activity: MercuryActivity): Promise<void> {
+    // Activity replay protection
+    const activityId = activity.id;
+    if (this.recentActivityIds.has(activityId)) {
+      this.logger.warn(`Duplicate activity detected, ignoring: ${activityId}`);
+      return;
+    }
+    this.recentActivityIds.set(activityId, Date.now());
+
+    // Sweep old entries (every 100 activities, remove entries older than 5 minutes)
+    if (this.recentActivityIds.size % 100 === 0) {
+      const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+      for (const [id, timestamp] of this.recentActivityIds.entries()) {
+        if (timestamp < fiveMinutesAgo) {
+          this.recentActivityIds.delete(id);
+        }
+      }
+    }
+
     // message:created — verb=post + objectType=comment
     if (
       activity.verb === 'post' &&
@@ -401,6 +420,7 @@ export class WebexMessageHandler
       activity.verb === 'delete' &&
       activity.object?.objectType === 'activity'
     ) {
+      this.logger.info(`Message deleted: ${activity.object.id} in room ${activity.target.id}`);
       this.emit('message:deleted', {
         messageId: activity.object.id,
         roomId: activity.target.id,
