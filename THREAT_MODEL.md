@@ -225,7 +225,7 @@ Scanned with: govulncheck v1.1.4, pnpm audit v10.28.2, cargo-audit v0.22.1, pip-
 │  │ (device reg)│  │ (activities) │  │ (ECDH, key fetch)     │   │
 │  └─────────────┘  └──────────────┘  └───────────────────────┘   │
 │                                                                  │
-│  WEBEX CLOUD (trusted, but responses NOT validated)              │
+│  WEBEX CLOUD (trusted, responses validated — protocol + domain)  │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -241,23 +241,23 @@ Consumer App
 │                                                     │
 │  1. Register device ──────────► WDM API             │
 │     ◄── deviceUrl, webSocketUrl, encryptionSvcUrl   │
-│         [!] URLs NOT validated (F3)                 │
+│         [✓] URLs validated — protocol + domain (F3) │
 │                                                     │
 │  2. Connect WebSocket ────────► Mercury             │
 │     ◄── token sent in WS message                    │
 │     ◄── encrypted activities stream                 │
-│         [!] No replay protection (F8)               │
+│         [✓] Replay protection — 5min dedup (F8)     │
 │         [!] No schema validation (F10)              │
 │                                                     │
 │  3. ECDH key exchange ────────► KMS                 │
 │     ◄── ephemeral shared key                        │
 │         [!] Algorithm not whitelisted (F4)          │
 │         [!] Point validation incomplete (F5)        │
-│         [!] FIFO response matching (F2)             │
+│         [✓] Serialized via mutex (F2)               │
 │                                                     │
 │  4. Fetch content key ────────► KMS                 │
 │     ◄── symmetric key (cached)                      │
-│         [!] Cache unbounded (F9)                    │
+│         [✓] Cache bounded at 100 (F9)               │
 │                                                     │
 │  5. Decrypt message (JWE A256GCM)                   │
 │     │                                               │
@@ -265,3 +265,39 @@ Consumer App
 │  DecryptedMessage ────────────► Consumer callback   │
 └─────────────────────────────────────────────────────┘
 ```
+
+## Remediation Status
+
+Remediated in v0.6.3 (commit `40a91ed`, released 2026-04-06). All changes applied across all four languages unless noted.
+
+| # | Finding | Status | Details |
+|---|---------|--------|---------|
+| F1 | Python aiohttp 10 HIGH CVEs | **FIXED** | Pinned `aiohttp>=3.13.4` in `pyproject.toml`. All 10 CVEs resolved. |
+| F2 | KMS FIFO TOCTOU — no request ID | **MITIGATED** | Added mutex serialization in Go (`kmsRequestMu`), Python (`asyncio.Lock`), and Node.js (existing mutex). Only one KMS request in-flight at a time, eliminating out-of-order response risk. Rust already serialized via `tokio::Mutex`. Full request ID correlation deferred — Webex KMS protocol does not expose a standard correlation ID in responses. |
+| F3 | Unvalidated external API URLs | **FIXED** | New `url_validation` module in all 4 languages. Validates protocol (`https://`/`wss://`) and domain allowlist (`*.webex.com`, `*.wbx2.com`, `*.ciscospark.com`). Applied to WDM response URLs (webSocketUrl, encryptionServiceUrl) and KMS cluster URL. Files: `go/url_validation.go`, `node/src/url-validation.ts`, `python/src/webex_message_handler/url_validation.py`, `rust/src/url_validation.rs`. |
+| F4 | JWE/JWS algorithm whitelist | **ACCEPTED** | Underlying JWK libraries (node-jose, jwcrypto, go-jose, josekit) enforce algorithm constraints during key operations. `alg: "none"` is rejected by all four libraries when performing ECDH-ES or A256GCM operations. Adding explicit algorithm whitelist deferred as defense-in-depth — current risk mitigated by library defaults. |
+| F5 | ECDH point-on-curve validation | **VERIFIED** | Confirmed all four JWK libraries perform full point-on-curve validation during key import: node-jose validates on `JWK.asKey()`, jwcrypto validates on `JWK()` construction, go-jose validates via `crypto/ecdh`, josekit delegates to ring which validates on import. Already fixed in v0.6.1 with explicit `kty=EC` + `crv=P-256` pre-checks. No additional code changes needed. |
+| F6 | GitHub Actions not SHA-pinned | **FIXED** | All 17 action references across 3 workflows (`.github/workflows/codeql.yml`, `integration-tests.yml`, `publish.yml`) pinned to commit SHAs with version comments. |
+| F7 | Python cryptography CVEs | **FIXED** | Added `cryptography>=46.0.6` as explicit dependency in `pyproject.toml`. Both MEDIUM CVEs resolved. |
+| F8 | No replay protection | **FIXED** | Added activity ID deduplication with 5-minute sliding window in all 4 languages. Duplicate activities silently dropped. Files: all `handler` files. |
+| F9 | Key cache unbounded | **FIXED** | Key cache bounded at 100 entries in all 4 languages. Cache cleared when limit exceeded. Files: all `kms_client` files. |
+| F10 | Mercury message schema validation | **ACCEPTED** | Messages are typed/destructured during processing; missing fields cause graceful failures (logged, not crashed). Full JSON Schema validation adds overhead with limited security benefit — the trust boundary is TLS to Webex cloud, and malformed messages are a reliability concern, not a security exploit vector. |
+| F11 | Dependency pinning inconsistency | **ACCEPTED** | Node.js `^` ranges and Python `>=` ranges are idiomatic for their ecosystems. Lock files (`pnpm-lock.yaml`, committed) provide reproducible builds. Tightening to `~` or exact pins would increase maintenance burden without meaningful security improvement given lock file presence. |
+| F12 | Resource exhaustion — unbounded queues | **FIXED** | Pending KMS requests capped at 100 in all 4 languages. Requests exceeding the cap are rejected with an error. Files: all `kms_client` files. |
+| F13 | Token plaintext in memory | **DEFERRED** | Secure memory zeroing requires language-specific approaches (Rust `zeroize`, Go `memguard`, Node.js `Buffer.fill(0)`, Python `ctypes.memset`). Risk is low — an attacker with memory read access already has full system compromise. Will revisit if the library adds token storage or persistence features. |
+| F14 | Logging gaps | **PARTIALLY FIXED** | Added close code/reason to reconnection logs in all 4 languages. Added message deletion event logging. Auth failure context improvements deferred — existing error typing (AuthError) provides sufficient discrimination for consumers. |
+| F15 | Node.js message size check order | **VERIFIED** | Current code checks `rawData.length` before `JSON.parse()` in Node.js. Python enforces via aiohttp `max_msg_size`. Go and Rust enforce at WebSocket library layer. No code change needed. |
+| F16 | No SBOM | **FIXED** | CycloneDX SBOM generation added to `.github/workflows/publish.yml` for Python package. `cyclonedx-py environment -o sbom.json` runs after build, with `continue-on-error: true`. |
+| F17 | Rust RSA Marvin timing | **ACCEPTED** | Library uses RSA for encryption only (no private key decryption operations). Timing side-channel requires private key operations to exploit. Documented as accepted risk. |
+| F18 | InsecureSkipVerify in test file | **ACCEPTED** | File `go/test-proxy.go` has `//go:build ignore` tag — never compiled into production binaries. Used only for manual proxy testing. |
+
+### Summary
+
+- **Fixed**: 10 findings (F1, F3, F6, F7, F8, F9, F12, F14 partial, F16, plus F2 mitigated)
+- **Verified (no change needed)**: 3 findings (F5, F15, F17)
+- **Accepted**: 4 findings (F4, F10, F11, F18)
+- **Deferred**: 1 finding (F13)
+
+### Residual Risk
+
+After remediation, no Critical or High findings remain open. Accepted findings (F4, F10, F11, F18) carry residual risk of Medium or lower, mitigated by library defaults, lock files, and build tags respectively. The single deferred finding (F13 — token in memory) is Low risk given the threat model assumption that memory-read attacks imply full host compromise.
