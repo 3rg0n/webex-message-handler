@@ -1,0 +1,75 @@
+go/device_manager_test.go
+  25ccca6093f1ae3d 22-23,26,45-46,48-49,54-55,132,196-197
+node/src/kms-client.ts
+  25ccca6093f1ae3d 7,136-143,273-277,298-299
+.github/workflows/codeql.yml
+  25ccca6093f1ae3d 34,37,44,47
+rust/src/kms_client.rs
+  25ccca6093f1ae3d 14,28-29,177-179,304-308,386,389-394
+node/test/device-manager.spec.ts
+  25ccca6093f1ae3d 10,18-19,68,71-72,130,149
+.github/workflows/integration-tests.yml
+  25ccca6093f1ae3d 23,26,31,56,59,83,86,109,112,115
+python/src/webex_message_handler/kms_client.py
+  25ccca6093f1ae3d 26,64-65,109-110,285-288,301,303,305-315,334,337-344,349-350
+rust/src/device_manager.rs
+  25ccca6093f1ae3d 5,75-79,81-84,133-137,139-142
+.github/workflows/publish.yml
+  25ccca6093f1ae3d 16,18,31-36,38
+node/src/url-validation.ts
+  25ccca6093f1ae3d 1-18
+rust/src/url_validation.rs
+  25ccca6093f1ae3d 1-96
+python/src/webex_message_handler/handler.py
+  25ccca6093f1ae3d 6,132-133
+go/handler.go
+  25ccca6093f1ae3d 39-41,120,491-498,500-509
+rust/src/handler.rs
+  25ccca6093f1ae3d 12,16,136-137,215,464-470
+go/kms_client.go
+  25ccca6093f1ae3d 42,148-152,213,366-370,383-387,391-392,410,421,432-433,437-438,440,442,446-447,450-451
+python/pyproject.toml
+  25ccca6093f1ae3d 29-30
+node/src/handler.ts
+  25ccca6093f1ae3d 106,367-373,375-383,423
+python/src/webex_message_handler/mercury_socket.py
+  25ccca6093f1ae3d 271
+THREAT_MODEL.md
+  25ccca6093f1ae3d 1-267
+CHANGELOG.md
+  25ccca6093f1ae3d 8,13-32
+python/src/webex_message_handler/device_manager.py
+  25ccca6093f1ae3d 11,156-157,159-162,165,169
+node/test/kms-client.spec.ts
+  25ccca6093f1ae3d 76,78,82,253,288,307,328,370
+python/src/webex_message_handler/url_validation.py
+  25ccca6093f1ae3d 1-23
+go/device_manager.go
+  25ccca6093f1ae3d 84-87,135-138,188,194-198,200-204,206,213-214
+go/url_validation.go
+  25ccca6093f1ae3d 1-27
+node/src/device-manager.ts
+  25ccca6093f1ae3d 4,196-206
+rust/src/lib.rs
+  25ccca6093f1ae3d 43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.5",
+  "base_commit_sha": "40a91ede7d45095436266d10929b1ac903a52124",
+  "prompts": {
+    "25ccca6093f1ae3d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a5afcede-bc5a-454b-af42-844223f3840c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Ergon Copeland",
+      "messages": [],
+      "total_additions": 6783,
+      "total_deletions": 6084,
+      "accepted_lines": 1545,
+      "overriden_lines": 38
+    }
+  }
+}
