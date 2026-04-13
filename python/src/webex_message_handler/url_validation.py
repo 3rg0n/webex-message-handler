@@ -2,7 +2,7 @@
 
 from urllib.parse import urlparse
 
-ALLOWED_DOMAIN_SUFFIXES = ('.webex.com', '.wbx2.com', '.ciscospark.com', '.example.com')
+ALLOWED_WEBEX_DOMAINS = ("webex.com", "wbx2.com", "ciscospark.com", "example.com")
 
 
 def validate_webex_url(raw_url: str, required_scheme: str) -> None:
@@ -19,5 +19,5 @@ def validate_webex_url(raw_url: str, required_scheme: str) -> None:
     if parsed.scheme != required_scheme:
         raise ValueError(f"URL scheme must be {required_scheme}, got {parsed.scheme}")
     host = (parsed.hostname or "").lower()
-    if not any(host.endswith(suffix) for suffix in ALLOWED_DOMAIN_SUFFIXES):
+    if not any(host == domain or host.endswith(f".{domain}") for domain in ALLOWED_WEBEX_DOMAINS):
         raise ValueError(f"URL host {host} is not a recognized Webex domain")
