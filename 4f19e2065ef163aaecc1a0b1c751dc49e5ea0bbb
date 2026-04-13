@@ -1,0 +1,69 @@
+rust/src/types.rs
+  25ccca6093f1ae3d 166-168,170-172,238-239,241-242,265-266,308-312,314-315,317-318,320-321,323-324,326-327,329-330,332-334,336-340,342-343,345-346,348-349,351-352,354-356
+rust/tests/integration_test.rs
+  25ccca6093f1ae3d 310-311
+go/mention_parser.go
+  25ccca6093f1ae3d 1-55
+rust/Cargo.toml
+  25ccca6093f1ae3d 3,32-33
+python/src/webex_message_handler/handler.py
+  25ccca6093f1ae3d 15,19,31,141,144-146
+rust/src/lib.rs
+  25ccca6093f1ae3d 41,51,53-56
+python/pyproject.toml
+  25ccca6093f1ae3d 7
+node/src/types.ts
+  25ccca6093f1ae3d 104-107,158-163,192-209,211-224,247,250-252
+node/src/index.ts
+  25ccca6093f1ae3d 6,32-33
+node/test/handler.spec.ts
+  25ccca6093f1ae3d 270,721,726,729,734,757
+node/package.json
+  25ccca6093f1ae3d 3
+rust/src/mention_parser.rs
+  25ccca6093f1ae3d 1-113
+python/src/webex_message_handler/mercury_socket.py
+  25ccca6093f1ae3d 414-415
+python/src/webex_message_handler/types.py
+  25ccca6093f1ae3d 161-162,164-165,230-231,233-234,236-237,287-289,291-292,294-295,297-298,300-301,303-304,306-307,309-310,312-313,316-318,320-321,323-324,326-327,329-330,332-333,335-336
+go/types.go
+  25ccca6093f1ae3d 113-119,165-166,168-169,192-193,233-236,238-239,241-242,244-245,247-248,250-251,253-254,256-258,260-263,265-266,268-269,271-272,274-275,277-279
+go/handler.go
+  25ccca6093f1ae3d 45,47-51,193-196,208-211,213-216,218-221,535-536,556,559-571,585-592,629-649,651-676
+rust/src/handler.rs
+  25ccca6093f1ae3d 6,10-12,34-35,40-45,492-493,497,501-502,514,526-532,575-576,578-594,596-616
+rust/examples/basic_bot.rs
+  25ccca6093f1ae3d 46-52,65-76
+CHANGELOG.md
+  25ccca6093f1ae3d 8-16
+python/tests/test_handler.py
+  25ccca6093f1ae3d 279,282,285,288,291
+python/src/webex_message_handler/__init__.py
+  25ccca6093f1ae3d 16,20,38,51-53,80-81
+python/src/webex_message_handler/mention_parser.py
+  25ccca6093f1ae3d 1-59
+node/src/mention-parser.ts
+  25ccca6093f1ae3d 1-44
+node/src/handler.ts
+  25ccca6093f1ae3d 10-11,23,388,390,399,410-412,422-423,461-478,480-496
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "4f19e2065ef163aaecc1a0b1c751dc49e5ea0bbb",
+  "prompts": {
+    "25ccca6093f1ae3d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a5afcede-bc5a-454b-af42-844223f3840c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Ergon Copeland",
+      "messages": [],
+      "total_additions": 18508,
+      "total_deletions": 5126,
+      "accepted_lines": 4002,
+      "overriden_lines": 123
+    }
+  }
+}
