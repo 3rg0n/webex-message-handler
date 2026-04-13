@@ -39,6 +39,14 @@ func main() {
 		fmt.Printf("[%s] %s\n", msg.PersonEmail, msg.Text)
 	})
 
+	handler.OnMessageUpdated(func(msg webex.DecryptedMessage) {
+		fmt.Printf("[EDIT] [%s] %s\n", msg.PersonEmail, msg.Text)
+	})
+
+	handler.OnAttachmentActionCreated(func(action webex.AttachmentAction) {
+		fmt.Printf("Card submitted by %s: %v\n", action.PersonEmail, action.Inputs)
+	})
+
 	handler.OnError(func(err error) {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 	})
@@ -150,7 +158,12 @@ Creates a new handler. Config fields:
 
 ```go
 handler.OnMessageCreated(func(msg DecryptedMessage) { ... })
+handler.OnMessageUpdated(func(msg DecryptedMessage) { ... })
 handler.OnMessageDeleted(func(data DeletedMessage) { ... })
+handler.OnAttachmentActionCreated(func(action AttachmentAction) { ... })
+handler.OnMembershipCreated(func(data MembershipActivity) { ... })
+handler.OnRoomCreated(func(room RoomActivity) { ... })
+handler.OnRoomUpdated(func(room RoomActivity) { ... })
 handler.OnConnected(func() { ... })
 handler.OnDisconnected(func(reason string) { ... })
 handler.OnReconnecting(func(attempt int) { ... })
@@ -166,6 +179,70 @@ handler.OnError(func(err error) { ... })
 - `DecryptionError` — Message decryption failed
 
 All implement `error` and extend `WebexError`. Use `errors.As()` for type checking.
+
+### Types
+
+#### `DecryptedMessage`
+
+```go
+type DecryptedMessage struct {
+    ID              string
+    ParentID        string          // Parent activity UUID (threaded replies)
+    RoomID          string
+    PersonID        string
+    PersonEmail     string
+    Text            string
+    HTML            string
+    Created         string
+    RoomType        string          // "direct" or "group"
+    MentionedPeople []string        // Person UUIDs from <spark-mention> tags
+    MentionedGroups []string        // e.g. ["all"] from group mentions
+    Files           []string        // File attachment URLs
+    Raw             MercuryActivity
+}
+```
+
+#### `AttachmentAction`
+
+Emitted when a user submits an Adaptive Card.
+
+```go
+type AttachmentAction struct {
+    ID          string
+    MessageID   string                 // Parent message containing the card
+    PersonID    string                 // Person who submitted
+    PersonEmail string
+    RoomID      string
+    Inputs      map[string]interface{} // Card form data
+    Created     string
+    Raw         MercuryActivity
+}
+```
+
+#### `RoomActivity`
+
+Emitted for room lifecycle events.
+
+```go
+type RoomActivity struct {
+    ID       string
+    RoomID   string
+    ActorID  string  // Person who triggered the event
+    Action   string  // "create" or "update"
+    Created  string
+    Raw      MercuryActivity
+}
+```
+
+#### `ParseMentions(html string) ParsedMentions`
+
+Extracts mentions from decrypted HTML. Called automatically during decryption — the results populate `DecryptedMessage.MentionedPeople` and `DecryptedMessage.MentionedGroups`. Exported for standalone use.
+
+```go
+result := webex.ParseMentions(msg.HTML)
+// result.MentionedPeople: ["uuid-1", "uuid-2"]
+// result.MentionedGroups: ["all"]
+```
 
 ## Architecture
 

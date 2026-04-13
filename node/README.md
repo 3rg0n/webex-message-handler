@@ -35,6 +35,18 @@ handler.on('message:deleted', (data) => {
   console.log(`Message ${data.messageId} deleted by ${data.personId}`);
 });
 
+handler.on('message:updated', (msg) => {
+  console.log(`[EDIT] [${msg.personEmail}] ${msg.text}`);
+});
+
+handler.on('attachmentAction:created', (action) => {
+  console.log(`Card submitted by ${action.personEmail}:`, action.inputs);
+});
+
+handler.on('room:updated', (room) => {
+  console.log(`Room ${room.roomId} updated by ${room.actorId}`);
+});
+
 handler.on('connected', () => console.log('Connected to Webex'));
 handler.on('disconnected', (reason) => console.log(`Disconnected: ${reason}`));
 handler.on('reconnecting', (attempt) => console.log(`Reconnecting (attempt ${attempt})...`));
@@ -192,6 +204,11 @@ new WebexMessageHandler(config: WebexMessageHandlerConfig)
 |-------|---------|-------------|
 | `message:created` | `DecryptedMessage` | New message received and decrypted |
 | `message:deleted` | `{ messageId, roomId, personId }` | Message was deleted |
+| `message:updated` | `DecryptedMessage` | Message was edited and re-decrypted |
+| `attachmentAction:created` | `AttachmentAction` | Adaptive Card submitted |
+| `room:created` | `RoomActivity` | New room/space created |
+| `room:updated` | `RoomActivity` | Room/space updated |
+| `membership:created` | `MembershipActivity` | Member added/removed or moderator changed |
 | `connected` | — | Connected/reconnected to Mercury |
 | `disconnected` | `reason: string` | Disconnected from Mercury |
 | `reconnecting` | `attempt: number` | Attempting to reconnect |
@@ -212,8 +229,55 @@ Shape of decrypted messages:
   html?: string;
   created: string;
   roomType?: string;
+  mentionedPeople: string[];  // Person UUIDs from <spark-mention> tags
+  mentionedGroups: string[];  // e.g. ["all"] from group mentions
+  files: string[];            // File attachment URLs
   raw: MercuryActivity;
 }
+```
+
+### `AttachmentAction`
+
+Emitted when a user submits an Adaptive Card.
+
+```typescript
+{
+  id: string;             // Activity UUID
+  messageId: string;      // Parent message containing the card
+  personId: string;       // Person who submitted
+  personEmail: string;
+  roomId: string;
+  inputs: Record<string, unknown>;  // Card form data
+  created: string;
+  raw: MercuryActivity;
+}
+```
+
+### `RoomActivity`
+
+Emitted for room lifecycle events.
+
+```typescript
+{
+  id: string;             // Activity UUID
+  roomId: string;
+  actorId: string;        // Person who triggered the event
+  action: string;         // "create" or "update"
+  created: string;
+  raw: MercuryActivity;
+}
+```
+
+### `parseMentions(html)`
+
+Extracts mentions from decrypted HTML. Called automatically during decryption — the results populate `DecryptedMessage.mentionedPeople` and `DecryptedMessage.mentionedGroups`. Exported for standalone use.
+
+```typescript
+import { parseMentions } from 'webex-message-handler';
+
+const { mentionedPeople, mentionedGroups } = parseMentions(msg.html);
+// mentionedPeople: ["uuid-1", "uuid-2"]
+// mentionedGroups: ["all"]
 ```
 
 ### Threading & Message IDs

@@ -39,8 +39,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             HandlerEvent::MessageCreated(msg) => {
                 println!("[{}] {}", msg.person_email, msg.text);
             }
+            HandlerEvent::MessageUpdated(msg) => {
+                println!("[EDIT] [{}] {}", msg.person_email, msg.text);
+            }
             HandlerEvent::MessageDeleted(del) => {
                 println!("Deleted: {}", del.message_id);
+            }
+            HandlerEvent::AttachmentActionCreated(action) => {
+                println!("Card submitted by {}: {:?}", action.person_email, action.inputs);
+            }
+            HandlerEvent::RoomCreated(room) => {
+                println!("Room {} created", room.room_id);
+            }
+            HandlerEvent::RoomUpdated(room) => {
+                println!("Room {} updated", room.room_id);
+            }
+            HandlerEvent::MembershipCreated(membership) => {
+                println!("Membership: {} {}", membership.action, membership.person_id);
             }
             HandlerEvent::Connected => println!("Connected"),
             HandlerEvent::Disconnected(reason) => println!("Disconnected: {reason}"),
@@ -106,6 +121,90 @@ Note: The `reqwest::Client` proxy configuration applies to HTTP traffic (device 
 | `pong_timeout` | `f64` | `14.0` | Pong response timeout in seconds |
 | `reconnect_backoff_max` | `f64` | `32.0` | Max reconnect backoff in seconds |
 | `max_reconnect_attempts` | `u32` | `10` | Max consecutive reconnection attempts |
+
+## Events and Types
+
+### `HandlerEvent`
+
+```rust
+enum HandlerEvent {
+    MessageCreated(DecryptedMessage),
+    MessageUpdated(DecryptedMessage),
+    MessageDeleted(DeletedMessage),
+    AttachmentActionCreated(AttachmentAction),
+    RoomCreated(RoomActivity),
+    RoomUpdated(RoomActivity),
+    MembershipCreated(MembershipActivity),
+    Connected,
+    Disconnected(String),
+    Reconnecting(u32),
+    Error(String),
+}
+```
+
+### `DecryptedMessage`
+
+```rust
+pub struct DecryptedMessage {
+    pub id: String,
+    pub parent_id: Option<String>,      // Parent activity UUID (threaded replies)
+    pub room_id: String,
+    pub person_id: String,
+    pub person_email: String,
+    pub text: String,
+    pub html: Option<String>,
+    pub created: String,
+    pub room_type: Option<String>,       // "direct" or "group"
+    pub mentioned_people: Vec<String>,   // Person UUIDs from <spark-mention> tags
+    pub mentioned_groups: Vec<String>,   // e.g. ["all"] from group mentions
+    pub files: Vec<String>,              // File attachment URLs
+    pub raw: MercuryActivity,
+}
+```
+
+### `AttachmentAction`
+
+Emitted when a user submits an Adaptive Card.
+
+```rust
+pub struct AttachmentAction {
+    pub id: String,
+    pub message_id: String,              // Parent message containing the card
+    pub person_id: String,
+    pub person_email: String,
+    pub room_id: String,
+    pub inputs: Option<serde_json::Value>,  // Card form data
+    pub created: String,
+    pub raw: MercuryActivity,
+}
+```
+
+### `RoomActivity`
+
+Emitted for room lifecycle events.
+
+```rust
+pub struct RoomActivity {
+    pub id: String,
+    pub room_id: String,
+    pub actor_id: String,    // Person who triggered the event
+    pub action: String,      // "create" or "update"
+    pub created: String,
+    pub raw: MercuryActivity,
+}
+```
+
+### `parse_mentions`
+
+Extracts mentions from decrypted HTML. Called automatically during decryption — the results populate `DecryptedMessage.mentioned_people` and `DecryptedMessage.mentioned_groups`. Exported for standalone use.
+
+```rust
+use webex_message_handler::parse_mentions;
+
+let result = parse_mentions(msg.html.as_deref());
+// result.mentioned_people: ["uuid-1", "uuid-2"]
+// result.mentioned_groups: ["all"]
+```
 
 ## Threading & Message IDs
 

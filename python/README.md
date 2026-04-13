@@ -39,6 +39,18 @@ async def on_message(msg):
 def on_deleted(data):
     print(f"Message {data.message_id} deleted by {data.person_id}")
 
+@handler.on("message:updated")
+async def on_updated(msg):
+    print(f"[EDIT] [{msg.person_email}] {msg.text}")
+
+@handler.on("attachmentAction:created")
+def on_card(action):
+    print(f"Card submitted by {action.person_email}: {action.inputs}")
+
+@handler.on("room:updated")
+def on_room_updated(room):
+    print(f"Room {room.room_id} updated by {room.actor_id}")
+
 @handler.on("connected")
 def on_connected():
     print("Connected to Webex")
@@ -182,6 +194,11 @@ WebexMessageHandler(config: WebexMessageHandlerConfig)
 |-------|---------|-------------|
 | `message:created` | `DecryptedMessage` | New message received and decrypted |
 | `message:deleted` | `DeletedMessage` | Message was deleted |
+| `message:updated` | `DecryptedMessage` | Message was edited and re-decrypted |
+| `attachmentAction:created` | `AttachmentAction` | Adaptive Card submitted |
+| `room:created` | `RoomActivity` | New room/space created |
+| `room:updated` | `RoomActivity` | Room/space updated |
+| `membership:created` | `MembershipActivity` | Member added/removed or moderator changed |
 | `connected` | — | Connected/reconnected to Mercury |
 | `disconnected` | `reason: str` | Disconnected from Mercury |
 | `reconnecting` | `attempt: int` | Attempting to reconnect |
@@ -193,14 +210,62 @@ WebexMessageHandler(config: WebexMessageHandlerConfig)
 @dataclass
 class DecryptedMessage:
     id: str
+    parent_id: str | None   # Parent activity UUID (threaded replies)
     room_id: str
     person_id: str
     person_email: str
     text: str
     created: str
     html: str | None
-    room_type: str | None   # "direct" | "group"
+    room_type: str | None        # "direct" | "group"
+    mentioned_people: list[str]  # Person UUIDs from <spark-mention> tags
+    mentioned_groups: list[str]  # e.g. ["all"] from group mentions
+    files: list[str]             # File attachment URLs
     raw: MercuryActivity | None
+```
+
+### `AttachmentAction`
+
+Emitted when a user submits an Adaptive Card.
+
+```python
+@dataclass
+class AttachmentAction:
+    id: str               # Activity UUID
+    message_id: str       # Parent message containing the card
+    person_id: str        # Person who submitted
+    person_email: str
+    room_id: str
+    inputs: dict[str, Any]  # Card form data
+    created: str
+    raw: MercuryActivity
+```
+
+### `RoomActivity`
+
+Emitted for room lifecycle events.
+
+```python
+@dataclass
+class RoomActivity:
+    id: str             # Activity UUID
+    room_id: str
+    actor_id: str       # Person who triggered the event
+    action: str         # "create" or "update"
+    created: str
+    raw: MercuryActivity
+```
+
+### `parse_mentions(html)`
+
+Extracts mentions from decrypted HTML. Called automatically during decryption — the results populate `DecryptedMessage.mentioned_people` and `DecryptedMessage.mentioned_groups`. Exported for standalone use.
+
+```python
+from webex_message_handler import parse_mentions
+
+result = parse_mentions(msg.html)
+# result.mentioned_people: ["uuid-1", "uuid-2"]
+# result.mentioned_groups: ["all"]
 ```
 
 ## Architecture
