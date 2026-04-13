@@ -1,0 +1,45 @@
+go/url_validation_test.go
+  25ccca6093f1ae3d 1-63
+node/test/kms-client.spec.ts
+  25ccca6093f1ae3d 82,162-186
+node/src/url-validation.ts
+  25ccca6093f1ae3d 14
+CHANGELOG.md
+  25ccca6093f1ae3d 8-15
+rust/src/kms_client.rs
+  25ccca6093f1ae3d 177-178
+rust/Cargo.toml
+  25ccca6093f1ae3d 3
+rust/src/url_validation.rs
+  25ccca6093f1ae3d 96-131
+go/url_validation.go
+  25ccca6093f1ae3d 22
+go/kms_client.go
+  25ccca6093f1ae3d 148-149
+node/src/kms-client.ts
+  25ccca6093f1ae3d 136,138
+python/pyproject.toml
+  25ccca6093f1ae3d 7
+node/package.json
+  25ccca6093f1ae3d 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "fb0cdd56f4c8b09b556aaba890c4f1186c244424",
+  "prompts": {
+    "25ccca6093f1ae3d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a5afcede-bc5a-454b-af42-844223f3840c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Ergon Copeland",
+      "messages": [],
+      "total_additions": 6463,
+      "total_deletions": 2221,
+      "accepted_lines": 1919,
+      "overriden_lines": 70
+    }
+  }
+}
