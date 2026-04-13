@@ -1,0 +1,67 @@
+python/src/webex_message_handler/mercury_socket.py
+  25ccca6093f1ae3d 18,391-398,423
+python/src/webex_message_handler/handler.py
+  25ccca6093f1ae3d 472-473
+go/id_utils.go
+  25ccca6093f1ae3d 1-32
+node/src/id-utils.ts
+  25ccca6093f1ae3d 1-28
+CHANGELOG.md
+  25ccca6093f1ae3d 10-14,16
+rust/src/types.rs
+  25ccca6093f1ae3d 183-192,216-218,227-229
+go/handler_test.go
+  25ccca6093f1ae3d 226-275
+node/src/handler.ts
+  25ccca6093f1ae3d 398
+rust/src/lib.rs
+  25ccca6093f1ae3d 38,49,53
+go/handler.go
+  25ccca6093f1ae3d 527-531,534
+README.md
+  25ccca6093f1ae3d 10,12,185-251
+python/src/webex_message_handler/__init__.py
+  25ccca6093f1ae3d 13,33,59-61,67
+python/tests/test_id_utils.py
+  25ccca6093f1ae3d 1-37
+rust/src/handler.rs
+  25ccca6093f1ae3d 489
+node/src/types.ts
+  25ccca6093f1ae3d 113-117,126,145-146
+python/src/webex_message_handler/types.py
+  25ccca6093f1ae3d 135-142,184,222-224
+rust/src/id_utils.rs
+  25ccca6093f1ae3d 1-43
+python/tests/test_handler.py
+  25ccca6093f1ae3d 13,239-257
+rust/tests/integration_test.rs
+  25ccca6093f1ae3d 319,349
+go/id_utils_test.go
+  25ccca6093f1ae3d 1-59
+node/src/index.ts
+  25ccca6093f1ae3d 16,25
+go/types.go
+  25ccca6093f1ae3d 128-133,143,160-162
+python/src/webex_message_handler/id_utils.py
+  25ccca6093f1ae3d 1-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "4a88101b1f8b6022803fe4f2fdf262421e5435fa",
+  "prompts": {
+    "25ccca6093f1ae3d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a5afcede-bc5a-454b-af42-844223f3840c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Ergon Copeland",
+      "messages": [],
+      "total_additions": 13803,
+      "total_deletions": 13551,
+      "accepted_lines": 4965,
+      "overriden_lines": 0
+    }
+  }
+}
