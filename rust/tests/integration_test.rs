@@ -316,6 +316,7 @@ fn test_membership_activity_construction() {
             },
             published: "2024-01-01T00:00:00Z".to_string(),
             encryption_key_url: None,
+            parent: None,
         },
     };
     assert_eq!(activity.id, "membership-1");
@@ -345,6 +346,7 @@ fn test_membership_activity_all_verbs() {
                 target: Default::default(),
                 published: String::new(),
                 encryption_key_url: None,
+                parent: None,
             },
         };
         assert_eq!(activity.action, *verb);

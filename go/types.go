@@ -125,6 +125,12 @@ type MercuryTarget struct {
 	Tags             []string `json:"tags,omitempty"`
 }
 
+// MercuryParent represents a parent activity reference for threaded replies.
+type MercuryParent struct {
+	ID   string `json:"id"`
+	Type string `json:"type"`
+}
+
 // MercuryActivity represents a conversation activity from Mercury.
 type MercuryActivity struct {
 	ID               string        `json:"id"`
@@ -134,6 +140,7 @@ type MercuryActivity struct {
 	Target           MercuryTarget `json:"target"`
 	Published        string        `json:"published"`
 	EncryptionKeyURL string        `json:"encryptionKeyUrl,omitempty"`
+	Parent           *MercuryParent `json:"parent,omitempty"`
 }
 
 // MercuryEnvelope is the wire format envelope from Mercury WebSocket.
@@ -149,6 +156,9 @@ type MercuryEnvelope struct {
 type DecryptedMessage struct {
 	// ID is the Mercury activity UUID. Works as parentId for threaded replies.
 	ID string
+
+	// ParentID is the parent activity UUID for threaded replies. Empty if not a thread reply.
+	ParentID string
 
 	// RoomID is the conversation/space ID.
 	RoomID string

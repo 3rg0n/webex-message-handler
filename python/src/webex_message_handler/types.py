@@ -133,6 +133,14 @@ class DeviceRegistration:
 # --- Mercury Activity ---
 
 @dataclass
+class MercuryParent:
+    """Parent reference for threaded replies."""
+
+    id: str
+    type: str
+
+
+@dataclass
 class MercuryActor:
     """Actor in a Mercury activity."""
 
@@ -173,6 +181,7 @@ class MercuryActivity:
     target: MercuryTarget
     published: str
     encryption_key_url: str | None = None
+    parent: MercuryParent | None = None
 
 
 @dataclass
@@ -209,6 +218,9 @@ class DecryptedMessage:
 
     created: str
     """ISO 8601 timestamp."""
+
+    parent_id: str | None = None
+    """Parent activity UUID for threaded replies. None if not a thread reply."""
 
     html: str | None = None
     """Decrypted HTML content (rich text messages)."""

@@ -15,7 +15,7 @@ import aiohttp
 
 from .errors import AuthError, MercuryConnectionError
 from .logger import Logger, noop_logger
-from .types import InjectedWebSocket, MercuryActivity, MercuryActor, MercuryObject, MercuryTarget, WebSocketFactory
+from .types import InjectedWebSocket, MercuryActivity, MercuryActor, MercuryObject, MercuryParent, MercuryTarget, WebSocketFactory
 
 
 class MercurySocket:
@@ -388,6 +388,14 @@ def _parse_activity(raw: dict[str, Any]) -> MercuryActivity:
     actor_raw = raw.get("actor", {})
     object_raw = raw.get("object", {})
     target_raw = raw.get("target", {})
+    parent_raw = raw.get("parent")
+
+    parent = None
+    if parent_raw:
+        parent = MercuryParent(
+            id=parent_raw.get("id", ""),
+            type=parent_raw.get("type", ""),
+        )
 
     return MercuryActivity(
         id=raw.get("id", ""),
@@ -412,4 +420,5 @@ def _parse_activity(raw: dict[str, Any]) -> MercuryActivity:
         ),
         published=raw.get("published", ""),
         encryption_key_url=raw.get("encryptionKeyUrl"),
+        parent=parent,
     )

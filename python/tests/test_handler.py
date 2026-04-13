@@ -10,6 +10,7 @@ from webex_message_handler.types import (
     MercuryActivity,
     MercuryActor,
     MercuryObject,
+    MercuryParent,
     MercuryTarget,
     WebexMessageHandlerConfig,
 )
@@ -235,6 +236,25 @@ class TestMessageHandling:
         assert msg.text == "Test Message"
         assert msg.html == "<p>Test Message</p>"
         assert msg.room_type == "group"
+        assert msg.parent_id is None
+
+    async def test_handle_threaded_reply(self):
+        handler = _make_handler()
+        handler._message_decryptor = MagicMock()
+        activity = _make_activity(
+            parent=MercuryParent(id="parent-activity-uuid", type="reply"),
+        )
+        handler._message_decryptor.decrypt_activity = AsyncMock(return_value=activity)
+
+        messages = []
+        handler.on("message:created", lambda msg: messages.append(msg))
+
+        await handler._handle_activity(activity)
+
+        assert len(messages) == 1
+        msg = messages[0]
+        assert msg.id == "msg-123"
+        assert msg.parent_id == "parent-activity-uuid"
 
     async def test_handle_message_deleted(self):
         handler = _make_handler()

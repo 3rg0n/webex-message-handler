@@ -524,8 +524,14 @@ func (h *WebexMessageHandler) handleActivity(ctx context.Context, activity Mercu
 			return err
 		}
 
+		var parentID string
+		if decrypted.Parent != nil {
+			parentID = decrypted.Parent.ID
+		}
+
 		msg := DecryptedMessage{
 			ID:          decrypted.ID,
+			ParentID:    parentID,
 			RoomID:      decrypted.Target.ID,
 			PersonID:    decrypted.Actor.ID,
 			PersonEmail: decrypted.Actor.EmailAddress,

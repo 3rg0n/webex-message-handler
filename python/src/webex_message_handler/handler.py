@@ -468,8 +468,9 @@ class WebexMessageHandler:
                 person_id=decrypted.actor.id,
                 person_email=decrypted.actor.email_address or "",
                 text=decrypted.object.display_name or "",
-                html=decrypted.object.content,
                 created=decrypted.published,
+                parent_id=decrypted.parent.id if decrypted.parent else None,
+                html=decrypted.object.content,
                 room_type=self._infer_room_type(decrypted),
                 raw=decrypted,
             )

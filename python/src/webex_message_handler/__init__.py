@@ -10,6 +10,7 @@ from .errors import (
     WebexError,
 )
 from .handler import WebexMessageHandler
+from .id_utils import from_rest_id, to_rest_id
 from .kms_client import KmsClient
 from .logger import Logger, console_logger, noop_logger
 from .mercury_socket import MercurySocket
@@ -29,6 +30,7 @@ from .types import (
     MercuryActor,
     MercuryEnvelope,
     MercuryObject,
+    MercuryParent,
     MercuryTarget,
     NetworkMode,
     WebexMessageHandlerConfig,
@@ -54,11 +56,15 @@ __all__ = [
     "Logger",
     "noop_logger",
     "console_logger",
+    # ID utilities
+    "to_rest_id",
+    "from_rest_id",
     # Types
     "WebexMessageHandlerConfig",
     "DeviceRegistration",
     "MercuryActor",
     "MercuryObject",
+    "MercuryParent",
     "MercuryTarget",
     "MercuryActivity",
     "MercuryEnvelope",

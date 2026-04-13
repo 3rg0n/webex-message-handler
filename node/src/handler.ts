@@ -395,6 +395,7 @@ export class WebexMessageHandler
       const decrypted = await this.messageDecryptor.decryptActivity(activity);
       const message: DecryptedMessage = {
         id: decrypted.id,
+        parentId: decrypted.parent?.id,
         roomId: decrypted.target.id,
         personId: decrypted.actor.id,
         personEmail: decrypted.actor.emailAddress ?? '',

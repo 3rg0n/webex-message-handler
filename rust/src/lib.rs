@@ -35,6 +35,7 @@
 pub mod device_manager;
 pub mod errors;
 pub mod handler;
+pub mod id_utils;
 pub mod jwe;
 pub mod kms_client;
 pub mod mercury_socket;
@@ -45,8 +46,9 @@ pub mod url_validation;
 // Re-export primary public API
 pub use errors::WebexError;
 pub use handler::{HandlerEvent, WebexMessageHandler};
+pub use id_utils::{to_rest_id, from_rest_id};
 pub use types::{
     Config, ConnectionStatus, DecryptedMessage, DeletedMessage, DeviceRegistration, FetchFn,
     FetchRequest, FetchResponse, HandlerStatus, InjectedWebSocket, MembershipActivity,
-    MercuryActivity, MercuryActor, MercuryObject, MercuryTarget, NetworkMode, WebSocketFactory,
+    MercuryActivity, MercuryActor, MercuryObject, MercuryParent, MercuryTarget, NetworkMode, WebSocketFactory,
 };

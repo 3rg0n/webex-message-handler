@@ -13,6 +13,7 @@ export {
 } from './errors.js';
 export { noopLogger, consoleLogger } from './logger.js';
 export type { Logger } from './logger.js';
+export { toRestId, fromRestId } from './id-utils.js';
 export type {
   WebexMessageHandlerConfig,
   WebexMessageHandlerEvents,
@@ -21,6 +22,7 @@ export type {
   MercuryActor,
   MercuryObject,
   MercuryTarget,
+  MercuryParent,
   MercuryActivity,
   MercuryEnvelope,
   DecryptedMessage,

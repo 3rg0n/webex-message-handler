@@ -7,9 +7,9 @@ Available in four languages with identical functionality:
 | Language | Directory | Tests |
 |----------|-----------|-------|
 | Node.js / TypeScript | [`node/`](node/) | 136 passing |
-| Python | [`python/`](python/) | 58 passing |
+| Python | [`python/`](python/) | 64 passing |
 | Go | [`go/`](go/) | 76 passing |
-| Rust | [`rust/`](rust/) | 30 passing |
+| Rust | [`rust/`](rust/) | 32 passing |
 
 ## Why?
 
@@ -181,6 +181,73 @@ while let Some(event) = rx.recv().await {
     }
 }
 ```
+
+## Threading & Message IDs
+
+### Mercury vs REST API IDs
+
+Mercury WebSocket events use raw activity UUIDs (e.g. `"abc-123-def"`). The Webex REST API uses base64-encoded URIs (e.g. `"Y2lzY29zcGFyazovL3VzL01FU1N..."`). The library provides conversion utilities in all four languages:
+
+| Function | Description |
+|----------|-------------|
+| `toRestId(uuid, type)` | Convert Mercury UUID to REST API ID |
+| `fromRestId(restId)` | Convert REST API ID back to UUID |
+
+Resource types: `"MESSAGE"`, `"PEOPLE"`, `"ROOM"`.
+
+**Node.js:**
+```typescript
+import { toRestId, fromRestId } from 'webex-message-handler';
+
+handler.on('message:created', (msg) => {
+  const restMessageId = toRestId(msg.id, 'MESSAGE');
+  // Use restMessageId with GET /v1/messages/{id}
+
+  const restRoomId = toRestId(msg.roomId, 'ROOM');
+  // Use restRoomId with the REST API
+});
+```
+
+**Python:**
+```python
+from webex_message_handler import to_rest_id, from_rest_id
+
+@handler.on("message:created")
+async def on_message(msg):
+    rest_id = to_rest_id(msg.id, "MESSAGE")
+    # Use rest_id with GET /v1/messages/{id}
+```
+
+**Go:**
+```go
+restID := webexmessagehandler.ToRestID(msg.ID, "MESSAGE")
+uuid, err := webexmessagehandler.FromRestID(restID)
+```
+
+**Rust:**
+```rust
+use webex_message_handler::{to_rest_id, from_rest_id};
+
+let rest_id = to_rest_id(&msg.id, "MESSAGE");
+let uuid = from_rest_id(&rest_id).unwrap();
+```
+
+### Threaded Replies (parentId)
+
+When a message is a reply in a thread, `DecryptedMessage` includes a `parentId` field containing the parent activity UUID. Use this with the REST API to reply in the same thread or fetch the parent message:
+
+```typescript
+handler.on('message:created', async (msg) => {
+  if (msg.parentId) {
+    // This is a threaded reply — fetch parent or reply in thread
+    const parentRestId = toRestId(msg.parentId, 'MESSAGE');
+    // GET /v1/messages/{parentRestId} to read the parent
+    // POST /v1/messages { parentId: msg.parentId } to reply in thread
+  }
+});
+```
+
+The `parentId` is `undefined`/`None`/empty when the message is not part of a thread.
 
 ## Networking & Proxy Support
 

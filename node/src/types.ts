@@ -110,6 +110,11 @@ export interface MercuryTarget {
   tags?: string[];
 }
 
+export interface MercuryParent {
+  id: string;
+  type: string;
+}
+
 export interface MercuryActivity {
   id: string;
   verb: string;
@@ -118,6 +123,7 @@ export interface MercuryActivity {
   target: MercuryTarget;
   published: string;
   encryptionKeyUrl?: string;
+  parent?: MercuryParent;
 }
 
 export interface MercuryEnvelope {
@@ -136,6 +142,8 @@ export interface MercuryEnvelope {
 export interface DecryptedMessage {
   /** Mercury activity UUID. Works as parentId for threaded replies. */
   id: string;
+  /** Parent activity UUID for threaded replies. Undefined if not a thread reply. */
+  parentId?: string;
   roomId: string;
   personId: string;
   personEmail: string;

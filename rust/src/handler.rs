@@ -486,6 +486,7 @@ impl WebexMessageHandler {
                 Ok(decrypted) => {
                     let msg = DecryptedMessage {
                         id: decrypted.id.clone(),
+                        parent_id: decrypted.parent.as_ref().map(|p| p.id.clone()),
                         room_id: decrypted.target.id.clone(),
                         person_id: decrypted.actor.id.clone(),
                         person_email: decrypted

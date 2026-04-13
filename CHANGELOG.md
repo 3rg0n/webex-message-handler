@@ -7,8 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.6.4] - 2026-04-13
 
+### Added
+- **Thread support (`parentId`)** — `DecryptedMessage` now includes `parentId` (the parent activity UUID) for threaded replies, parsed from the Mercury `parent` object. (all 4 languages)
+- **ID conversion utilities** — `toRestId(uuid, type)` / `fromRestId(restId)` convert between Mercury activity UUIDs and Webex REST API base64-encoded IDs. Resource types: `MESSAGE`, `PEOPLE`, `ROOM`. (all 4 languages)
+- **`MercuryParent` type** — new type representing the parent reference in Mercury activities (`id` + `type` fields), exported from all packages.
+
 ### Fixed
-- **DecryptedMessage.id was empty** — set from `activity.id` (Mercury activity UUID) instead of `activity.object.id` which Mercury does not populate for encrypted messages. The activity UUID works as `parentId` for threaded replies via the REST API. (all 4 languages)
+- **DecryptedMessage.id was empty** — set from `activity.id` (Mercury activity UUID) instead of `activity.object.id` which Mercury does not populate for encrypted messages. (all 4 languages)
 
 ## [0.6.3] - 2026-04-06
 

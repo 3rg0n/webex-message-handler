@@ -180,6 +180,16 @@ pub struct MercuryTarget {
     pub tags: Vec<String>,
 }
 
+/// Parent activity reference for threaded replies.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct MercuryParent {
+    #[serde(default)]
+    pub id: String,
+
+    #[serde(rename = "type", default)]
+    pub parent_type: String,
+}
+
 /// A Mercury conversation activity.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MercuryActivity {
@@ -203,6 +213,9 @@ pub struct MercuryActivity {
 
     #[serde(rename = "encryptionKeyUrl", default)]
     pub encryption_key_url: Option<String>,
+
+    #[serde(default)]
+    pub parent: Option<MercuryParent>,
 }
 
 /// A decrypted Webex message.
@@ -210,6 +223,9 @@ pub struct MercuryActivity {
 pub struct DecryptedMessage {
     /// Mercury activity UUID. Works as parentId for threaded replies.
     pub id: String,
+
+    /// Parent activity UUID for threaded replies. None if not a thread reply.
+    pub parent_id: Option<String>,
 
     /// Conversation/space ID.
     pub room_id: String,

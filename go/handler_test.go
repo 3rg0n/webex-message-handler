@@ -223,6 +223,56 @@ func TestHandleActivityMessageCreated(t *testing.T) {
 	}
 }
 
+func TestHandleActivityThreadedReply(t *testing.T) {
+	h, _ := New(Config{Token: "test-token"})
+
+	var received DecryptedMessage
+	h.OnMessageCreated(func(msg DecryptedMessage) {
+		received = msg
+	})
+
+	h.messageDecryptor = &MessageDecryptor{
+		kmsClient: nil,
+		logger:    NoopLogger(),
+	}
+
+	activity := MercuryActivity{
+		ID:   "reply-1",
+		Verb: "post",
+		Actor: MercuryActor{
+			ID:           "person-1",
+			ObjectType:   "person",
+			EmailAddress: "test@example.com",
+		},
+		Object: MercuryObject{
+			ID:          "obj-1",
+			ObjectType:  "comment",
+			DisplayName: "reply text",
+		},
+		Target: MercuryTarget{
+			ID:         "room-1",
+			ObjectType: "conversation",
+		},
+		Published: "2024-01-01T00:00:00.000Z",
+		Parent: &MercuryParent{
+			ID:   "parent-activity-uuid",
+			Type: "reply",
+		},
+	}
+
+	err := h.handleActivity(context.TODO(), activity)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if received.ID != "reply-1" {
+		t.Errorf("expected reply-1, got %q", received.ID)
+	}
+	if received.ParentID != "parent-activity-uuid" {
+		t.Errorf("expected parent-activity-uuid, got %q", received.ParentID)
+	}
+}
+
 func TestHandleActivityMessageDeleted(t *testing.T) {
 	h, _ := New(Config{Token: "test-token"})
 
