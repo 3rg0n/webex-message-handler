@@ -208,7 +208,7 @@ pub struct MercuryActivity {
 /// A decrypted Webex message.
 #[derive(Debug, Clone)]
 pub struct DecryptedMessage {
-    /// Unique message ID.
+    /// Mercury activity UUID. Works as parentId for threaded replies.
     pub id: String,
 
     /// Conversation/space ID.

@@ -134,6 +134,7 @@ export interface MercuryEnvelope {
 // --- Decrypted Output ---
 
 export interface DecryptedMessage {
+  /** Mercury activity UUID. Works as parentId for threaded replies. */
   id: string;
   roomId: string;
   personId: string;

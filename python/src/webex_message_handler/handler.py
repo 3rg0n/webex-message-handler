@@ -463,7 +463,7 @@ class WebexMessageHandler:
 
             decrypted = await self._message_decryptor.decrypt_activity(activity)
             message = DecryptedMessage(
-                id=decrypted.object.id,
+                id=decrypted.id,
                 room_id=decrypted.target.id,
                 person_id=decrypted.actor.id,
                 person_email=decrypted.actor.email_address or "",

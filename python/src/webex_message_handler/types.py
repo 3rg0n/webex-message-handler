@@ -193,7 +193,7 @@ class DecryptedMessage:
     """A decrypted Webex message."""
 
     id: str
-    """Unique message ID."""
+    """Mercury activity UUID. Works as parentId for threaded replies."""
 
     room_id: str
     """Conversation/space ID."""

@@ -147,7 +147,7 @@ type MercuryEnvelope struct {
 
 // DecryptedMessage is a decrypted Webex message.
 type DecryptedMessage struct {
-	// ID is the unique message ID.
+	// ID is the Mercury activity UUID. Works as parentId for threaded replies.
 	ID string
 
 	// RoomID is the conversation/space ID.

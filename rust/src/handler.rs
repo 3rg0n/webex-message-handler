@@ -485,7 +485,7 @@ impl WebexMessageHandler {
             match decryptor.decrypt_activity(activity).await {
                 Ok(decrypted) => {
                     let msg = DecryptedMessage {
-                        id: decrypted.object.id.clone(),
+                        id: decrypted.id.clone(),
                         room_id: decrypted.target.id.clone(),
                         person_id: decrypted.actor.id.clone(),
                         person_email: decrypted

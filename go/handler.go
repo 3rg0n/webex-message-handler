@@ -525,7 +525,7 @@ func (h *WebexMessageHandler) handleActivity(ctx context.Context, activity Mercu
 		}
 
 		msg := DecryptedMessage{
-			ID:          decrypted.Object.ID,
+			ID:          decrypted.ID,
 			RoomID:      decrypted.Target.ID,
 			PersonID:    decrypted.Actor.ID,
 			PersonEmail: decrypted.Actor.EmailAddress,

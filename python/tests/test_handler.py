@@ -228,7 +228,7 @@ class TestMessageHandling:
 
         assert len(messages) == 1
         msg = messages[0]
-        assert msg.id == "comment-789"
+        assert msg.id == "msg-123"
         assert msg.room_id == "room-101"
         assert msg.person_id == "person-456"
         assert msg.person_email == "user@example.com"

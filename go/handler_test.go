@@ -197,8 +197,8 @@ func TestHandleActivityMessageCreated(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if received.ID != "msg-1" {
-		t.Errorf("expected msg-1, got %q", received.ID)
+	if received.ID != "act-1" {
+		t.Errorf("expected act-1, got %q", received.ID)
 	}
 	if received.RoomID != "room-1" {
 		t.Errorf("expected room-1, got %q", received.RoomID)
