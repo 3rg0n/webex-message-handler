@@ -43,6 +43,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         msg.person_email, msg.room_id, room_type, msg.text
                     );
                 }
+                HandlerEvent::MessageUpdated(msg) => {
+                    let room_type = msg.room_type.as_deref().unwrap_or("unknown");
+                    println!(
+                        "[EDIT] [{} in {} ({})] {}",
+                        msg.person_email, msg.room_id, room_type, msg.text
+                    );
+                }
                 HandlerEvent::MessageDeleted(del) => {
                     println!(
                         "Message {} deleted by {} in {}",
@@ -54,6 +61,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "Membership {}: {} affected {} in {}",
                         membership.action, membership.actor_id, membership.person_id, membership.room_id
                     );
+                }
+                HandlerEvent::AttachmentActionCreated(action) => {
+                    println!(
+                        "Card submitted by {} in {}: {:?}",
+                        action.person_email, action.room_id, action.inputs
+                    );
+                }
+                HandlerEvent::RoomCreated(room) => {
+                    println!("Room created: {} by {}", room.room_id, room.actor_id);
+                }
+                HandlerEvent::RoomUpdated(room) => {
+                    println!("Room updated: {} by {}", room.room_id, room.actor_id);
                 }
                 HandlerEvent::Connected => {
                     println!("Connected to Webex");

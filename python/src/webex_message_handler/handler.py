@@ -12,9 +12,11 @@ import aiohttp
 from .device_manager import DeviceManager
 from .kms_client import KmsClient
 from .logger import Logger, noop_logger
+from .mention_parser import parse_mentions
 from .mercury_socket import MercurySocket
 from .message_decryptor import MessageDecryptor
 from .types import (
+    AttachmentAction,
     ConnectionStatus,
     DecryptedMessage,
     DeletedMessage,
@@ -26,6 +28,7 @@ from .types import (
     InjectedWebSocket,
     MembershipActivity,
     MercuryActivity,
+    RoomActivity,
     WebexMessageHandlerConfig,
     WebSocketFactory,
 )
@@ -135,8 +138,12 @@ class WebexMessageHandler:
         # Event listeners
         self._listeners: dict[str, list[EventCallback]] = {
             "message:created": [],
+            "message:updated": [],
             "message:deleted": [],
             "membership:created": [],
+            "attachmentAction:created": [],
+            "room:created": [],
+            "room:updated": [],
             "connected": [],
             "disconnected": [],
             "reconnecting": [],
@@ -455,13 +462,14 @@ class WebexMessageHandler:
         if len(self._recent_activity_ids) % 100 == 0:
             self._sweep_old_activity_ids()
 
-        # message:created — verb=post + objectType=comment
-        if activity.verb == "post" and activity.object.object_type == "comment":
+        # message:created or message:updated — verb=post/update + objectType=comment
+        if activity.verb in ("post", "update") and activity.object.object_type == "comment":
             if not self._message_decryptor:
                 self._logger.warning("Received activity but decryptor not initialized")
                 return
 
             decrypted = await self._message_decryptor.decrypt_activity(activity)
+            mentions = parse_mentions(decrypted.object.content)
             message = DecryptedMessage(
                 id=decrypted.id,
                 room_id=decrypted.target.id,
@@ -470,6 +478,9 @@ class WebexMessageHandler:
                 text=decrypted.object.display_name or "",
                 created=decrypted.published,
                 parent_id=decrypted.parent.id if decrypted.parent else None,
+                mentioned_people=mentions.mentioned_people,
+                mentioned_groups=mentions.mentioned_groups,
+                files=decrypted.object.files or [],
                 html=decrypted.object.content,
                 room_type=self._infer_room_type(decrypted),
                 raw=decrypted,
@@ -483,7 +494,8 @@ class WebexMessageHandler:
                 self._logger.debug(f"Ignoring self-message from bot ({self._bot_person_id})")
                 return
 
-            self._emit("message:created", message)
+            event_name = "message:updated" if activity.verb == "update" else "message:created"
+            self._emit(event_name, message)
             return
 
         # message:deleted — verb=delete + objectType=activity
@@ -512,6 +524,39 @@ class WebexMessageHandler:
                     action=activity.verb,
                     created=activity.published,
                     room_type=self._infer_room_type(activity),
+                    raw=activity,
+                ),
+            )
+            return
+
+        # attachmentAction:created — verb=cardAction + objectType=submit
+        if activity.verb == "cardAction" and activity.object.object_type == "submit":
+            self._emit(
+                "attachmentAction:created",
+                AttachmentAction(
+                    id=activity.id,
+                    message_id=activity.parent.id if activity.parent else "",
+                    person_id=activity.actor.id,
+                    person_email=activity.actor.email_address or "",
+                    room_id=activity.target.id,
+                    inputs=activity.object.inputs or {},
+                    created=activity.published,
+                    raw=activity,
+                ),
+            )
+            return
+
+        # room:created or room:updated — verb=create/update + object.objectType=conversation
+        if activity.verb in ("create", "update") and activity.object.object_type == "conversation":
+            event_name = "room:created" if activity.verb == "create" else "room:updated"
+            self._emit(
+                event_name,
+                RoomActivity(
+                    id=activity.id,
+                    room_id=activity.target.id,
+                    actor_id=activity.actor.id,
+                    action="created" if activity.verb == "create" else "updated",
+                    created=activity.published,
                     raw=activity,
                 ),
             )

@@ -3,11 +3,13 @@
 use crate::device_manager::DeviceManager;
 use crate::errors::WebexError;
 use crate::kms_client::{KmsClient, KmsResponseHandler};
+use crate::mention_parser::parse_mentions;
 use crate::mercury_socket::{MercuryEvent, MercurySocket};
 use crate::message_decryptor::MessageDecryptor;
 use crate::types::{
-    Config, ConnectionStatus, DecryptedMessage, DeletedMessage, DeviceRegistration, FetchRequest,
-    FetchResponse, HandlerStatus, MembershipActivity, MercuryActivity, NetworkMode,
+    AttachmentAction, Config, ConnectionStatus, DecryptedMessage, DeletedMessage,
+    DeviceRegistration, FetchRequest, FetchResponse, HandlerStatus, MembershipActivity,
+    MercuryActivity, NetworkMode, RoomActivity,
 };
 use std::collections::HashMap;
 use std::future::Future;
@@ -29,10 +31,18 @@ type HttpDoFn = Arc<
 pub enum HandlerEvent {
     /// A new message was received and decrypted.
     MessageCreated(DecryptedMessage),
+    /// A message was edited.
+    MessageUpdated(DecryptedMessage),
     /// A message was deleted.
     MessageDeleted(DeletedMessage),
     /// A membership event occurred (add, leave, assignModerator, unassignModerator).
     MembershipCreated(MembershipActivity),
+    /// An adaptive card was submitted.
+    AttachmentActionCreated(AttachmentAction),
+    /// A room was created.
+    RoomCreated(RoomActivity),
+    /// A room was updated.
+    RoomUpdated(RoomActivity),
     /// Successfully connected (or reconnected).
     Connected,
     /// Disconnected with a reason string.
@@ -479,14 +489,17 @@ impl WebexMessageHandler {
         event_tx: &mpsc::UnboundedSender<HandlerEvent>,
         bot_person_id: Option<&str>,
     ) {
-        // message:created — verb=post + objectType=comment
-        if activity.verb == "post" && activity.object.object_type == "comment" {
+        // message:created or message:updated — verb=post/update + objectType=comment
+        if (activity.verb == "post" || activity.verb == "update") && activity.object.object_type == "comment" {
             let mut decryptor = MessageDecryptor::new(kms);
             match decryptor.decrypt_activity(activity).await {
                 Ok(decrypted) => {
+                    let mentions = parse_mentions(decrypted.object.content.as_deref());
                     let msg = DecryptedMessage {
                         id: decrypted.id.clone(),
                         parent_id: decrypted.parent.as_ref().map(|p| p.id.clone()),
+                        mentioned_people: mentions.mentioned_people,
+                        mentioned_groups: mentions.mentioned_groups,
                         room_id: decrypted.target.id.clone(),
                         person_id: decrypted.actor.id.clone(),
                         person_email: decrypted
@@ -498,6 +511,7 @@ impl WebexMessageHandler {
                         html: decrypted.object.content.clone(),
                         created: decrypted.published.clone(),
                         room_type: infer_room_type(&decrypted),
+                        files: decrypted.object.files.clone().unwrap_or_default(),
                         raw: decrypted,
                     };
 
@@ -509,8 +523,13 @@ impl WebexMessageHandler {
                         }
                     }
 
-                    if event_tx.send(HandlerEvent::MessageCreated(msg)).is_err() {
-                        warn!("Event receiver dropped, cannot send MessageCreated event");
+                    let event = if activity.verb == "update" {
+                        HandlerEvent::MessageUpdated(msg)
+                    } else {
+                        HandlerEvent::MessageCreated(msg)
+                    };
+                    if event_tx.send(event).is_err() {
+                        warn!("Event receiver dropped, cannot send message event");
                     }
                 }
                 Err(e) => {
@@ -552,6 +571,48 @@ impl WebexMessageHandler {
             });
             if event_tx.send(event).is_err() {
                 warn!("Event receiver dropped, cannot send MembershipCreated event");
+            }
+            return;
+        }
+
+        // attachmentAction:created — verb=cardAction + objectType=submit
+        if activity.verb == "cardAction" && activity.object.object_type == "submit" {
+            let event = HandlerEvent::AttachmentActionCreated(AttachmentAction {
+                id: activity.id.clone(),
+                message_id: activity.parent.as_ref().map(|p| p.id.clone()).unwrap_or_default(),
+                person_id: activity.actor.id.clone(),
+                person_email: activity.actor.email_address.clone().unwrap_or_default(),
+                room_id: activity.target.id.clone(),
+                inputs: activity.object.inputs.clone().unwrap_or(serde_json::Value::Object(Default::default())),
+                created: activity.published.clone(),
+                raw: activity.clone(),
+            });
+            if event_tx.send(event).is_err() {
+                warn!("Event receiver dropped, cannot send AttachmentActionCreated event");
+            }
+            return;
+        }
+
+        // room:created or room:updated — verb=create/update + object.objectType=conversation
+        if (activity.verb == "create" || activity.verb == "update")
+            && activity.object.object_type == "conversation"
+        {
+            let action = if activity.verb == "create" { "created" } else { "updated" };
+            let ra = RoomActivity {
+                id: activity.id.clone(),
+                room_id: activity.target.id.clone(),
+                actor_id: activity.actor.id.clone(),
+                action: action.to_string(),
+                created: activity.published.clone(),
+                raw: activity.clone(),
+            };
+            let event = if activity.verb == "create" {
+                HandlerEvent::RoomCreated(ra)
+            } else {
+                HandlerEvent::RoomUpdated(ra)
+            };
+            if event_tx.send(event).is_err() {
+                warn!("Event receiver dropped, cannot send room event");
             }
         }
     }

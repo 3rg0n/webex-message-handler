@@ -3,6 +3,7 @@ export { DeviceManager } from './device-manager.js';
 export { MercurySocket } from './mercury-socket.js';
 export { KmsClient } from './kms-client.js';
 export { MessageDecryptor } from './message-decryptor.js';
+export { parseMentions } from './mention-parser.js';
 export {
   WebexError,
   AuthError,
@@ -28,6 +29,8 @@ export type {
   DecryptedMessage,
   DeletedMessage,
   MembershipActivity,
+  AttachmentAction,
+  RoomActivity,
   HandlerStatus,
   ConnectionStatus,
   NetworkMode,
@@ -37,3 +40,4 @@ export type {
   InjectedWebSocket,
   WebSocketFactory,
 } from './types.js';
+export type { ParsedMentions } from './mention-parser.js';

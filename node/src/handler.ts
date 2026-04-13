@@ -7,6 +7,8 @@ import type {
   MercuryActivity,
   DecryptedMessage,
   MembershipActivity,
+  AttachmentAction,
+  RoomActivity,
   HandlerStatus,
   ConnectionStatus,
   FetchRequest,
@@ -18,6 +20,7 @@ import { DeviceManager } from './device-manager.js';
 import { MercurySocket } from './mercury-socket.js';
 import { KmsClient } from './kms-client.js';
 import { MessageDecryptor } from './message-decryptor.js';
+import { parseMentions } from './mention-parser.js';
 import type { Logger } from './logger.js';
 import { noopLogger } from './logger.js';
 
@@ -382,9 +385,9 @@ export class WebexMessageHandler
       }
     }
 
-    // message:created — verb=post + objectType=comment
+    // message:created or message:updated — verb=post/update + objectType=comment
     if (
-      activity.verb === 'post' &&
+      (activity.verb === 'post' || activity.verb === 'update') &&
       activity.object?.objectType === 'comment'
     ) {
       if (!this.messageDecryptor) {
@@ -393,6 +396,7 @@ export class WebexMessageHandler
       }
 
       const decrypted = await this.messageDecryptor.decryptActivity(activity);
+      const mentions = parseMentions(decrypted.object.content);
       const message: DecryptedMessage = {
         id: decrypted.id,
         parentId: decrypted.parent?.id,
@@ -403,6 +407,9 @@ export class WebexMessageHandler
         html: decrypted.object.content,
         created: decrypted.published,
         roomType: this._inferRoomType(decrypted),
+        mentionedPeople: mentions.mentionedPeople,
+        mentionedGroups: mentions.mentionedGroups,
+        files: decrypted.object.files ?? [],
         raw: decrypted,
       };
 
@@ -412,7 +419,8 @@ export class WebexMessageHandler
         return;
       }
 
-      this.emit('message:created', message);
+      const eventName = activity.verb === 'update' ? 'message:updated' : 'message:created';
+      this.emit(eventName, message);
       return;
     }
 
@@ -447,6 +455,43 @@ export class WebexMessageHandler
         raw: activity,
       };
       this.emit('membership:created', membershipActivity);
+      return;
+    }
+
+    // attachmentAction:created — verb=cardAction + objectType=submit
+    if (
+      activity.verb === 'cardAction' &&
+      activity.object?.objectType === 'submit'
+    ) {
+      const attachmentAction: AttachmentAction = {
+        id: activity.id,
+        messageId: activity.parent?.id ?? '',
+        personId: activity.actor.id,
+        personEmail: activity.actor.emailAddress ?? '',
+        roomId: activity.target.id,
+        inputs: activity.object.inputs ?? {},
+        created: activity.published,
+        raw: activity,
+      };
+      this.emit('attachmentAction:created', attachmentAction);
+      return;
+    }
+
+    // room:created or room:updated — verb=create/update + object.objectType=conversation
+    if (
+      (activity.verb === 'create' || activity.verb === 'update') &&
+      activity.object?.objectType === 'conversation'
+    ) {
+      const roomActivity: RoomActivity = {
+        id: activity.id,
+        roomId: activity.target.id,
+        actorId: activity.actor.id,
+        action: activity.verb === 'create' ? 'created' : 'updated',
+        created: activity.published,
+        raw: activity,
+      };
+      const eventName = activity.verb === 'create' ? 'room:created' : 'room:updated';
+      this.emit(eventName, roomActivity);
       return;
     }
   }

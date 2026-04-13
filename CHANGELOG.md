@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.6] - 2026-04-13
+
+### Added
+- **Mention parsing** — `parseMentions(html)` extracts `mentionedPeople` (person UUIDs) and `mentionedGroups` (e.g. `"all"`) from `<spark-mention>` tags in decrypted HTML. `DecryptedMessage` now includes both fields, populated automatically. No extra API calls. (all 4 languages)
+- **Message edit event (`message:updated`)** — `verb=update` + `objectType=comment` activities route through decryption and emit `message:updated` with the same `DecryptedMessage` type as `message:created`. (all 4 languages)
+- **Adaptive Card submissions (`attachmentAction:created`)** — `verb=cardAction` + `objectType=submit` activities emit `attachmentAction:created` with new `AttachmentAction` type (`id`, `messageId`, `personId`, `personEmail`, `roomId`, `inputs`, `created`, `raw`). Card data is not encrypted. (all 4 languages)
+- **Room events (`room:created`, `room:updated`)** — `verb=create/update` + `objectType=conversation` activities emit room events with new `RoomActivity` type (`id`, `roomId`, `actorId`, `action`, `created`, `raw`). (all 4 languages)
+- **Files field** — `MercuryObject` and `DecryptedMessage` now include `files` (string array of file URLs) when Mercury includes file attachments. (all 4 languages)
+
 ## [0.6.5] - 2026-04-13
 
 ### Added

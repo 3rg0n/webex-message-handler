@@ -101,6 +101,10 @@ export interface MercuryObject {
   displayName?: string;
   content?: string;
   encryptionKeyUrl?: string;
+  /** Card form input values (present on cardAction/submit activities). */
+  inputs?: Record<string, unknown>;
+  /** File URLs attached to the message (present on file-share messages). */
+  files?: string[];
 }
 
 export interface MercuryTarget {
@@ -151,6 +155,12 @@ export interface DecryptedMessage {
   html?: string;
   created: string;
   roomType?: string;
+  /** Person UUIDs mentioned via @mention in the message. */
+  mentionedPeople: string[];
+  /** Group mention types (e.g. "all") in the message. */
+  mentionedGroups: string[];
+  /** File URLs attached to the message. Empty if no files. */
+  files: string[];
   raw: MercuryActivity;
 }
 
@@ -179,6 +189,40 @@ export interface MembershipActivity {
   raw: MercuryActivity;
 }
 
+export interface AttachmentAction {
+  /** Activity ID. */
+  id: string;
+  /** ID of the message the card was attached to. */
+  messageId: string;
+  /** ID of the person who submitted the card. */
+  personId: string;
+  /** Email of the person who submitted the card. */
+  personEmail: string;
+  /** Conversation/space ID. */
+  roomId: string;
+  /** Card form input values. */
+  inputs: Record<string, unknown>;
+  /** ISO 8601 timestamp. */
+  created: string;
+  /** Full raw activity for advanced use. */
+  raw: MercuryActivity;
+}
+
+export interface RoomActivity {
+  /** Activity ID. */
+  id: string;
+  /** Conversation/space ID. */
+  roomId: string;
+  /** ID of the person who performed the action. */
+  actorId: string;
+  /** Room action: "created" or "updated". */
+  action: string;
+  /** ISO 8601 timestamp. */
+  created: string;
+  /** Full raw activity for advanced use. */
+  raw: MercuryActivity;
+}
+
 // --- Status ---
 
 export type ConnectionStatus = 'connected' | 'connecting' | 'reconnecting' | 'disconnected';
@@ -200,8 +244,12 @@ export interface HandlerStatus {
 
 export interface WebexMessageHandlerEvents {
   'message:created': (msg: DecryptedMessage) => void;
+  'message:updated': (msg: DecryptedMessage) => void;
   'message:deleted': (data: DeletedMessage) => void;
   'membership:created': (activity: MembershipActivity) => void;
+  'attachmentAction:created': (action: AttachmentAction) => void;
+  'room:created': (activity: RoomActivity) => void;
+  'room:updated': (activity: RoomActivity) => void;
   connected: () => void;
   disconnected: (reason: string) => void;
   reconnecting: (attempt: number) => void;

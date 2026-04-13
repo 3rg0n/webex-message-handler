@@ -307,6 +307,8 @@ fn test_membership_activity_construction() {
                 display_name: None,
                 content: None,
                 encryption_key_url: None,
+                inputs: None,
+                files: None,
             },
             target: webex_message_handler::MercuryTarget {
                 id: "room-1".to_string(),

@@ -411,6 +411,8 @@ def _parse_activity(raw: dict[str, Any]) -> MercuryActivity:
             display_name=object_raw.get("displayName"),
             content=object_raw.get("content"),
             encryption_key_url=object_raw.get("encryptionKeyUrl"),
+            inputs=object_raw.get("inputs"),
+            files=object_raw.get("files"),
         ),
         target=MercuryTarget(
             id=target_raw.get("id", ""),

@@ -38,6 +38,7 @@ pub mod handler;
 pub mod id_utils;
 pub mod jwe;
 pub mod kms_client;
+pub mod mention_parser;
 pub mod mercury_socket;
 pub mod message_decryptor;
 pub mod types;
@@ -47,8 +48,10 @@ pub mod url_validation;
 pub use errors::WebexError;
 pub use handler::{HandlerEvent, WebexMessageHandler};
 pub use id_utils::{to_rest_id, from_rest_id};
+pub use mention_parser::{parse_mentions, ParsedMentions};
 pub use types::{
-    Config, ConnectionStatus, DecryptedMessage, DeletedMessage, DeviceRegistration, FetchFn,
-    FetchRequest, FetchResponse, HandlerStatus, InjectedWebSocket, MembershipActivity,
-    MercuryActivity, MercuryActor, MercuryObject, MercuryParent, MercuryTarget, NetworkMode, WebSocketFactory,
+    AttachmentAction, Config, ConnectionStatus, DecryptedMessage, DeletedMessage,
+    DeviceRegistration, FetchFn, FetchRequest, FetchResponse, HandlerStatus, InjectedWebSocket,
+    MembershipActivity, MercuryActivity, MercuryActor, MercuryObject, MercuryParent,
+    MercuryTarget, NetworkMode, RoomActivity, WebSocketFactory,
 };

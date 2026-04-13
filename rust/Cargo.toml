@@ -1,6 +1,6 @@
 [package]
 name = "webex-message-handler"
-version = "0.6.5"
+version = "0.6.6"
 edition = "2021"
 description = "Lightweight Webex Mercury WebSocket + KMS decryption for receiving bot messages without the full Webex SDK"
 license = "MIT"
@@ -29,6 +29,8 @@ rand = "0.8"
 aes-gcm = "0.10"
 aes-kw = "0.2"
 rsa = { version = "0.9", features = ["sha2"] } # RUSTSEC-2023-0071 is NOT exploitable: RSA used for encryption only, never decryption
+regex = "1"
+once_cell = "1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }

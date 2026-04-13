@@ -580,7 +580,19 @@ func parseObject(raw interface{}) MercuryObject {
 	displayName, _ := m["displayName"].(string)
 	content, _ := m["content"].(string)
 	encKeyURL, _ := m["encryptionKeyUrl"].(string)
-	return MercuryObject{ID: id, ObjectType: objectType, DisplayName: displayName, Content: content, EncryptionKeyURL: encKeyURL}
+	var inputs map[string]interface{}
+	if rawInputs, ok := m["inputs"].(map[string]interface{}); ok {
+		inputs = rawInputs
+	}
+	var files []string
+	if rawFiles, ok := m["files"].([]interface{}); ok {
+		for _, f := range rawFiles {
+			if s, ok := f.(string); ok {
+				files = append(files, s)
+			}
+		}
+	}
+	return MercuryObject{ID: id, ObjectType: objectType, DisplayName: displayName, Content: content, EncryptionKeyURL: encKeyURL, Inputs: inputs, Files: files}
 }
 
 func parseTarget(raw interface{}) MercuryTarget {

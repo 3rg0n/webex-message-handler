@@ -110,11 +110,13 @@ type MercuryActor struct {
 
 // MercuryObject represents the object in a Mercury activity.
 type MercuryObject struct {
-	ID               string `json:"id"`
-	ObjectType       string `json:"objectType"`
-	DisplayName      string `json:"displayName,omitempty"`
-	Content          string `json:"content,omitempty"`
-	EncryptionKeyURL string `json:"encryptionKeyUrl,omitempty"`
+	ID               string                 `json:"id"`
+	ObjectType       string                 `json:"objectType"`
+	DisplayName      string                 `json:"displayName,omitempty"`
+	Content          string                 `json:"content,omitempty"`
+	EncryptionKeyURL string                 `json:"encryptionKeyUrl,omitempty"`
+	Inputs           map[string]interface{} `json:"inputs,omitempty"`
+	Files            []string               `json:"files,omitempty"`
 }
 
 // MercuryTarget represents the target in a Mercury activity.
@@ -160,6 +162,12 @@ type DecryptedMessage struct {
 	// ParentID is the parent activity UUID for threaded replies. Empty if not a thread reply.
 	ParentID string
 
+	// MentionedPeople contains person UUIDs mentioned via @mention in the message.
+	MentionedPeople []string
+
+	// MentionedGroups contains group mention types (e.g. "all") in the message.
+	MentionedGroups []string
+
 	// RoomID is the conversation/space ID.
 	RoomID string
 
@@ -180,6 +188,9 @@ type DecryptedMessage struct {
 
 	// RoomType is "direct", "group", or empty.
 	RoomType string
+
+	// Files contains file URLs attached to the message.
+	Files []string
 
 	// Raw is the full decrypted activity for advanced use.
 	Raw *MercuryActivity
@@ -214,6 +225,54 @@ type MembershipActivity struct {
 
 	// RoomType is "direct", "group", or empty.
 	RoomType string
+
+	// Raw is the full raw activity for advanced use.
+	Raw *MercuryActivity
+}
+
+// AttachmentAction represents an adaptive card submission from Mercury.
+type AttachmentAction struct {
+	// ID is the activity ID.
+	ID string
+
+	// MessageID is the ID of the message the card was attached to.
+	MessageID string
+
+	// PersonID is the ID of the person who submitted the card.
+	PersonID string
+
+	// PersonEmail is the email of the person who submitted the card.
+	PersonEmail string
+
+	// RoomID is the conversation/space ID.
+	RoomID string
+
+	// Inputs contains the card form input values.
+	Inputs map[string]interface{}
+
+	// Created is the ISO 8601 timestamp.
+	Created string
+
+	// Raw is the full raw activity for advanced use.
+	Raw *MercuryActivity
+}
+
+// RoomActivity represents a room event from Mercury.
+type RoomActivity struct {
+	// ID is the activity ID.
+	ID string
+
+	// RoomID is the conversation/space ID.
+	RoomID string
+
+	// ActorID is the ID of the person who performed the action.
+	ActorID string
+
+	// Action is the room action: "created" or "updated".
+	Action string
+
+	// Created is the ISO 8601 timestamp.
+	Created string
 
 	// Raw is the full raw activity for advanced use.
 	Raw *MercuryActivity

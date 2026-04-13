@@ -162,6 +162,14 @@ pub struct MercuryObject {
 
     #[serde(rename = "encryptionKeyUrl", default)]
     pub encryption_key_url: Option<String>,
+
+    /// Card form input values (present on cardAction/submit activities).
+    #[serde(default)]
+    pub inputs: Option<serde_json::Value>,
+
+    /// File URLs attached to the message (present on file-share messages).
+    #[serde(default)]
+    pub files: Option<Vec<String>>,
 }
 
 /// Target in a Mercury activity.
@@ -227,6 +235,12 @@ pub struct DecryptedMessage {
     /// Parent activity UUID for threaded replies. None if not a thread reply.
     pub parent_id: Option<String>,
 
+    /// Person UUIDs mentioned via @mention in the message.
+    pub mentioned_people: Vec<String>,
+
+    /// Group mention types (e.g. "all") in the message.
+    pub mentioned_groups: Vec<String>,
+
     /// Conversation/space ID.
     pub room_id: String,
 
@@ -247,6 +261,9 @@ pub struct DecryptedMessage {
 
     /// "direct", "group", or None.
     pub room_type: Option<String>,
+
+    /// File URLs attached to the message.
+    pub files: Vec<String>,
 
     /// Full decrypted activity for advanced use.
     pub raw: MercuryActivity,
@@ -283,6 +300,56 @@ pub struct MembershipActivity {
 
     /// "direct", "group", or None.
     pub room_type: Option<String>,
+
+    /// Full raw activity for advanced use.
+    pub raw: MercuryActivity,
+}
+
+/// An adaptive card submission from Mercury.
+#[derive(Debug, Clone)]
+pub struct AttachmentAction {
+    /// Activity ID.
+    pub id: String,
+
+    /// ID of the message the card was attached to.
+    pub message_id: String,
+
+    /// ID of the person who submitted the card.
+    pub person_id: String,
+
+    /// Email of the person who submitted the card.
+    pub person_email: String,
+
+    /// Conversation/space ID.
+    pub room_id: String,
+
+    /// Card form input values.
+    pub inputs: serde_json::Value,
+
+    /// ISO 8601 timestamp.
+    pub created: String,
+
+    /// Full raw activity for advanced use.
+    pub raw: MercuryActivity,
+}
+
+/// A room event from Mercury.
+#[derive(Debug, Clone)]
+pub struct RoomActivity {
+    /// Activity ID.
+    pub id: String,
+
+    /// Conversation/space ID.
+    pub room_id: String,
+
+    /// ID of the person who performed the action.
+    pub actor_id: String,
+
+    /// Room action: "created" or "updated".
+    pub action: String,
+
+    /// ISO 8601 timestamp.
+    pub created: String,
 
     /// Full raw activity for advanced use.
     pub raw: MercuryActivity,

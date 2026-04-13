@@ -42,9 +42,13 @@ type WebexMessageHandler struct {
 
 	// Event callbacks
 	onMessageCreated    func(msg DecryptedMessage)
+	onMessageUpdated    func(msg DecryptedMessage)
 	onMessageDeleted    func(data DeletedMessage)
-	onMembershipCreated func(activity MembershipActivity)
-	onConnected         func()
+	onMembershipCreated      func(activity MembershipActivity)
+	onAttachmentActionCreated func(action AttachmentAction)
+	onRoomCreated            func(activity RoomActivity)
+	onRoomUpdated            func(activity RoomActivity)
+	onConnected              func()
 	onDisconnected      func(reason string)
 	onReconnecting      func(attempt int)
 	onError             func(err error)
@@ -186,6 +190,11 @@ func (h *WebexMessageHandler) OnMessageCreated(fn func(msg DecryptedMessage)) {
 	h.onMessageCreated = fn
 }
 
+// OnMessageUpdated sets the callback for edited messages.
+func (h *WebexMessageHandler) OnMessageUpdated(fn func(msg DecryptedMessage)) {
+	h.onMessageUpdated = fn
+}
+
 // OnMessageDeleted sets the callback for deleted messages.
 func (h *WebexMessageHandler) OnMessageDeleted(fn func(data DeletedMessage)) {
 	h.onMessageDeleted = fn
@@ -194,6 +203,21 @@ func (h *WebexMessageHandler) OnMessageDeleted(fn func(data DeletedMessage)) {
 // OnMembershipCreated sets the callback for membership events.
 func (h *WebexMessageHandler) OnMembershipCreated(fn func(activity MembershipActivity)) {
 	h.onMembershipCreated = fn
+}
+
+// OnAttachmentActionCreated sets the callback for adaptive card submissions.
+func (h *WebexMessageHandler) OnAttachmentActionCreated(fn func(action AttachmentAction)) {
+	h.onAttachmentActionCreated = fn
+}
+
+// OnRoomCreated sets the callback for room creation events.
+func (h *WebexMessageHandler) OnRoomCreated(fn func(activity RoomActivity)) {
+	h.onRoomCreated = fn
+}
+
+// OnRoomUpdated sets the callback for room update events.
+func (h *WebexMessageHandler) OnRoomUpdated(fn func(activity RoomActivity)) {
+	h.onRoomUpdated = fn
 }
 
 // OnConnected sets the callback for connection events.
@@ -508,8 +532,8 @@ func (h *WebexMessageHandler) handleActivity(ctx context.Context, activity Mercu
 	}
 	h.activityIDsMu.Unlock()
 
-	// message:created — verb=post + objectType=comment
-	if activity.Verb == "post" && activity.Object.ObjectType == "comment" {
+	// message:created or message:updated — verb=post/update + objectType=comment
+	if (activity.Verb == "post" || activity.Verb == "update") && activity.Object.ObjectType == "comment" {
 		h.mu.RLock()
 		messageDecryptor := h.messageDecryptor
 		h.mu.RUnlock()
@@ -529,17 +553,22 @@ func (h *WebexMessageHandler) handleActivity(ctx context.Context, activity Mercu
 			parentID = decrypted.Parent.ID
 		}
 
+		mentions := ParseMentions(decrypted.Object.Content)
+
 		msg := DecryptedMessage{
-			ID:          decrypted.ID,
-			ParentID:    parentID,
-			RoomID:      decrypted.Target.ID,
-			PersonID:    decrypted.Actor.ID,
-			PersonEmail: decrypted.Actor.EmailAddress,
-			Text:        decrypted.Object.DisplayName,
-			HTML:        decrypted.Object.Content,
-			Created:     decrypted.Published,
-			RoomType:    inferRoomType(decrypted),
-			Raw:         &decrypted,
+			ID:              decrypted.ID,
+			ParentID:        parentID,
+			MentionedPeople: mentions.MentionedPeople,
+			MentionedGroups: mentions.MentionedGroups,
+			RoomID:          decrypted.Target.ID,
+			PersonID:        decrypted.Actor.ID,
+			PersonEmail:     decrypted.Actor.EmailAddress,
+			Text:            decrypted.Object.DisplayName,
+			HTML:            decrypted.Object.Content,
+			Created:         decrypted.Published,
+			RoomType:        inferRoomType(decrypted),
+			Files:           decrypted.Object.Files,
+			Raw:             &decrypted,
 		}
 
 		// Filter self-messages if enabled
@@ -553,8 +582,14 @@ func (h *WebexMessageHandler) handleActivity(ctx context.Context, activity Mercu
 			return nil
 		}
 
-		if h.onMessageCreated != nil {
-			h.onMessageCreated(msg)
+		if activity.Verb == "update" {
+			if h.onMessageUpdated != nil {
+				h.onMessageUpdated(msg)
+			}
+		} else {
+			if h.onMessageCreated != nil {
+				h.onMessageCreated(msg)
+			}
 		}
 		return nil
 	}
@@ -587,6 +622,55 @@ func (h *WebexMessageHandler) handleActivity(ctx context.Context, activity Mercu
 				RoomType: inferRoomType(activity),
 				Raw:      &activityCopy,
 			})
+		}
+		return nil
+	}
+
+	// attachmentAction:created — verb=cardAction + objectType=submit
+	if activity.Verb == "cardAction" && activity.Object.ObjectType == "submit" {
+		if h.onAttachmentActionCreated != nil {
+			var parentID string
+			if activity.Parent != nil {
+				parentID = activity.Parent.ID
+			}
+			activityCopy := activity
+			h.onAttachmentActionCreated(AttachmentAction{
+				ID:          activity.ID,
+				MessageID:   parentID,
+				PersonID:    activity.Actor.ID,
+				PersonEmail: activity.Actor.EmailAddress,
+				RoomID:      activity.Target.ID,
+				Inputs:      activity.Object.Inputs,
+				Created:     activity.Published,
+				Raw:         &activityCopy,
+			})
+		}
+		return nil
+	}
+
+	// room:created or room:updated — verb=create/update + object.objectType=conversation
+	if (activity.Verb == "create" || activity.Verb == "update") && activity.Object.ObjectType == "conversation" {
+		activityCopy := activity
+		action := "updated"
+		if activity.Verb == "create" {
+			action = "created"
+		}
+		ra := RoomActivity{
+			ID:      activity.ID,
+			RoomID:  activity.Target.ID,
+			ActorID: activity.Actor.ID,
+			Action:  action,
+			Created: activity.Published,
+			Raw:     &activityCopy,
+		}
+		if activity.Verb == "create" {
+			if h.onRoomCreated != nil {
+				h.onRoomCreated(ra)
+			}
+		} else {
+			if h.onRoomUpdated != nil {
+				h.onRoomUpdated(ra)
+			}
 		}
 		return nil
 	}

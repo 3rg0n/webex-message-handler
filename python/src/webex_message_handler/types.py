@@ -158,6 +158,11 @@ class MercuryObject:
     display_name: str | None = None
     content: str | None = None
     encryption_key_url: str | None = None
+    inputs: dict[str, Any] | None = None
+    """Card form input values (present on cardAction/submit activities)."""
+
+    files: list[str] | None = None
+    """File URLs attached to the message (present on file-share messages)."""
 
 
 @dataclass
@@ -222,6 +227,15 @@ class DecryptedMessage:
     parent_id: str | None = None
     """Parent activity UUID for threaded replies. None if not a thread reply."""
 
+    mentioned_people: list[str] = field(default_factory=list)
+    """Person UUIDs mentioned via @mention in the message."""
+
+    mentioned_groups: list[str] = field(default_factory=list)
+    """Group mention types (e.g. 'all') in the message."""
+
+    files: list[str] = field(default_factory=list)
+    """File URLs attached to the message."""
+
     html: str | None = None
     """Decrypted HTML content (rich text messages)."""
 
@@ -265,6 +279,58 @@ class MembershipActivity:
 
     room_type: str | None = None
     """'direct' | 'group' | None."""
+
+    raw: MercuryActivity | None = None
+    """Full raw activity for advanced use."""
+
+
+@dataclass
+class AttachmentAction:
+    """An adaptive card submission from Mercury."""
+
+    id: str
+    """Activity ID."""
+
+    message_id: str
+    """ID of the message the card was attached to."""
+
+    person_id: str
+    """ID of the person who submitted the card."""
+
+    person_email: str
+    """Email of the person who submitted the card."""
+
+    room_id: str
+    """Conversation/space ID."""
+
+    inputs: dict[str, Any]
+    """Card form input values."""
+
+    created: str
+    """ISO 8601 timestamp."""
+
+    raw: MercuryActivity | None = None
+    """Full raw activity for advanced use."""
+
+
+@dataclass
+class RoomActivity:
+    """A room event from Mercury."""
+
+    id: str
+    """Activity ID."""
+
+    room_id: str
+    """Conversation/space ID."""
+
+    actor_id: str
+    """ID of the person who performed the action."""
+
+    action: str
+    """Room action: 'created' or 'updated'."""
+
+    created: str
+    """ISO 8601 timestamp."""
 
     raw: MercuryActivity | None = None
     """Full raw activity for advanced use."""

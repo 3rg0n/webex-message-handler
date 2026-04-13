@@ -13,9 +13,11 @@ from .handler import WebexMessageHandler
 from .id_utils import from_rest_id, to_rest_id
 from .kms_client import KmsClient
 from .logger import Logger, console_logger, noop_logger
+from .mention_parser import ParsedMentions, parse_mentions
 from .mercury_socket import MercurySocket
 from .message_decryptor import MessageDecryptor
 from .types import (
+    AttachmentAction,
     ConnectionStatus,
     DecryptedMessage,
     DeletedMessage,
@@ -33,6 +35,7 @@ from .types import (
     MercuryParent,
     MercuryTarget,
     NetworkMode,
+    RoomActivity,
     WebexMessageHandlerConfig,
     WebSocketFactory,
 )
@@ -45,6 +48,9 @@ __all__ = [
     "MercurySocket",
     "KmsClient",
     "MessageDecryptor",
+    # Mention parsing
+    "ParsedMentions",
+    "parse_mentions",
     # Errors
     "WebexError",
     "AuthError",
@@ -71,6 +77,8 @@ __all__ = [
     "DecryptedMessage",
     "DeletedMessage",
     "MembershipActivity",
+    "AttachmentAction",
+    "RoomActivity",
     "HandlerStatus",
     "ConnectionStatus",
     # Networking types

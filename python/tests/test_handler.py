@@ -276,16 +276,19 @@ class TestMessageHandling:
     async def test_ignores_non_message_activities(self):
         handler = _make_handler()
         handler._message_decryptor = MagicMock()
-        handler._message_decryptor.decrypt_activity = AsyncMock(return_value=_make_activity(verb="update"))
+        handler._message_decryptor.decrypt_activity = AsyncMock(return_value=_make_activity(verb="acknowledge"))
 
         messages = []
+        updated = []
         deleted = []
         handler.on("message:created", lambda msg: messages.append(msg))
+        handler.on("message:updated", lambda msg: updated.append(msg))
         handler.on("message:deleted", lambda d: deleted.append(d))
 
-        await handler._handle_activity(_make_activity(verb="update"))
+        await handler._handle_activity(_make_activity(verb="acknowledge"))
 
         assert len(messages) == 0
+        assert len(updated) == 0
         assert len(deleted) == 0
 
     async def test_ignores_post_non_comment(self):

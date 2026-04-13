@@ -267,7 +267,7 @@ describe('WebexMessageHandler', () => {
 
       expect(messageListener).toHaveBeenCalledWith(
         expect.objectContaining({
-          id: 'comment-789',
+          id: 'msg-123',
           roomId: 'room-101',
           personId: 'person-456',
           personEmail: 'user@example.com',
@@ -718,18 +718,20 @@ describe('WebexMessageHandler', () => {
   });
 
   describe('ignoring non-message activities', () => {
-    it('should ignore activities with other verb types', async () => {
+    it('should ignore activities with unrecognized verb types', async () => {
       const handler = new WebexMessageHandler({ token: mockToken });
       await handler.connect();
 
       const messageListener = jest.fn();
+      const updateListener = jest.fn();
       const deleteListener = jest.fn();
       handler.on('message:created', messageListener);
+      handler.on('message:updated', updateListener);
       handler.on('message:deleted', deleteListener);
 
       const activity: MercuryActivity = {
         id: 'activity-123',
-        verb: 'update',
+        verb: 'acknowledge',
         actor: {
           id: 'person-456',
           objectType: 'person',
@@ -752,6 +754,7 @@ describe('WebexMessageHandler', () => {
       await new Promise(resolve => setImmediate(resolve));
 
       expect(messageListener).not.toHaveBeenCalled();
+      expect(updateListener).not.toHaveBeenCalled();
       expect(deleteListener).not.toHaveBeenCalled();
     });
 
