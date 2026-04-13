@@ -203,7 +203,8 @@ Shape of decrypted messages:
 
 ```typescript
 {
-  id: string;
+  id: string;           // Mercury activity UUID
+  parentId?: string;    // Parent activity UUID (threaded replies only)
   roomId: string;
   personId: string;
   personEmail: string;
@@ -214,6 +215,30 @@ Shape of decrypted messages:
   raw: MercuryActivity;
 }
 ```
+
+### Threading & Message IDs
+
+Mercury uses raw activity UUIDs while the Webex REST API uses base64-encoded IDs. Use the conversion utilities to bridge them:
+
+```typescript
+import { toRestId, fromRestId } from 'webex-message-handler';
+
+handler.on('message:created', async (msg) => {
+  // Convert Mercury UUID to REST API ID for GET requests
+  const restId = toRestId(msg.id, 'MESSAGE');
+
+  // Reply in a thread (parentId works as-is with POST)
+  if (msg.parentId) {
+    await fetch('https://webexapis.com/v1/messages', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roomId: msg.roomId, parentId: msg.parentId, text: 'Reply' }),
+    });
+  }
+});
+```
+
+Resource types: `'MESSAGE'`, `'PEOPLE'`, `'ROOM'`.
 
 ## Architecture
 

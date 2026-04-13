@@ -123,6 +123,26 @@ handler = WebexMessageHandler(
 
 Requires: `pip install aiohttp-socks[asyncio]`
 
+## Threading & Message IDs
+
+Mercury uses raw activity UUIDs while the Webex REST API uses base64-encoded IDs. Use the conversion utilities to bridge them:
+
+```python
+from webex_message_handler import to_rest_id, from_rest_id
+
+@handler.on("message:created")
+async def on_message(msg):
+    # Convert Mercury UUID to REST API ID for GET requests
+    rest_id = to_rest_id(msg.id, "MESSAGE")
+
+    # Thread replies: msg.parent_id contains the parent activity UUID
+    if msg.parent_id:
+        # Use msg.parent_id as parentId in POST /v1/messages
+        pass
+```
+
+Resource types: `"MESSAGE"`, `"PEOPLE"`, `"ROOM"`.
+
 ## API Reference
 
 ### `WebexMessageHandler`

@@ -102,6 +102,25 @@ func main() {
 }
 ```
 
+## Threading & Message IDs
+
+Mercury uses raw activity UUIDs while the Webex REST API uses base64-encoded IDs. Use the conversion utilities to bridge them:
+
+```go
+// Convert Mercury UUID to REST API ID for GET requests
+restID := webexmessagehandler.ToRestID(msg.ID, "MESSAGE")
+
+// Thread replies: msg.ParentID contains the parent activity UUID
+if msg.ParentID != "" {
+    // Use msg.ParentID as parentId in POST /v1/messages
+}
+
+// Reverse: REST API ID back to UUID
+uuid, err := webexmessagehandler.FromRestID(restID)
+```
+
+Resource types: `"MESSAGE"`, `"PEOPLE"`, `"ROOM"`.
+
 ## API
 
 ### `New(cfg Config) (*WebexMessageHandler, error)`

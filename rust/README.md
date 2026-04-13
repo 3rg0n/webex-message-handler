@@ -107,6 +107,24 @@ Note: The `reqwest::Client` proxy configuration applies to HTTP traffic (device 
 | `reconnect_backoff_max` | `f64` | `32.0` | Max reconnect backoff in seconds |
 | `max_reconnect_attempts` | `u32` | `10` | Max consecutive reconnection attempts |
 
+## Threading & Message IDs
+
+Mercury uses raw activity UUIDs while the Webex REST API uses base64-encoded IDs. Use the conversion utilities to bridge them:
+
+```rust
+use webex_message_handler::{to_rest_id, from_rest_id};
+
+// Convert Mercury UUID to REST API ID for GET requests
+let rest_id = to_rest_id(&msg.id, "MESSAGE");
+
+// Thread replies: msg.parent_id contains the parent activity UUID
+if let Some(parent) = &msg.parent_id {
+    // Use parent directly as parentId in POST /v1/messages
+}
+```
+
+Resource types: `"MESSAGE"`, `"PEOPLE"`, `"ROOM"`.
+
 ## API
 
 See [API.md](API.md) for the full API reference.
