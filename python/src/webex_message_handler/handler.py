@@ -471,6 +471,7 @@ class WebexMessageHandler:
                 html=decrypted.object.content,
                 created=decrypted.published,
                 room_type=self._infer_room_type(decrypted),
+                parent_id=decrypted.parent_id,
                 raw=decrypted,
             )
             # Filter self-messages if enabled

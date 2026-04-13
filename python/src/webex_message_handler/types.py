@@ -173,6 +173,8 @@ class MercuryActivity:
     target: MercuryTarget
     published: str
     encryption_key_url: str | None = None
+    parent_id: str | None = None
+    """Parent activity ID for threaded replies."""
 
 
 @dataclass
@@ -215,6 +217,9 @@ class DecryptedMessage:
 
     room_type: str | None = None
     """'direct' | 'group' | None."""
+
+    parent_id: str | None = None
+    """Parent message ID for threaded replies."""
 
     raw: MercuryActivity | None = None
     """Full decrypted activity for advanced use."""

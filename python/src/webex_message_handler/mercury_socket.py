@@ -412,4 +412,5 @@ def _parse_activity(raw: dict[str, Any]) -> MercuryActivity:
         ),
         published=raw.get("published", ""),
         encryption_key_url=raw.get("encryptionKeyUrl"),
+        parent_id=(raw.get("parent", {}) or {}).get("id"),
     )
