@@ -133,9 +133,9 @@ export class KmsClient {
 
         const kmsDetails = (await kmsDetailsResponse.json()) as KmsDetailsResponse;
 
-        // Validate KMS cluster URL
+        // Validate KMS cluster URL — Webex returns kms:// scheme for this field
         try {
-          validateWebexUrl(kmsDetails.kmsCluster, 'https:');
+          validateWebexUrl(kmsDetails.kmsCluster, 'kms:');
         } catch (error) {
           throw new KmsError(
             `Invalid KMS cluster URL: ${error instanceof Error ? error.message : String(error)}`

@@ -19,7 +19,7 @@ func validateWebexURL(rawURL string, requiredScheme string) error {
 	}
 	host := strings.ToLower(parsed.Hostname())
 	for _, suffix := range allowedDomainSuffixes {
-		if strings.HasSuffix(host, suffix) {
+		if strings.HasSuffix(host, suffix) || host == suffix[1:] {
 			return nil
 		}
 	}

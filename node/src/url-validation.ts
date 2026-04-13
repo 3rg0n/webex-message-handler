@@ -11,7 +11,7 @@ export function validateWebexUrl(rawUrl: string, requiredProtocol: string): void
     throw new Error(`URL protocol must be ${requiredProtocol}, got ${parsed.protocol}`);
   }
   const host = parsed.hostname.toLowerCase();
-  const isAllowed = ALLOWED_DOMAIN_SUFFIXES.some(suffix => host.endsWith(suffix));
+  const isAllowed = ALLOWED_DOMAIN_SUFFIXES.some(suffix => host.endsWith(suffix) || host === suffix.slice(1));
   if (!isAllowed) {
     throw new Error(`URL host ${host} is not a recognized Webex domain`);
   }

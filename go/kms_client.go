@@ -145,8 +145,8 @@ func (kc *KmsClient) Initialize(ctx context.Context) error {
 		return NewKmsErrorWithCause("Failed to parse KMS details", err)
 	}
 
-	// Validate kmsCluster URL
-	if err := validateWebexURL(kmsDetails.KmsCluster, "https"); err != nil {
+	// Validate kmsCluster URL — Webex returns kms:// scheme for this field
+	if err := validateWebexURL(kmsDetails.KmsCluster, "kms"); err != nil {
 		kc.logger.Error(fmt.Sprintf("Invalid kmsCluster from KMS details: %v", err))
 		return NewKmsErrorWithCause("untrusted kmsCluster", err)
 	}

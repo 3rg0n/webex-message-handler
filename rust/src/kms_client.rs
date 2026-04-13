@@ -174,8 +174,8 @@ impl KmsClient {
             .ok_or_else(|| WebexError::kms("Missing kmsCluster in KMS details"))?
             .to_string();
 
-        // Validate KMS cluster URL
-        validate_webex_url(&self.kms_cluster, "https")
+        // Validate KMS cluster URL — Webex returns kms:// scheme for this field
+        validate_webex_url(&self.kms_cluster, "kms")
             .map_err(|e| WebexError::kms(format!("Invalid kmsCluster URL: {e}")))?;
 
         // Parse RSA public key (may be string or object)

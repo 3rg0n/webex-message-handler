@@ -93,4 +93,40 @@ mod tests {
         let result = validate_webex_url("webex.com/api", "https");
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_valid_kms_scheme() {
+        assert!(validate_webex_url("kms://ciscospark.com/keys", "kms").is_ok());
+    }
+
+    #[test]
+    fn test_valid_kms_scheme_with_path() {
+        assert!(validate_webex_url("kms://ciscospark.com/keys/key/123", "kms").is_ok());
+    }
+
+    #[test]
+    fn test_valid_kms_scheme_subdomain() {
+        assert!(validate_webex_url("kms://encryption.ciscospark.com/keys", "kms").is_ok());
+    }
+
+    #[test]
+    fn test_rejects_https_when_kms_required() {
+        let result = validate_webex_url("https://ciscospark.com/keys", "kms");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("scheme must be kms"));
+    }
+
+    #[test]
+    fn test_rejects_kms_when_https_required() {
+        let result = validate_webex_url("kms://ciscospark.com/keys", "https");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("scheme must be https"));
+    }
+
+    #[test]
+    fn test_rejects_kms_invalid_domain() {
+        let result = validate_webex_url("kms://evil.com/keys", "kms");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not a recognized Webex domain"));
+    }
 }

@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.8] - 2026-04-13
+
+### Fixed
+- **KMS cluster URL validation** — Webex returns `kms://` scheme for `kmsCluster`, not `https://`. URL validator now accepts `kms://` for this field. Also fixed bare domain matching (`ciscospark.com` without subdomain prefix) in Node.js and Go validators. (Node.js, Go, Rust — Python was fixed in #16 by @ojaber)
+
+### Added
+- **URL validation tests** — `kms://` scheme acceptance/rejection tests for all 4 languages. New `url_validation_test.go` covering HTTPS, WSS, KMS schemes and domain validation.
+
 ## [0.6.7] - 2026-04-13
 
 ### Changed

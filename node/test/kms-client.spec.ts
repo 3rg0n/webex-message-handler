@@ -79,7 +79,7 @@ describe('KmsClient', () => {
   };
 
   const mockKmsDetailsResponse = {
-    kmsCluster: 'https://encryption-a.wbx2.com',
+    kmsCluster: 'kms://ciscospark.com/keys',
     rsaPublicKey: JSON.stringify({ kty: 'RSA', e: 'AQAB', n: 'test-modulus' }),
   };
 
@@ -157,6 +157,31 @@ describe('KmsClient', () => {
           method: 'POST',
         })
       );
+    });
+
+    it('should accept kms:// scheme for KMS cluster URL', async () => {
+      const mockHttpDo = createMockHttpDo([]);
+      const kmsClient = new KmsClient({ ...mockConfig, httpDo: mockHttpDo });
+      await initializeClient(kmsClient, mockHttpDo);
+
+      // If we got here without error, kms:// was accepted
+      expect(mockHttpDo).toHaveBeenCalledTimes(2);
+    });
+
+    it('should reject https:// scheme for KMS cluster URL', async () => {
+      const mockHttpDo = jest.fn().mockResolvedValueOnce({
+        status: 200,
+        ok: true,
+        json: async () => ({
+          kmsCluster: 'https://ciscospark.com/keys',
+          rsaPublicKey: JSON.stringify({ kty: 'RSA', e: 'AQAB', n: 'test-modulus' }),
+        }),
+        text: async () => '',
+      }) as jest.MockedFunction<HttpDoFn>;
+
+      const kmsClient = new KmsClient({ ...mockConfig, httpDo: mockHttpDo });
+
+      await expect(kmsClient.initialize()).rejects.toThrow(/URL protocol must be kms/);
     });
 
     it('should throw KmsError if KMS details fetch fails', async () => {
