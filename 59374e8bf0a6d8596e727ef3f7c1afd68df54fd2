@@ -1,0 +1,49 @@
+python/src/webex_message_handler/types.py
+  25ccca6093f1ae3d 196
+python/pyproject.toml
+  25ccca6093f1ae3d 7
+python/tests/test_handler.py
+  25ccca6093f1ae3d 231
+go/handler.go
+  25ccca6093f1ae3d 528
+go/types.go
+  25ccca6093f1ae3d 150
+python/src/webex_message_handler/handler.py
+  25ccca6093f1ae3d 466
+go/handler_test.go
+  25ccca6093f1ae3d 200-201
+node/src/handler.ts
+  25ccca6093f1ae3d 397
+node/package.json
+  25ccca6093f1ae3d 3
+CHANGELOG.md
+  25ccca6093f1ae3d 8-12
+rust/Cargo.toml
+  25ccca6093f1ae3d 3
+node/src/types.ts
+  25ccca6093f1ae3d 137
+rust/src/types.rs
+  25ccca6093f1ae3d 211
+rust/src/handler.rs
+  25ccca6093f1ae3d 488
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "59374e8bf0a6d8596e727ef3f7c1afd68df54fd2",
+  "prompts": {
+    "25ccca6093f1ae3d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a5afcede-bc5a-454b-af42-844223f3840c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Ergon Copeland",
+      "messages": [],
+      "total_additions": 14308,
+      "total_deletions": 14403,
+      "accepted_lines": 3789,
+      "overriden_lines": 0
+    }
+  }
+}
