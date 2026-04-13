@@ -106,8 +106,8 @@ class KmsClient:
             kms_details = await response.json()
 
             self._kms_cluster = kms_details["kmsCluster"]
-            # Validate KMS cluster URL
-            validate_webex_url(self._kms_cluster, "https")
+            # Validate KMS cluster URL — Webex returns kms:// scheme for this field
+            validate_webex_url(self._kms_cluster, "kms")
 
             rsa_public_key_raw = kms_details["rsaPublicKey"]
             if isinstance(rsa_public_key_raw, str):
