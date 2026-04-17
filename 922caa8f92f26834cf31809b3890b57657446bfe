@@ -1,0 +1,71 @@
+rust/Cargo.toml
+  25ccca6093f1ae3d 3
+python/src/webex_message_handler/kms_client.py
+  25ccca6093f1ae3d 16,30-31,254-266,268-274,276-277,279-281,283-294,296-297,299-300,302,304-307,309-310,312,388-391
+rust/src/handler.rs
+  25ccca6093f1ae3d 151-153,210,227,270,279,286,292-295,417,439,444,482,488,493,498,518,520,525,528-535,570,575-582,584,598,619,637,661
+go/README.md
+  25ccca6093f1ae3d 136
+go/errors.go
+  25ccca6093f1ae3d 52
+rust/src/lib.rs
+  25ccca6093f1ae3d 55
+python/README.md
+  25ccca6093f1ae3d 162-164,168-170
+CHANGELOG.md
+  25ccca6093f1ae3d 8-16
+go/types.go
+  25ccca6093f1ae3d 84-86,141-147,311-328
+python/src/webex_message_handler/types.py
+  25ccca6093f1ae3d 367,370-372,374-375,377-378,380-381,383-384,387
+node/src/types.ts
+  25ccca6093f1ae3d 60-61,245,247-256,258
+rust/src/kms_client.rs
+  25ccca6093f1ae3d 30-31,33-38,117-122,146-148,339,341,418-426
+rust/README.md
+  25ccca6093f1ae3d 231-233,237-239
+node/package.json
+  25ccca6093f1ae3d 3
+go/kms_client.go
+  25ccca6093f1ae3d 24-25,45-48,80,309-323,328-340,342-345,347-360,362-383,385-406,408-411,413-417,419-423,425-442,445-446,633-637
+go/handler.go
+  25ccca6093f1ae3d 36-37,45-48,50-55,567,570,573
+node/src/handler.ts
+  25ccca6093f1ae3d 18,101,140,168-177,415-423
+python/pyproject.toml
+  25ccca6093f1ae3d 7
+node/src/index.ts
+  25ccca6093f1ae3d 42-43
+python/src/webex_message_handler/handler.py
+  25ccca6093f1ae3d 30,129,157-161
+python/src/webex_message_handler/__init__.py
+  25ccca6093f1ae3d 31-32,93-95
+go/handler_test.go
+  25ccca6093f1ae3d 48-51
+DESIGN_REVIEW.md
+  25ccca6093f1ae3d 1-244
+go/mercury_socket.go
+  25ccca6093f1ae3d 14
+node/src/kms-client.ts
+  25ccca6093f1ae3d 32-33,54-57,268-276,278-282,284-286,288-289,296-300,302-303,305-313,315-316,386-401
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "922caa8f92f26834cf31809b3890b57657446bfe",
+  "prompts": {
+    "25ccca6093f1ae3d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a5afcede-bc5a-454b-af42-844223f3840c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Ergon Copeland",
+      "messages": [],
+      "total_additions": 17513,
+      "total_deletions": 10253,
+      "accepted_lines": 5146,
+      "overriden_lines": 358
+    }
+  }
+}
