@@ -56,6 +56,9 @@ pub type WebSocketFactory = Arc<
         + Sync,
 >;
 
+/// Metrics callback type for receiving timing events.
+pub type MetricsCallback = Arc<dyn Fn(MetricsEvent) + Send + Sync>;
+
 /// Configuration for WebexMessageHandler.
 #[derive(Clone)]
 pub struct Config {
@@ -89,6 +92,13 @@ pub struct Config {
 
     /// Automatically filter out messages sent by this bot to prevent loops (default: true).
     pub ignore_self_messages: bool,
+
+    /// Capacity of the event channel buffer (default: 1000).
+    /// Provides backpressure when the consumer is slower than the producer.
+    pub event_channel_capacity: usize,
+
+    /// Optional metrics callback for receiving timing events (no overhead if not set).
+    pub metrics_callback: Option<MetricsCallback>,
 }
 
 impl Default for Config {
@@ -104,6 +114,8 @@ impl Default for Config {
             reconnect_backoff_max: 32.0,
             max_reconnect_attempts: 10,
             ignore_self_messages: true,
+            event_channel_capacity: 1000,
+            metrics_callback: None,
         }
     }
 }
@@ -392,4 +404,20 @@ pub struct HandlerStatus {
 
     /// Current auto-reconnect attempt number (0 if not reconnecting).
     pub reconnect_attempt: u32,
+}
+
+/// A timing metric event.
+#[derive(Debug, Clone)]
+pub struct MetricsEvent {
+    /// Metric name: "connect", "kms_fetch", or "decrypt".
+    pub name: String,
+
+    /// Duration in milliseconds.
+    pub duration_ms: f64,
+
+    /// Whether the operation succeeded.
+    pub success: bool,
+
+    /// Optional context metadata (e.g., key URI for kms_fetch).
+    pub metadata: Option<HashMap<String, String>>,
 }

@@ -107,6 +107,9 @@ class WebexMessageHandlerConfig:
     ignore_self_messages: bool = True
     """Automatically filter out messages sent by this bot to prevent loops (default: True)."""
 
+    metrics_callback: "MetricsCallback | None" = None
+    """Optional metrics callback for timing events (no overhead if not set)."""
+
 
 # --- Device Registration ---
 
@@ -359,3 +362,26 @@ class HandlerStatus:
 
     reconnect_attempt: int
     """Current auto-reconnect attempt number (0 if not reconnecting)."""
+
+
+# --- Metrics ---
+
+
+@dataclass
+class MetricsEvent:
+    """A timing metric event."""
+
+    name: str
+    """Metric name: 'connect', 'kms_fetch', or 'decrypt'."""
+
+    duration_ms: float
+    """Duration in milliseconds."""
+
+    success: bool
+    """Whether the operation succeeded."""
+
+    metadata: dict[str, str] | None = None
+    """Optional context metadata (e.g., key URI for kms_fetch)."""
+
+
+MetricsCallback = Callable[["MetricsEvent"], None]

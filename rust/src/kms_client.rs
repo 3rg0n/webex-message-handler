@@ -27,6 +27,15 @@ use uuid::Uuid;
 const KMS_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_PENDING_REQUESTS: usize = 100;
 const MAX_KEY_CACHE_SIZE: usize = 100;
+const CB_FAILURE_THRESHOLD: u32 = 3;
+const CB_COOLDOWN: Duration = Duration::from_secs(30);
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum CbState {
+    Closed,
+    Open,
+    HalfOpen,
+}
 
 /// A pending KMS request awaiting a Mercury response.
 struct PendingRequest {
@@ -104,6 +113,13 @@ pub struct KmsClient {
 
     /// Pending KMS requests waiting for Mercury responses (FIFO).
     pending_requests: Arc<Mutex<Vec<(String, PendingRequest)>>>,
+
+    /// Circuit breaker state
+    cb_state: CbState,
+    /// Consecutive failure count
+    cb_failures: u32,
+    /// Time of last failure
+    cb_last_failure: Option<Instant>,
 }
 
 impl KmsClient {
@@ -127,6 +143,9 @@ impl KmsClient {
             key_cache: HashMap::new(),
             initialized: false,
             pending_requests: Arc::new(Mutex::new(Vec::new())),
+            cb_state: CbState::Closed,
+            cb_failures: 0,
+            cb_last_failure: None,
         }
     }
 
@@ -313,66 +332,102 @@ impl KmsClient {
             self.initialize().await?;
         }
 
-        if !self.initialized {
-            return Err(WebexError::kms("KMS context not initialized"));
+        // Check circuit breaker state
+        if self.cb_state == CbState::Open {
+            if self.cb_last_failure.map_or(true, |t| t.elapsed() >= CB_COOLDOWN) {
+                self.cb_state = CbState::HalfOpen;
+                info!("KMS circuit breaker entering half-open state");
+            } else {
+                return Err(WebexError::kms("KMS circuit breaker is open — skipping key fetch"));
+            }
         }
 
-        let ephemeral_key = self
-            .ephemeral_key
-            .ok_or_else(|| WebexError::kms("No ephemeral key"))?;
+        const MAX_KMS_ATTEMPTS: u32 = 2;
+        for attempt in 1..=MAX_KMS_ATTEMPTS {
+            if !self.initialized {
+                return Err(WebexError::kms("KMS context not initialized"));
+            }
 
-        // Build retrieve request
-        let request_id = Uuid::new_v4().to_string();
-        let retrieve_body = serde_json::json!({
-            "client": {
-                "clientId": self.device_url,
-                "credential": {
-                    "userId": self.user_id,
-                    "bearer": self.token,
+            let ephemeral_key = self
+                .ephemeral_key
+                .ok_or_else(|| WebexError::kms("No ephemeral key"))?;
+
+            // Build retrieve request
+            let request_id = Uuid::new_v4().to_string();
+            let retrieve_body = serde_json::json!({
+                "client": {
+                    "clientId": self.device_url,
+                    "credential": {
+                        "userId": self.user_id,
+                        "bearer": self.token,
+                    },
                 },
-            },
-            "method": "retrieve",
-            "uri": key_uri,
-            "requestId": request_id,
-        });
+                "method": "retrieve",
+                "uri": key_uri,
+                "requestId": request_id,
+            });
 
-        // Wrap with ephemeral key (dir + A256GCM — key is CEK directly)
-        let wrapped = jwe::encrypt_dir_a256gcm(
-            retrieve_body.to_string().as_bytes(),
-            &ephemeral_key,
-            &self.ephemeral_key_kid,
-        )?;
+            // Wrap with ephemeral key (dir + A256GCM — key is CEK directly)
+            let wrapped = jwe::encrypt_dir_a256gcm(
+                retrieve_body.to_string().as_bytes(),
+                &ephemeral_key,
+                &self.ephemeral_key_kid,
+            )?;
 
-        // POST and wait for Mercury response
-        let wrapped_response = self.send_kms_request(&request_id, &wrapped).await?;
+            // POST and wait for Mercury response
+            match self.send_kms_request(&request_id, &wrapped).await {
+                Ok(wrapped_response) => {
+                    // Unwrap response with ephemeral key (may be JWE or JWS)
+                    let response_body = jwe::unwrap_kms_response(
+                        &wrapped_response,
+                        &jwe::JweKey::Symmetric(ephemeral_key),
+                    )?;
+                    let response_data: Value = serde_json::from_slice(&response_body)
+                        .map_err(|e| WebexError::kms(format!("Failed to parse key response: {e}")))?;
 
-        // Unwrap response with ephemeral key (may be JWE or JWS)
-        let response_body = jwe::unwrap_kms_response(
-            &wrapped_response,
-            &jwe::JweKey::Symmetric(ephemeral_key),
-        )?;
-        let response_data: Value = serde_json::from_slice(&response_body)
-            .map_err(|e| WebexError::kms(format!("Failed to parse key response: {e}")))?;
+                    // Extract content key
+                    let key_jwk_data = extract_jwk_from_response(&response_data)
+                        .ok_or_else(|| WebexError::kms("No key found in KMS response"))?;
 
-        // Extract content key
-        let key_jwk_data = extract_jwk_from_response(&response_data)
-            .ok_or_else(|| WebexError::kms("No key found in KMS response"))?;
+                    // Extract the symmetric key bytes from the JWK
+                    let k_b64 = key_jwk_data["k"]
+                        .as_str()
+                        .ok_or_else(|| WebexError::kms("Missing 'k' in content key JWK"))?;
+                    let k_bytes = URL_SAFE_NO_PAD
+                        .decode(k_b64)
+                        .map_err(|e| WebexError::kms(format!("Failed to decode content key: {e}")))?;
 
-        // Extract the symmetric key bytes from the JWK
-        let k_b64 = key_jwk_data["k"]
-            .as_str()
-            .ok_or_else(|| WebexError::kms("Missing 'k' in content key JWK"))?;
-        let k_bytes = URL_SAFE_NO_PAD
-            .decode(k_b64)
-            .map_err(|e| WebexError::kms(format!("Failed to decode content key: {e}")))?;
+                    let content_key: [u8; 32] = k_bytes
+                        .try_into()
+                        .map_err(|_| WebexError::kms("Content key is not 32 bytes"))?;
 
-        let content_key: [u8; 32] = k_bytes
-            .try_into()
-            .map_err(|_| WebexError::kms("Content key is not 32 bytes"))?;
+                    self.key_cache.insert(key_uri.to_string(), content_key);
+                    self.cb_failures = 0;
+                    if self.cb_state == CbState::HalfOpen {
+                        self.cb_state = CbState::Closed;
+                        info!("KMS circuit breaker closed — KMS recovered");
+                    }
+                    info!("Key retrieved and cached: {key_uri}");
+                    return Ok(content_key);
+                }
+                Err(e) if attempt < MAX_KMS_ATTEMPTS && is_retryable_kms_error(&e) => {
+                    warn!("KMS key fetch failed (attempt {}/{}), retrying in 1s: {}", attempt, MAX_KMS_ATTEMPTS, e);
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    continue;
+                }
+                Err(e) => {
+                    self.cb_failures += 1;
+                    self.cb_last_failure = Some(Instant::now());
+                    if self.cb_failures >= CB_FAILURE_THRESHOLD {
+                        self.cb_state = CbState::Open;
+                        warn!("KMS circuit breaker opened after {} consecutive failures", self.cb_failures);
+                    }
+                    return Err(e);
+                }
+            }
+        }
 
-        self.key_cache.insert(key_uri.to_string(), content_key);
-        info!("Key retrieved and cached: {key_uri}");
-        Ok(content_key)
+        Err(WebexError::kms("KMS key fetch failed after all retry attempts"))
     }
 
     /// Send a KMS request via HTTP and wait for the response via Mercury.
@@ -474,6 +529,12 @@ impl KmsClient {
     pub fn is_initialized(&self) -> bool {
         self.initialized
     }
+}
+
+/// Check if a KMS error is retryable (transient failure).
+fn is_retryable_kms_error(err: &WebexError) -> bool {
+    let msg = err.to_string().to_lowercase();
+    msg.contains("timed out") || msg.contains("http request failed")
 }
 
 /// Extract a JWK from the KMS response JSON.

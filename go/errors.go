@@ -49,7 +49,7 @@ type MercuryConnectionError struct {
 func NewMercuryConnectionError(message string, closeCode int) *MercuryConnectionError {
 	return &MercuryConnectionError{
 		WebexError: WebexError{Message: message, Code: "MERCURY_CONNECTION_ERROR"},
-		CloseCode: closeCode,
+		CloseCode:  closeCode,
 	}
 }
 

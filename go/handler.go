@@ -19,6 +19,7 @@ type WebexMessageHandler struct {
 	httpClient *http.Client
 	httpDo     fetchDoFn
 	wsFactory  wsFactoryFn
+	metricsCallback MetricsCallback
 
 	deviceManager    *DeviceManager
 	mercurySocket    *MercurySocket
@@ -32,8 +33,8 @@ type WebexMessageHandler struct {
 	botPersonID        string
 
 	// Mutex to protect state fields accessed from multiple goroutines
-	mu         sync.RWMutex
-	activityCtx context.Context
+	mu             sync.RWMutex
+	activityCtx    context.Context
 	activityCancel context.CancelFunc
 
 	// Activity replay protection: maps activity ID to timestamp when last seen
@@ -41,22 +42,34 @@ type WebexMessageHandler struct {
 	activityIDsMu     sync.Mutex
 
 	// Event callbacks
-	onMessageCreated    func(msg DecryptedMessage)
-	onMessageUpdated    func(msg DecryptedMessage)
-	onMessageDeleted    func(data DeletedMessage)
-	onMembershipCreated      func(activity MembershipActivity)
+	onMessageCreated          func(msg DecryptedMessage)
+	onMessageUpdated          func(msg DecryptedMessage)
+	onMessageDeleted          func(data DeletedMessage)
+	onMembershipCreated       func(activity MembershipActivity)
 	onAttachmentActionCreated func(action AttachmentAction)
-	onRoomCreated            func(activity RoomActivity)
-	onRoomUpdated            func(activity RoomActivity)
-	onConnected              func()
-	onDisconnected      func(reason string)
-	onReconnecting      func(attempt int)
-	onError             func(err error)
+	onRoomCreated             func(activity RoomActivity)
+	onRoomUpdated             func(activity RoomActivity)
+	onConnected               func()
+	onDisconnected            func(reason string)
+	onReconnecting            func(attempt int)
+	onError                   func(err error)
 }
 
 // Internal adapter types (aliases for public types)
 type fetchDoFn = FetchFunc
 type wsFactoryFn = WebSocketFactory
+
+// reportMetric sends a metrics event if callback is set.
+func (h *WebexMessageHandler) reportMetric(name string, start time.Time, success bool, metadata map[string]string) {
+	if h.metricsCallback != nil {
+		h.metricsCallback(MetricsEvent{
+			Name:       name,
+			DurationMs: float64(time.Since(start).Milliseconds()),
+			Success:    success,
+			Metadata:   metadata,
+		})
+	}
+}
 
 // New creates a new WebexMessageHandler.
 func New(cfg Config) (*WebexMessageHandler, error) {
@@ -121,6 +134,7 @@ func New(cfg Config) (*WebexMessageHandler, error) {
 		logger:             logger,
 		httpClient:         httpClient,
 		ignoreSelfMessages: ignoreSelf,
+		metricsCallback:    cfg.MetricsCallback,
 		recentActivityIDs:  make(map[string]time.Time),
 	}
 
@@ -256,12 +270,15 @@ func (h *WebexMessageHandler) Connect(ctx context.Context) error {
 	h.connecting = true
 	h.mu.Unlock()
 
+	connectStart := time.Now()
+
 	// Step 1: Register device
 	reg, err := h.deviceManager.Register(ctx, h.token)
 	if err != nil {
 		h.mu.Lock()
 		h.connecting = false
 		h.mu.Unlock()
+		h.reportMetric("connect", connectStart, false, nil)
 		return err
 	}
 
@@ -276,6 +293,7 @@ func (h *WebexMessageHandler) Connect(ctx context.Context) error {
 			h.mu.Lock()
 			h.connecting = false
 			h.mu.Unlock()
+			h.reportMetric("connect", connectStart, false, nil)
 			return err
 		}
 	}
@@ -297,6 +315,7 @@ func (h *WebexMessageHandler) Connect(ctx context.Context) error {
 		h.mu.Lock()
 		h.connecting = false
 		h.mu.Unlock()
+		h.reportMetric("connect", connectStart, false, nil)
 		return err
 	}
 	h.logger.Info("Mercury connected")
@@ -309,6 +328,7 @@ func (h *WebexMessageHandler) Connect(ctx context.Context) error {
 		h.mu.Lock()
 		h.connecting = false
 		h.mu.Unlock()
+		h.reportMetric("connect", connectStart, false, nil)
 		return err
 	}
 	h.logger.Info("KMS initialized")
@@ -323,6 +343,7 @@ func (h *WebexMessageHandler) Connect(ctx context.Context) error {
 	h.mu.Unlock()
 
 	h.logger.Info("Connected to Webex")
+	h.reportMetric("connect", connectStart, true, nil)
 	if h.onConnected != nil {
 		h.onConnected()
 	}
@@ -543,10 +564,13 @@ func (h *WebexMessageHandler) handleActivity(ctx context.Context, activity Mercu
 			return nil
 		}
 
+		decryptStart := time.Now()
 		decrypted, err := messageDecryptor.DecryptActivity(ctx, activity)
 		if err != nil {
+			h.reportMetric("decrypt", decryptStart, false, nil)
 			return err
 		}
+		h.reportMetric("decrypt", decryptStart, true, nil)
 
 		var parentID string
 		if decrypted.Parent != nil {

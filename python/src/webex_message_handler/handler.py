@@ -27,6 +27,7 @@ from .types import (
     HandlerStatus,
     InjectedWebSocket,
     MembershipActivity,
+    MetricsEvent,
     MercuryActivity,
     RoomActivity,
     WebexMessageHandlerConfig,
@@ -125,6 +126,7 @@ class WebexMessageHandler:
 
         self._ignore_self_messages = config.ignore_self_messages
         self._bot_person_id: str | None = None
+        self._metrics_callback = config.metrics_callback
 
         self._kms_client: KmsClient | None = None
         self._message_decryptor: MessageDecryptor | None = None
@@ -151,6 +153,12 @@ class WebexMessageHandler:
         }
 
         self._setup_mercury_listeners()
+
+    def _report_metric(self, name: str, start_time: float, success: bool, metadata: dict[str, str] | None = None) -> None:
+        """Report a timing metric if callback is set."""
+        if self._metrics_callback:
+            duration_ms = (time.monotonic() - start_time) * 1000
+            self._metrics_callback(MetricsEvent(name=name, duration_ms=duration_ms, success=success, metadata=metadata))
 
     def _create_native_http_adapter(
         self, connector: aiohttp.BaseConnector | None
@@ -275,6 +283,7 @@ class WebexMessageHandler:
         self._logger.info("Connecting to Webex...")
         self._connecting = True
 
+        connect_start = time.monotonic()
         try:
             # Step 1: Register device with WDM
             self._registration = await self._device_manager.register(self._token)
@@ -314,10 +323,12 @@ class WebexMessageHandler:
             self._connecting = False
             self._connected = True
             self._logger.info("Connected to Webex")
+            self._report_metric("connect", connect_start, True)
             self._emit("connected")
 
         except Exception:
             self._connecting = False
+            self._report_metric("connect", connect_start, False)
             raise
 
     async def disconnect(self) -> None:
@@ -468,7 +479,14 @@ class WebexMessageHandler:
                 self._logger.warning("Received activity but decryptor not initialized")
                 return
 
-            decrypted = await self._message_decryptor.decrypt_activity(activity)
+            decrypt_start = time.monotonic()
+            try:
+                decrypted = await self._message_decryptor.decrypt_activity(activity)
+                self._report_metric("decrypt", decrypt_start, True)
+            except Exception:
+                self._report_metric("decrypt", decrypt_start, False)
+                raise
+
             mentions = parse_mentions(decrypted.object.content)
             message = DecryptedMessage(
                 id=decrypted.id,

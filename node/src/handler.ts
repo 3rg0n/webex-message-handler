@@ -15,6 +15,7 @@ import type {
   FetchResponse,
   InjectedWebSocket,
   PersonInfo,
+  MetricsCallback,
 } from './types.js';
 import { DeviceManager } from './device-manager.js';
 import { MercurySocket } from './mercury-socket.js';
@@ -97,6 +98,7 @@ export class WebexMessageHandler
   private logger: Logger;
   private httpDo: HttpDoFn;
   private wsFactory: WsFactoryFn;
+  private metricsCallback?: MetricsCallback;
   private deviceManager: DeviceManager;
   private mercurySocket: MercurySocket;
   private kmsClient: KmsClient | null = null;
@@ -135,6 +137,7 @@ export class WebexMessageHandler
     this.token = config.token;
     this.logger = config.logger ?? noopLogger;
     this.ignoreSelfMessages = config.ignoreSelfMessages ?? true;
+    this.metricsCallback = config.metricsCallback;
 
     // Create adapters based on mode
     if (mode === 'native') {
@@ -160,6 +163,17 @@ export class WebexMessageHandler
     });
 
     this._setupMercuryListeners();
+  }
+
+  private _reportMetric(name: string, startTime: number, success: boolean, metadata?: Record<string, string>): void {
+    if (this.metricsCallback) {
+      this.metricsCallback({
+        name,
+        durationMs: Date.now() - startTime,
+        success,
+        metadata,
+      });
+    }
   }
 
   private _createNativeHttpAdapter(dispatcher?: Dispatcher): HttpDoFn {
@@ -198,6 +212,7 @@ export class WebexMessageHandler
     this.logger.info('Connecting to Webex...');
     this._connecting = true;
 
+    const connectStart = Date.now();
     try {
       // Step 1: Register device with WDM
       this.registration = await this.deviceManager.register(this.token);
@@ -238,9 +253,11 @@ export class WebexMessageHandler
       this._connecting = false;
       this._connected = true;
       this.logger.info('Connected to Webex');
+      this._reportMetric('connect', connectStart, true);
       this.emit('connected');
     } catch (error) {
       this._connecting = false;
+      this._reportMetric('connect', connectStart, false);
       throw error;
     }
   }
@@ -395,7 +412,16 @@ export class WebexMessageHandler
         return;
       }
 
-      const decrypted = await this.messageDecryptor.decryptActivity(activity);
+      const decryptStart = Date.now();
+      let decrypted;
+      try {
+        decrypted = await this.messageDecryptor.decryptActivity(activity);
+        this._reportMetric('decrypt', decryptStart, true);
+      } catch (err) {
+        this._reportMetric('decrypt', decryptStart, false);
+        throw err;
+      }
+
       const mentions = parseMentions(decrypted.object.content);
       const message: DecryptedMessage = {
         id: decrypted.id,

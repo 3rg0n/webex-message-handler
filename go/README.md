@@ -129,6 +129,20 @@ uuid, err := webexmessagehandler.FromRestID(restID)
 
 Resource types: `"MESSAGE"`, `"PEOPLE"`, `"ROOM"`.
 
+## Delivery Guarantees
+
+This library provides **at-most-once** delivery semantics:
+
+- Mercury WebSocket acknowledges messages at the protocol level on receipt, before decryption or consumer delivery.
+- If decryption fails (e.g., KMS outage) or your callback throws an error, the message is **not redelivered**.
+- Mercury does not support application-level ACK/NACK — this is an inherent constraint of the Webex platform.
+
+**For consumers requiring stronger guarantees:**
+
+- Wrap your callback with a persistent queue (e.g., database, Redis, or message broker) to ensure processing completes.
+- Use the `error` event to detect and log decryption failures.
+- The KMS circuit breaker (v0.6.9+) prevents 30-second stalls during KMS outages by failing fast after 3 consecutive failures.
+
 ## API
 
 ### `New(cfg Config) (*WebexMessageHandler, error)`

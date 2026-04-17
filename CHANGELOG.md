@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.9] - 2026-04-17
+
+### Added
+- **KMS circuit breaker** — After 3 consecutive KMS key fetch failures, the circuit breaker opens and fails fast (no 30s timeout stall per message). Enters half-open state after 30s cooldown to test recovery. (all 4 languages)
+- **KMS key fetch retry** — Transient KMS errors (timeouts, HTTP failures) are retried once with 1s delay before failing. Permanent errors (auth, validation) fail immediately. (all 4 languages)
+- **Optional timing metrics** — New `metricsCallback` / `metrics_callback` config option receives `MetricsEvent` with `connect` and `decrypt` timing data. Zero overhead when not set. (all 4 languages)
+- **Delivery guarantees documentation** — New "Delivery Guarantees" section in all READMEs documenting at-most-once semantics and Mercury ACK-before-decrypt limitation.
+- **Design review** — `DESIGN_REVIEW.md` evaluating the library against system design pattern rubric with actionable recommendations.
+
 ## [0.6.8] - 2026-04-13
 
 ### Fixed

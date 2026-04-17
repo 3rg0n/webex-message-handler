@@ -45,10 +45,10 @@ func TestConfigDefaults(t *testing.T) {
 
 func TestCustomConfigValues(t *testing.T) {
 	h, err := New(Config{
-		Token:               "test-token",
-		PingInterval:        30,
-		PongTimeout:         25,
-		ReconnectBackoffMax: 60,
+		Token:                "test-token",
+		PingInterval:         30,
+		PongTimeout:          25,
+		ReconnectBackoffMax:  60,
 		MaxReconnectAttempts: 5,
 	})
 	if err != nil {

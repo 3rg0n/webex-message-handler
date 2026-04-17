@@ -39,5 +39,7 @@ export type {
   FetchFunction,
   InjectedWebSocket,
   WebSocketFactory,
+  MetricsEvent,
+  MetricsCallback,
 } from './types.js';
 export type { ParsedMentions } from './mention-parser.js';

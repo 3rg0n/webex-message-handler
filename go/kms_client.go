@@ -21,6 +21,8 @@ import (
 )
 
 const kmsResponseTimeout = 30 * time.Second
+const cbFailureThreshold = 3
+const cbCooldown = 30 * time.Second
 
 // KmsClient handles KMS ECDH key exchange and encryption key retrieval.
 type KmsClient struct {
@@ -40,6 +42,10 @@ type KmsClient struct {
 	pendingRequests map[string]*pendingRequest
 	mu              sync.Mutex
 	kmsRequestMu    sync.Mutex
+
+	cbState       string
+	cbFailures    int
+	cbLastFailure time.Time
 }
 
 type pendingRequest struct {
@@ -71,6 +77,7 @@ func NewKmsClient(cfg KmsClientConfig) *KmsClient {
 		httpDo:               cfg.HTTPDo,
 		keyCache:             make(map[string]*jose.JSONWebKey),
 		pendingRequests:      make(map[string]*pendingRequest),
+		cbState:              "closed",
 	}
 }
 
@@ -299,80 +306,144 @@ func (kc *KmsClient) GetKey(ctx context.Context, keyURI string) (*jose.JSONWebKe
 		}
 	}
 
+	// Check circuit breaker state
+	kc.mu.Lock()
+	if kc.cbState == "open" {
+		if time.Since(kc.cbLastFailure) >= cbCooldown {
+			kc.cbState = "half-open"
+			kc.mu.Unlock()
+			kc.logger.Info("KMS circuit breaker entering half-open state")
+		} else {
+			kc.mu.Unlock()
+			return nil, NewKmsError("KMS circuit breaker is open — skipping key fetch")
+		}
+	} else {
+		kc.mu.Unlock()
+	}
+
 	if !kc.initialized || kc.ephemeralKey == nil {
 		return nil, NewKmsError("KMS context not initialized")
 	}
 
-	// Build retrieve request
-	requestID := uuid.New().String()
-	retrieveBody := map[string]interface{}{
-		"client": map[string]interface{}{
-			"clientId": kc.deviceURL,
-			"credential": map[string]string{
-				"userId": kc.userID,
-				"bearer": kc.token,
+	const maxKmsAttempts = 2
+	var lastErr error
+
+	for attempt := 1; attempt <= maxKmsAttempts; attempt++ {
+		// Build retrieve request
+		requestID := uuid.New().String()
+		retrieveBody := map[string]interface{}{
+			"client": map[string]interface{}{
+				"clientId": kc.deviceURL,
+				"credential": map[string]string{
+					"userId": kc.userID,
+					"bearer": kc.token,
+				},
 			},
-		},
-		"method":    "retrieve",
-		"uri":       keyURI,
-		"requestId": requestID,
+			"method":    "retrieve",
+			"uri":       keyURI,
+			"requestId": requestID,
+		}
+
+		// Wrap with ephemeral key (dir + A256GCM — key is CEK directly)
+		plaintext, _ := json.Marshal(retrieveBody)
+		encrypter, err := jose.NewEncrypter(jose.A256GCM, jose.Recipient{Algorithm: jose.DIRECT, Key: kc.ephemeralKey.Key}, (&jose.EncrypterOptions{}).WithHeader("kid", kc.ephemeralKey.KeyID))
+		if err != nil {
+			return nil, NewKmsErrorWithCause("Failed to create JWE encrypter for key retrieval", err)
+		}
+		jweObj, err := encrypter.Encrypt(plaintext)
+		if err != nil {
+			return nil, NewKmsErrorWithCause("Failed to encrypt key retrieval request", err)
+		}
+		wrapped, err := jweObj.CompactSerialize()
+		if err != nil {
+			return nil, NewKmsErrorWithCause("Failed to serialize key retrieval request", err)
+		}
+
+		// POST and wait for Mercury response
+		wrappedResponse, err := kc.sendKmsRequest(ctx, requestID, wrapped)
+		if err != nil {
+			lastErr = err
+			// Check if retryable
+			if attempt < maxKmsAttempts && isRetryableKmsError(err) {
+				kc.logger.Warn(fmt.Sprintf("KMS key fetch failed (attempt %d/%d), retrying in 1s: %v", attempt, maxKmsAttempts, err))
+				time.Sleep(1 * time.Second)
+				continue
+			}
+			kc.mu.Lock()
+			kc.cbFailures++
+			kc.cbLastFailure = time.Now()
+			if kc.cbFailures >= cbFailureThreshold {
+				kc.cbState = "open"
+				kc.mu.Unlock()
+				kc.logger.Warn(fmt.Sprintf("KMS circuit breaker opened after %d consecutive failures", kc.cbFailures))
+			} else {
+				kc.mu.Unlock()
+			}
+			return nil, err
+		}
+
+		// Unwrap response (may be JWE or JWS)
+		responseBytes, err := unwrapKmsResponse(wrappedResponse, *kc.ephemeralKey)
+		if err != nil {
+			lastErr = err
+			// Check if retryable
+			if attempt < maxKmsAttempts && isRetryableKmsError(err) {
+				kc.logger.Warn(fmt.Sprintf("KMS key fetch failed (attempt %d/%d), retrying in 1s: %v", attempt, maxKmsAttempts, err))
+				time.Sleep(1 * time.Second)
+				continue
+			}
+			kc.mu.Lock()
+			kc.cbFailures++
+			kc.cbLastFailure = time.Now()
+			if kc.cbFailures >= cbFailureThreshold {
+				kc.cbState = "open"
+				kc.mu.Unlock()
+				kc.logger.Warn(fmt.Sprintf("KMS circuit breaker opened after %d consecutive failures", kc.cbFailures))
+			} else {
+				kc.mu.Unlock()
+			}
+			return nil, err
+		}
+
+		var responseData map[string]interface{}
+		if err := json.Unmarshal(responseBytes, &responseData); err != nil {
+			return nil, NewKmsErrorWithCause("Failed to parse key response body", err)
+		}
+
+		// Extract content key
+		keyJWKData := extractJWKFromResponse(responseData)
+		if keyJWKData == nil {
+			return nil, NewKmsError("No key found in KMS response")
+		}
+
+		keyJWKBytes, _ := json.Marshal(keyJWKData)
+		var contentKey jose.JSONWebKey
+		if err := contentKey.UnmarshalJSON(keyJWKBytes); err != nil {
+			return nil, NewKmsErrorWithCause("Failed to parse content key", err)
+		}
+
+		kc.mu.Lock()
+		// Bound cache size — clear if exceeds 100 entries
+		if len(kc.keyCache) > 100 {
+			kc.logger.Warn(fmt.Sprintf("KMS key cache exceeded 100 entries (%d), clearing", len(kc.keyCache)))
+			kc.keyCache = make(map[string]*jose.JSONWebKey)
+		}
+		kc.keyCache[keyURI] = &contentKey
+		kc.cbFailures = 0
+		if kc.cbState == "half-open" {
+			kc.cbState = "closed"
+			kc.mu.Unlock()
+			kc.logger.Info("KMS circuit breaker closed — KMS recovered")
+		} else {
+			kc.mu.Unlock()
+		}
+
+		kc.logger.Info(fmt.Sprintf("Key retrieved and cached: %s", keyURI))
+		return &contentKey, nil
 	}
 
-	// Wrap with ephemeral key (dir + A256GCM — key is CEK directly)
-	plaintext, _ := json.Marshal(retrieveBody)
-	encrypter, err := jose.NewEncrypter(jose.A256GCM, jose.Recipient{Algorithm: jose.DIRECT, Key: kc.ephemeralKey.Key}, (&jose.EncrypterOptions{}).WithHeader("kid", kc.ephemeralKey.KeyID))
-	if err != nil {
-		return nil, NewKmsErrorWithCause("Failed to create JWE encrypter for key retrieval", err)
-	}
-	jweObj, err := encrypter.Encrypt(plaintext)
-	if err != nil {
-		return nil, NewKmsErrorWithCause("Failed to encrypt key retrieval request", err)
-	}
-	wrapped, err := jweObj.CompactSerialize()
-	if err != nil {
-		return nil, NewKmsErrorWithCause("Failed to serialize key retrieval request", err)
-	}
-
-	// POST and wait for Mercury response
-	wrappedResponse, err := kc.sendKmsRequest(ctx, requestID, wrapped)
-	if err != nil {
-		return nil, err
-	}
-
-	// Unwrap response (may be JWE or JWS)
-	responseBytes, err := unwrapKmsResponse(wrappedResponse, *kc.ephemeralKey)
-	if err != nil {
-		return nil, err
-	}
-
-	var responseData map[string]interface{}
-	if err := json.Unmarshal(responseBytes, &responseData); err != nil {
-		return nil, NewKmsErrorWithCause("Failed to parse key response body", err)
-	}
-
-	// Extract content key
-	keyJWKData := extractJWKFromResponse(responseData)
-	if keyJWKData == nil {
-		return nil, NewKmsError("No key found in KMS response")
-	}
-
-	keyJWKBytes, _ := json.Marshal(keyJWKData)
-	var contentKey jose.JSONWebKey
-	if err := contentKey.UnmarshalJSON(keyJWKBytes); err != nil {
-		return nil, NewKmsErrorWithCause("Failed to parse content key", err)
-	}
-
-	kc.mu.Lock()
-	// Bound cache size — clear if exceeds 100 entries
-	if len(kc.keyCache) > 100 {
-		kc.logger.Warn(fmt.Sprintf("KMS key cache exceeded 100 entries (%d), clearing", len(kc.keyCache)))
-		kc.keyCache = make(map[string]*jose.JSONWebKey)
-	}
-	kc.keyCache[keyURI] = &contentKey
-	kc.mu.Unlock()
-
-	kc.logger.Info(fmt.Sprintf("Key retrieved and cached: %s", keyURI))
-	return &contentKey, nil
+	// Should not reach here, but return lastErr if we do
+	return nil, lastErr
 }
 
 func (kc *KmsClient) sendKmsRequest(ctx context.Context, requestID, wrapped string) (string, error) {
@@ -558,4 +629,9 @@ func deriveSharedKey(localKey *ecdsa.PrivateKey, remoteJWK jose.JSONWebKey) (*jo
 		Key:       derived,
 		Algorithm: string(jose.A256KW),
 	}, nil
+}
+
+func isRetryableKmsError(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "timed out") || strings.Contains(msg, "http request failed")
 }

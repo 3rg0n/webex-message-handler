@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -26,6 +27,8 @@ from .types import FetchFunction, FetchRequest
 from .url_validation import validate_webex_url
 
 KMS_RESPONSE_TIMEOUT = 30.0  # seconds
+CB_FAILURE_THRESHOLD = 3
+CB_COOLDOWN_SECONDS = 30.0
 
 
 class KmsClient:
@@ -63,6 +66,11 @@ class KmsClient:
 
         # Lock to serialize KMS HTTP requests
         self._kms_request_lock = asyncio.Lock()
+
+        # Circuit breaker state
+        self._cb_state: str = "closed"  # "closed", "open", "half_open"
+        self._cb_failures: int = 0
+        self._cb_last_failure: float = 0.0
 
     def handle_kms_message(self, data: dict[str, Any]) -> None:
         """Handle a KMS response that arrived via Mercury WebSocket.
@@ -231,69 +239,91 @@ class KmsClient:
             if not self._initialized or not self._ephemeral_key:
                 raise KmsError("KMS context not initialized")
 
-            # Build retrieve request
-            request_id = str(uuid.uuid4())
-            retrieve_body = {
-                "client": {
-                    "clientId": self._device_url,
-                    "credential": {
-                        "userId": self._user_id,
-                        "bearer": self._token,
-                    },
-                },
-                "method": "retrieve",
-                "uri": key_uri,
-                "requestId": request_id,
-            }
+            # Check circuit breaker state
+            if self._cb_state == "open":
+                if time.monotonic() - self._cb_last_failure >= CB_COOLDOWN_SECONDS:
+                    self._cb_state = "half_open"
+                    self._logger.info("KMS circuit breaker transitioned to half_open — attempting recovery")
+                else:
+                    raise KmsError("KMS circuit breaker is open — failing fast")
 
-            # Wrap with ephemeral key (dir + A256GCM — key is CEK directly)
-            wrapped = _jwe_encrypt(
-                plaintext=json.dumps(retrieve_body).encode(),
-                key=self._ephemeral_key,
-                alg="dir",
-                enc="A256GCM",
-            )
+            # Build retrieve request with retry logic
+            max_attempts = 2
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    request_id = str(uuid.uuid4())
+                    retrieve_body = {
+                        "client": {
+                            "clientId": self._device_url,
+                            "credential": {
+                                "userId": self._user_id,
+                                "bearer": self._token,
+                            },
+                        },
+                        "method": "retrieve",
+                        "uri": key_uri,
+                        "requestId": request_id,
+                    }
 
-            # POST and wait for Mercury response
-            wrapped_response = await self._send_kms_request(request_id, wrapped)
+                    # Wrap with ephemeral key (dir + A256GCM — key is CEK directly)
+                    wrapped = _jwe_encrypt(
+                        plaintext=json.dumps(retrieve_body).encode(),
+                        key=self._ephemeral_key,
+                        alg="dir",
+                        enc="A256GCM",
+                    )
 
-            # Unwrap response
-            response_body = _unwrap_kms_response(wrapped_response, self._ephemeral_key)
-            response_data = json.loads(response_body)
+                    # POST and wait for Mercury response
+                    wrapped_response = await self._send_kms_request(request_id, wrapped)
 
-            # Extract the content key
-            key_data = (
-                response_data.get("body", {}).get("key", {}).get("jwk")
-                or response_data.get("key", {}).get("jwk")
-            )
-            if (
-                not key_data
-                and "body" in response_data
-                and "key" in response_data["body"]
-            ):
-                key_obj = response_data["body"]["key"]
-                key_data = key_obj["jwk"] if isinstance(key_obj, dict) and "jwk" in key_obj else key_obj
+                    # Unwrap response
+                    response_body = _unwrap_kms_response(wrapped_response, self._ephemeral_key)
+                    response_data = json.loads(response_body)
 
-            if not key_data:
-                raise KmsError("No key found in KMS response")
+                    # Extract the content key
+                    key_data = (
+                        response_data.get("body", {}).get("key", {}).get("jwk")
+                        or response_data.get("key", {}).get("jwk")
+                    )
+                    if (
+                        not key_data
+                        and "body" in response_data
+                        and "key" in response_data["body"]
+                    ):
+                        key_obj = response_data["body"]["key"]
+                        key_data = key_obj["jwk"] if isinstance(key_obj, dict) and "jwk" in key_obj else key_obj
 
-            if isinstance(key_data, str):
-                key_data = json.loads(key_data)
+                    if not key_data:
+                        raise KmsError("No key found in KMS response")
 
-            content_key = jwk.JWK(**key_data)
+                    if isinstance(key_data, str):
+                        key_data = json.loads(key_data)
 
-            # Bound key cache size
-            if len(self._key_cache) > 100:
-                self._logger.warning(f"Key cache size exceeded (size={len(self._key_cache)}), clearing cache")
-                self._key_cache.clear()
+                    content_key = jwk.JWK(**key_data)
 
-            self._key_cache[key_uri] = content_key
-            self._logger.info(f"Key retrieved and cached: {key_uri}")
-            return content_key
+                    # Bound key cache size
+                    if len(self._key_cache) > 100:
+                        self._logger.warning(f"Key cache size exceeded (size={len(self._key_cache)}), clearing cache")
+                        self._key_cache.clear()
+
+                    self._key_cache[key_uri] = content_key
+                    self._logger.info(f"Key retrieved and cached: {key_uri}")
+                    self._cb_reset()
+                    return content_key
+                except KmsError as exc:
+                    if attempt < max_attempts and self._is_retryable_kms_error(exc):
+                        self._logger.warning(
+                            f"KMS key fetch failed (attempt {attempt}/{max_attempts}), retrying in 1s: {exc}"
+                        )
+                        await asyncio.sleep(1.0)
+                        continue
+                    self._cb_record_failure()
+                    raise
 
         except KmsError:
             raise
         except Exception as exc:
+            self._cb_record_failure()
             raise KmsError(f"Failed to get key: {exc}") from exc
 
     async def _send_kms_request(self, request_id: str, wrapped: str) -> str:
@@ -354,6 +384,26 @@ class KmsClient:
             return True
         buffer = timedelta(seconds=30)
         return datetime.now(timezone.utc) > (self._context_expiration - buffer)
+
+    def _is_retryable_kms_error(self, error: Exception) -> bool:
+        """Check if a KMS error is retryable (transient failure)."""
+        msg = str(error).lower()
+        return "timed out" in msg or "http request failed" in msg
+
+    def _cb_reset(self) -> None:
+        """Reset circuit breaker to closed state (KMS recovered)."""
+        if self._cb_state != "closed":
+            self._logger.info("KMS circuit breaker closed — KMS recovered")
+        self._cb_state = "closed"
+        self._cb_failures = 0
+
+    def _cb_record_failure(self) -> None:
+        """Record a KMS failure and update circuit breaker state."""
+        self._cb_failures += 1
+        self._cb_last_failure = time.monotonic()
+        if self._cb_failures >= CB_FAILURE_THRESHOLD:
+            self._cb_state = "open"
+            self._logger.warning(f"KMS circuit breaker opened after {self._cb_failures} consecutive failures")
 
 
 class _PendingRequest:

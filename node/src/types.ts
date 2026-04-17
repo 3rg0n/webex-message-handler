@@ -57,6 +57,8 @@ export interface WebexMessageHandlerConfig {
   reconnectBackoffMax?: number;
   /** Max reconnect attempts before giving up (default: 10) */
   maxReconnectAttempts?: number;
+  /** Optional metrics callback for timing events (no overhead if not set) */
+  metricsCallback?: MetricsCallback;
 }
 
 // --- Person Info ---
@@ -239,6 +241,21 @@ export interface HandlerStatus {
   /** Current auto-reconnect attempt number (0 if not reconnecting). */
   reconnectAttempt: number;
 }
+
+// --- Metrics ---
+
+export interface MetricsEvent {
+  /** Metric name: "connect", "kms_fetch", or "decrypt". */
+  name: string;
+  /** Duration in milliseconds. */
+  durationMs: number;
+  /** Whether the operation succeeded. */
+  success: boolean;
+  /** Optional context metadata (e.g., key URI for kms_fetch). */
+  metadata?: Record<string, string>;
+}
+
+export type MetricsCallback = (event: MetricsEvent) => void;
 
 // --- Events ---
 

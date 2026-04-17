@@ -29,6 +29,8 @@ interface PendingRequest {
 }
 
 const KMS_RESPONSE_TIMEOUT = 30000;
+const CB_FAILURE_THRESHOLD = 3;
+const CB_COOLDOWN_MS = 30000;
 
 export class KmsClient {
   private token: string;
@@ -48,6 +50,11 @@ export class KmsClient {
 
   // Mutex to serialize KMS requests and ensure FIFO is safe
   private _kmsRequestMutex: Promise<void> = Promise.resolve();
+
+  // Circuit breaker state
+  private _cbState: 'closed' | 'open' | 'half-open' = 'closed';
+  private _cbFailures: number = 0;
+  private _cbLastFailure: number = 0;
 
   constructor(config: KmsClientConfig) {
     this.token = config.token;
@@ -229,6 +236,19 @@ export class KmsClient {
         return cachedKey;
       }
 
+      // Check circuit breaker state
+      if (this._cbState === 'open') {
+        const timeSinceFailure = Date.now() - this._cbLastFailure;
+        if (timeSinceFailure >= CB_COOLDOWN_MS) {
+          // Transition to half-open
+          this._cbState = 'half-open';
+          this.logger.info('KMS circuit breaker transitioned to half-open — attempting recovery');
+        } else {
+          // Still open, fail fast
+          throw new KmsError('KMS circuit breaker is open — failing fast');
+        }
+      }
+
       // Check if context is expired (requires re-initialization without lock first)
       if (this.isContextExpired()) {
         this.logger.info('Context expired, re-initializing');
@@ -245,42 +265,58 @@ export class KmsClient {
           throw new KmsError('KMS context not initialized');
         }
 
-        // Create and wrap retrieve request
-        const request = new KMS.Request({
-          method: 'retrieve',
-          uri: keyUri,
-        });
-        await request.wrap(this.context);
+        const MAX_KMS_ATTEMPTS = 2;
+        for (let attempt = 1; attempt <= MAX_KMS_ATTEMPTS; attempt++) {
+          try {
+            // Create and wrap retrieve request
+            const request = new KMS.Request({
+              method: 'retrieve',
+              uri: keyUri,
+            });
+            await request.wrap(this.context);
 
-        // POST and wait for response via Mercury
-        const wrappedKeyResponse = await this._sendKmsRequest(
-          request.requestId,
-          request.wrapped
-        );
+            // POST and wait for response via Mercury
+            const wrappedKeyResponse = await this._sendKmsRequest(
+              request.requestId,
+              request.wrapped
+            );
 
-        // Unwrap response
-        const response = new KMS.Response(wrappedKeyResponse);
-        await response.unwrap(this.context);
+            // Unwrap response
+            const response = new KMS.Response(wrappedKeyResponse);
+            await response.unwrap(this.context);
 
-        const keyObject = response.body.key;
-        if (!keyObject) {
-          throw new KmsError('No key found in KMS response');
+            const keyObject = response.body.key;
+            if (!keyObject) {
+              throw new KmsError('No key found in KMS response');
+            }
+
+            // Convert to jose key, cache, and return
+            const joseKey = await jose.JWK.asKey(keyObject.jwk);
+
+            // Check if cache is full and clear if necessary
+            if (this.keyCache.size > 100) {
+              this.logger.warn('Key cache exceeded 100 entries, clearing cache');
+              this.keyCache.clear();
+            }
+
+            this.keyCache.set(keyUri, joseKey);
+            this.logger.info(`Key retrieved and cached: ${keyUri}`);
+            this._cbReset();
+            return joseKey;
+          } catch (error) {
+            if (attempt < MAX_KMS_ATTEMPTS && this._isRetryableKmsError(error as Error)) {
+              this.logger.warn(`KMS key fetch failed (attempt ${attempt}/${MAX_KMS_ATTEMPTS}), retrying in 1s: ${(error as Error).message}`);
+              await new Promise(r => setTimeout(r, 1000));
+              continue;
+            }
+            throw error;
+          }
         }
-
-        // Convert to jose key, cache, and return
-        const joseKey = await jose.JWK.asKey(keyObject.jwk);
-
-        // Check if cache is full and clear if necessary
-        if (this.keyCache.size > 100) {
-          this.logger.warn('Key cache exceeded 100 entries, clearing cache');
-          this.keyCache.clear();
-        }
-
-        this.keyCache.set(keyUri, joseKey);
-        this.logger.info(`Key retrieved and cached: ${keyUri}`);
-        return joseKey;
+        // unreachable but TypeScript needs it
+        throw new KmsError('KMS key fetch failed after all attempts');
       });
     } catch (error) {
+      this._cbRecordFailure();
       if (error instanceof KmsError) {
         throw error;
       }
@@ -345,5 +381,47 @@ export class KmsClient {
 
     const expirationWithBuffer = new Date(this.contextExpiration.getTime() - 30000);
     return new Date() > expirationWithBuffer;
+  }
+
+  /**
+   * Check if a KMS error is retryable (transient failure).
+   * Returns false for auth errors, validation errors, and other permanent failures.
+   */
+  private _isRetryableKmsError(error: Error): boolean {
+    const msg = error.message.toLowerCase();
+    // Check for transient error indicators
+    if (msg.includes('timed out') || msg.includes('http request failed') || msg.includes('network')) {
+      return true;
+    }
+    // Do not retry permanent failures
+    if (msg.includes('not initialized') || msg.includes('too many pending') || msg.includes('invalid') || msg.includes('authorization') || msg.includes('unauthorized')) {
+      return false;
+    }
+    return false;
+  }
+
+  /**
+   * Reset the circuit breaker to closed state.
+   * Called on successful key retrieval.
+   */
+  private _cbReset(): void {
+    if (this._cbState !== 'closed') {
+      this.logger.info('KMS circuit breaker closed — KMS recovered');
+    }
+    this._cbState = 'closed';
+    this._cbFailures = 0;
+  }
+
+  /**
+   * Record a KMS failure and open the circuit breaker if threshold is reached.
+   * Called when a key fetch request fails after exhausting retries.
+   */
+  private _cbRecordFailure(): void {
+    this._cbFailures++;
+    this._cbLastFailure = Date.now();
+    if (this._cbFailures >= CB_FAILURE_THRESHOLD) {
+      this._cbState = 'open';
+      this.logger.warn(`KMS circuit breaker opened after ${this._cbFailures} consecutive failures`);
+    }
   }
 }

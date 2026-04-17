@@ -52,6 +52,6 @@ pub use mention_parser::{parse_mentions, ParsedMentions};
 pub use types::{
     AttachmentAction, Config, ConnectionStatus, DecryptedMessage, DeletedMessage,
     DeviceRegistration, FetchFn, FetchRequest, FetchResponse, HandlerStatus, InjectedWebSocket,
-    MembershipActivity, MercuryActivity, MercuryActor, MercuryObject, MercuryParent,
+    MembershipActivity, MetricsCallback, MetricsEvent, MercuryActivity, MercuryActor, MercuryObject, MercuryParent,
     MercuryTarget, NetworkMode, RoomActivity, WebSocketFactory,
 };

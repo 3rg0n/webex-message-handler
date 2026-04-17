@@ -81,6 +81,9 @@ type Config struct {
 	// IgnoreSelfMessages filters out messages sent by this bot to prevent loops (default: true).
 	// Set to false explicitly via IgnoreSelfMessagesPtr if you need to receive bot's own messages.
 	IgnoreSelfMessages *bool
+
+	// MetricsCallback is an optional callback for receiving timing metrics (no overhead if not set).
+	MetricsCallback MetricsCallback
 }
 
 // DeviceRegistration holds the result of WDM device registration.
@@ -135,13 +138,13 @@ type MercuryParent struct {
 
 // MercuryActivity represents a conversation activity from Mercury.
 type MercuryActivity struct {
-	ID               string        `json:"id"`
-	Verb             string        `json:"verb"`
-	Actor            MercuryActor  `json:"actor"`
-	Object           MercuryObject `json:"object"`
-	Target           MercuryTarget `json:"target"`
-	Published        string        `json:"published"`
-	EncryptionKeyURL string        `json:"encryptionKeyUrl,omitempty"`
+	ID               string         `json:"id"`
+	Verb             string         `json:"verb"`
+	Actor            MercuryActor   `json:"actor"`
+	Object           MercuryObject  `json:"object"`
+	Target           MercuryTarget  `json:"target"`
+	Published        string         `json:"published"`
+	EncryptionKeyURL string         `json:"encryptionKeyUrl,omitempty"`
 	Parent           *MercuryParent `json:"parent,omitempty"`
 }
 
@@ -305,3 +308,21 @@ type HandlerStatus struct {
 	// ReconnectAttempt is the current auto-reconnect attempt number (0 if not reconnecting).
 	ReconnectAttempt int
 }
+
+// MetricsEvent is a timing metric event.
+type MetricsEvent struct {
+	// Name is the metric name: "connect", "kms_fetch", or "decrypt".
+	Name string
+
+	// DurationMs is the duration in milliseconds.
+	DurationMs float64
+
+	// Success indicates whether the operation succeeded.
+	Success bool
+
+	// Metadata is optional context (e.g., key URI for kms_fetch).
+	Metadata map[string]string
+}
+
+// MetricsCallback is a callback function for receiving metrics events.
+type MetricsCallback func(event MetricsEvent)

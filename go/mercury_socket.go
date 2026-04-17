@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/coder/websocket"
+	"github.com/google/uuid"
 )
 
 // MercurySocket manages the Mercury WebSocket connection.

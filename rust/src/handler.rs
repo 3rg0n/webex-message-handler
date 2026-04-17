@@ -9,7 +9,7 @@ use crate::message_decryptor::MessageDecryptor;
 use crate::types::{
     AttachmentAction, Config, ConnectionStatus, DecryptedMessage, DeletedMessage,
     DeviceRegistration, FetchRequest, FetchResponse, HandlerStatus, MembershipActivity,
-    MercuryActivity, NetworkMode, RoomActivity,
+    MetricsEvent, MercuryActivity, NetworkMode, RoomActivity,
 };
 use std::collections::HashMap;
 use std::future::Future;
@@ -148,8 +148,9 @@ pub struct WebexMessageHandler {
 
     #[allow(dead_code)]
     config: Config,
-    event_tx: mpsc::UnboundedSender<HandlerEvent>,
-    event_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<HandlerEvent>>>>,
+    metrics_callback: Option<Arc<dyn Fn(MetricsEvent) + Send + Sync>>,
+    event_tx: mpsc::Sender<HandlerEvent>,
+    event_rx: Arc<Mutex<Option<mpsc::Receiver<HandlerEvent>>>>,
 }
 
 impl WebexMessageHandler {
@@ -206,7 +207,7 @@ impl WebexMessageHandler {
             config.max_reconnect_attempts,
         );
 
-        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let (event_tx, event_rx) = mpsc::channel(config.event_channel_capacity);
 
         let ignore_self_messages = config.ignore_self_messages;
 
@@ -223,6 +224,7 @@ impl WebexMessageHandler {
             ignore_self_messages,
             bot_person_id: Arc::new(Mutex::new(None)),
             recent_activity_ids: Arc::new(Mutex::new(HashMap::new())),
+            metrics_callback: config.metrics_callback.clone(),
             config,
             event_tx,
             event_rx: Arc::new(Mutex::new(Some(event_rx))),
@@ -230,8 +232,21 @@ impl WebexMessageHandler {
     }
 
     /// Take the event receiver. Can only be called once.
-    pub async fn take_event_rx(&self) -> Option<mpsc::UnboundedReceiver<HandlerEvent>> {
+    /// Returns a bounded receiver with capacity configured in Config::event_channel_capacity.
+    pub async fn take_event_rx(&self) -> Option<mpsc::Receiver<HandlerEvent>> {
         self.event_rx.lock().await.take()
+    }
+
+    /// Report a timing metric if callback is set.
+    fn report_metric(&self, name: &str, start: Instant, success: bool, metadata: Option<HashMap<String, String>>) {
+        if let Some(ref callback) = self.metrics_callback {
+            callback(MetricsEvent {
+                name: name.to_string(),
+                duration_ms: start.elapsed().as_secs_f64() * 1000.0,
+                success,
+                metadata,
+            });
+        }
     }
 
     /// Connect to Webex (register device, connect Mercury, init KMS).
@@ -252,6 +267,7 @@ impl WebexMessageHandler {
         info!("Connecting to Webex...");
         *self.connecting.lock().await = true;
 
+        let connect_start = Instant::now();
         let result = self.connect_internal().await;
 
         *self.connecting.lock().await = false;
@@ -260,12 +276,23 @@ impl WebexMessageHandler {
             Ok(()) => {
                 *self.connected.lock().await = true;
                 info!("Connected to Webex");
-                if self.event_tx.send(HandlerEvent::Connected).is_err() {
-                    warn!("Event receiver dropped, cannot send Connected event");
+                self.report_metric("connect", connect_start, true, None);
+                if let Err(e) = self.event_tx.try_send(HandlerEvent::Connected) {
+                    match e {
+                        mpsc::error::TrySendError::Full(_) => {
+                            warn!("Event channel at capacity, dropping Connected event (backpressure)");
+                        }
+                        mpsc::error::TrySendError::Closed(_) => {
+                            warn!("Event receiver dropped, cannot send Connected event");
+                        }
+                    }
                 }
                 Ok(())
             }
-            Err(e) => Err(e),
+            Err(e) => {
+                self.report_metric("connect", connect_start, false, None);
+                Err(e)
+            }
         }
     }
 
@@ -387,6 +414,7 @@ impl WebexMessageHandler {
         let token = self.token.clone();
         let bot_person_id = self.bot_person_id.clone();
         let recent_activity_ids = self.recent_activity_ids.clone();
+        let metrics_callback = self.metrics_callback.clone();
 
         tokio::spawn(async move {
             let mut sweep_interval = tokio::time::interval(Duration::from_secs(30));
@@ -408,11 +436,12 @@ impl WebexMessageHandler {
                         let kms_client_clone = kms_client.clone();
                         let event_tx_clone = event_tx.clone();
                         let bot_person_id = bot_person_id.clone();
+                        let metrics_callback = metrics_callback.clone();
                         tokio::spawn(async move {
                             let mut kms_guard = kms_client_clone.lock().await;
                             if let Some(ref mut kms) = *kms_guard {
                                 let bot_id = bot_person_id.lock().await.clone();
-                                Self::handle_activity_static(kms, &activity, &event_tx_clone, bot_id.as_deref()).await;
+                                Self::handle_activity_static(kms, &activity, &event_tx_clone, bot_id.as_deref(), metrics_callback).await;
                             } else {
                                 warn!("Received activity but KMS client not initialized");
                             }
@@ -450,23 +479,23 @@ impl WebexMessageHandler {
                         }
 
                         *connected.lock().await = true;
-                        if event_tx.send(HandlerEvent::Connected).is_err() {
+                        if event_tx.send(HandlerEvent::Connected).await.is_err() {
                             warn!("Event receiver dropped, cannot send Connected event");
                         }
                     }
                     MercuryEvent::Disconnected(reason) => {
                         *connected.lock().await = false;
-                        if event_tx.send(HandlerEvent::Disconnected(reason)).is_err() {
+                        if event_tx.send(HandlerEvent::Disconnected(reason)).await.is_err() {
                             warn!("Event receiver dropped, cannot send Disconnected event");
                         }
                     }
                     MercuryEvent::Reconnecting(attempt) => {
-                        if event_tx.send(HandlerEvent::Reconnecting(attempt)).is_err() {
+                        if event_tx.send(HandlerEvent::Reconnecting(attempt)).await.is_err() {
                             warn!("Event receiver dropped, cannot send Reconnecting event");
                         }
                     }
                     MercuryEvent::Error(msg) => {
-                        if event_tx.send(HandlerEvent::Error(msg)).is_err() {
+                        if event_tx.send(HandlerEvent::Error(msg)).await.is_err() {
                             warn!("Event receiver dropped, cannot send Error event");
                         }
                     }
@@ -486,14 +515,24 @@ impl WebexMessageHandler {
     async fn handle_activity_static(
         kms: &mut KmsClient,
         activity: &MercuryActivity,
-        event_tx: &mpsc::UnboundedSender<HandlerEvent>,
+        event_tx: &mpsc::Sender<HandlerEvent>,
         bot_person_id: Option<&str>,
+        metrics_callback: Option<Arc<dyn Fn(MetricsEvent) + Send + Sync>>,
     ) {
         // message:created or message:updated — verb=post/update + objectType=comment
         if (activity.verb == "post" || activity.verb == "update") && activity.object.object_type == "comment" {
             let mut decryptor = MessageDecryptor::new(kms);
+            let decrypt_start = Instant::now();
             match decryptor.decrypt_activity(activity).await {
                 Ok(decrypted) => {
+                    if let Some(ref callback) = metrics_callback {
+                        callback(MetricsEvent {
+                            name: "decrypt".to_string(),
+                            duration_ms: decrypt_start.elapsed().as_secs_f64() * 1000.0,
+                            success: true,
+                            metadata: None,
+                        });
+                    }
                     let mentions = parse_mentions(decrypted.object.content.as_deref());
                     let msg = DecryptedMessage {
                         id: decrypted.id.clone(),
@@ -528,13 +567,21 @@ impl WebexMessageHandler {
                     } else {
                         HandlerEvent::MessageCreated(msg)
                     };
-                    if event_tx.send(event).is_err() {
+                    if event_tx.send(event).await.is_err() {
                         warn!("Event receiver dropped, cannot send message event");
                     }
                 }
                 Err(e) => {
+                    if let Some(ref callback) = metrics_callback {
+                        callback(MetricsEvent {
+                            name: "decrypt".to_string(),
+                            duration_ms: decrypt_start.elapsed().as_secs_f64() * 1000.0,
+                            success: false,
+                            metadata: None,
+                        });
+                    }
                     error!("Error decrypting activity: {e}");
-                    if event_tx.send(HandlerEvent::Error(e.to_string())).is_err() {
+                    if event_tx.send(HandlerEvent::Error(e.to_string())).await.is_err() {
                         warn!("Event receiver dropped, cannot send Error event");
                     }
                 }
@@ -548,7 +595,7 @@ impl WebexMessageHandler {
                 message_id: activity.object.id.clone(),
                 room_id: activity.target.id.clone(),
                 person_id: activity.actor.id.clone(),
-            })).is_err() {
+            })).await.is_err() {
                 warn!("Event receiver dropped, cannot send MessageDeleted event");
             }
             return;
@@ -569,7 +616,7 @@ impl WebexMessageHandler {
                 room_type: infer_room_type(activity),
                 raw: activity.clone(),
             });
-            if event_tx.send(event).is_err() {
+            if event_tx.send(event).await.is_err() {
                 warn!("Event receiver dropped, cannot send MembershipCreated event");
             }
             return;
@@ -587,7 +634,7 @@ impl WebexMessageHandler {
                 created: activity.published.clone(),
                 raw: activity.clone(),
             });
-            if event_tx.send(event).is_err() {
+            if event_tx.send(event).await.is_err() {
                 warn!("Event receiver dropped, cannot send AttachmentActionCreated event");
             }
             return;
@@ -611,7 +658,7 @@ impl WebexMessageHandler {
             } else {
                 HandlerEvent::RoomUpdated(ra)
             };
-            if event_tx.send(event).is_err() {
+            if event_tx.send(event).await.is_err() {
                 warn!("Event receiver dropped, cannot send room event");
             }
         }

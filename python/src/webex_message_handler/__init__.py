@@ -28,6 +28,8 @@ from .types import (
     HandlerStatus,
     InjectedWebSocket,
     MembershipActivity,
+    MetricsCallback,
+    MetricsEvent,
     MercuryActivity,
     MercuryActor,
     MercuryEnvelope,
@@ -88,4 +90,7 @@ __all__ = [
     "FetchFunction",
     "InjectedWebSocket",
     "WebSocketFactory",
+    # Metrics types
+    "MetricsEvent",
+    "MetricsCallback",
 ]
