@@ -159,6 +159,7 @@ Creates a new handler. Config fields:
 | `PongTimeout` | `float64` | `14` | Pong timeout (seconds) |
 | `ReconnectBackoffMax` | `float64` | `32` | Max reconnect backoff (seconds) |
 | `MaxReconnectAttempts` | `int` | `10` | Max reconnect attempts |
+| `MetricsCallback` | `MetricsCallback` | `nil` | Optional callback for timing metrics (`connect`, `decrypt` events) |
 
 ### Methods
 

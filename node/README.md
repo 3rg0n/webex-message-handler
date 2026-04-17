@@ -202,11 +202,14 @@ new WebexMessageHandler(config: WebexMessageHandlerConfig)
 | `pongTimeout` | `number` | `14000` | Pong response timeout (ms) |
 | `reconnectBackoffMax` | `number` | `32000` | Max reconnect backoff (ms) |
 | `maxReconnectAttempts` | `number` | `10` | Max reconnect attempts |
+| `metricsCallback` | `MetricsCallback` | undefined | Optional callback for timing metrics (`connect`, `decrypt` events) |
 
 #### Methods
 
 - **`connect(): Promise<void>`** — Connects to Webex (registers device, initializes KMS, opens Mercury WebSocket)
 - **`disconnect(): Promise<void>`** — Gracefully disconnects (closes WebSocket, unregisters device)
+- **`reconnect(newToken): Promise<void>`** — Update token and re-establish connection
+- **`status(): HandlerStatus`** — Returns structured health check of all subsystems
 
 #### Properties
 

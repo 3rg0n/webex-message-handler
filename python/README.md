@@ -193,6 +193,7 @@ WebexMessageHandler(config: WebexMessageHandlerConfig)
 | `pong_timeout` | `float` | `14.0` | Pong response timeout (seconds) |
 | `reconnect_backoff_max` | `float` | `32.0` | Max reconnect backoff (seconds) |
 | `max_reconnect_attempts` | `int` | `10` | Max reconnect attempts |
+| `metrics_callback` | `MetricsCallback \| None` | `None` | Optional callback for timing metrics (`connect`, `decrypt` events) |
 
 #### Methods
 
