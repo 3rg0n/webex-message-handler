@@ -122,6 +122,7 @@ class WebexMessageHandler:
             pong_timeout=config.pong_timeout,
             reconnect_backoff_max=config.reconnect_backoff_max,
             max_reconnect_attempts=config.max_reconnect_attempts,
+            reconnect_stability_seconds=config.reconnect_stability_seconds,
         )
 
         self._ignore_self_messages = config.ignore_self_messages
