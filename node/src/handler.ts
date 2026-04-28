@@ -403,14 +403,15 @@ export class WebexMessageHandler
     }
 
     // message:created or message:updated.
-    // Normal text messages: verb=post/update + objectType=comment.
-    // File-share messages (with or without accompanying text): verb=share +
-    // objectType=comment. Webex Mercury uses a different verb to signal
-    // that the activity carries file URLs; without this branch, every
-    // attachment message would be dropped silently.
+    //   Text messages:                 verb=post/update   + objectType=comment
+    //   File-share (with/without text): verb=share/update + objectType=content
+    // Webex Mercury uses distinct verb+objectType pairs for plain messages
+    // vs. file-share messages. Without accepting verb=share AND
+    // objectType=content, every attachment message is dropped silently.
+    // See PR description for captured wire samples.
     if (
       (activity.verb === 'post' || activity.verb === 'update' || activity.verb === 'share') &&
-      activity.object?.objectType === 'comment'
+      (activity.object?.objectType === 'comment' || activity.object?.objectType === 'content')
     ) {
       if (!this.messageDecryptor) {
         this.logger.warn('Received activity but decryptor not initialized');

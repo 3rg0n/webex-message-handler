@@ -475,12 +475,22 @@ class WebexMessageHandler:
             self._sweep_old_activity_ids()
 
         # message:created or message:updated.
-        # Normal text messages: verb=post/update + objectType=comment.
-        # File-share messages (with or without accompanying text): verb=share +
-        # objectType=comment. Webex Mercury uses a different verb to signal
-        # that the activity carries file URLs; without this branch, every
-        # attachment message would be dropped silently.
-        if activity.verb in ("post", "update", "share") and activity.object.object_type == "comment":
+        #   Text messages:                 verb=post/update   + objectType=comment
+        #   File-share (with/without text): verb=share/update + objectType=content
+        # Webex Mercury uses distinct verb+object-type pairs for plain
+        # messages vs. file-share messages. Captured from the wire
+        # against a real bot account on 2026-04-28:
+        #   DM + text:             verb=post   objectType=comment
+        #   DM + .txt + caption:   verb=share  objectType=content   (file activity)
+        #                       -> verb=update objectType=content   (caption edit)
+        #   Group + @mention text: verb=post   objectType=comment
+        #   Group + .txt attach:   verb=share  objectType=content
+        # Without accepting verb=share AND objectType=content, every
+        # attachment message is dropped silently.
+        if (
+            activity.verb in ("post", "update", "share")
+            and activity.object.object_type in ("comment", "content")
+        ):
             if not self._message_decryptor:
                 self._logger.warning("Received activity but decryptor not initialized")
                 return
