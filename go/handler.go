@@ -553,8 +553,13 @@ func (h *WebexMessageHandler) handleActivity(ctx context.Context, activity Mercu
 	}
 	h.activityIDsMu.Unlock()
 
-	// message:created or message:updated — verb=post/update + objectType=comment
-	if (activity.Verb == "post" || activity.Verb == "update") && activity.Object.ObjectType == "comment" {
+	// message:created or message:updated.
+	// Normal text messages: verb=post/update + objectType=comment.
+	// File-share messages (with or without accompanying text): verb=share +
+	// objectType=comment. Webex Mercury uses a different verb to signal that
+	// the activity carries file URLs; without this branch, every attachment
+	// message would be dropped silently.
+	if (activity.Verb == "post" || activity.Verb == "update" || activity.Verb == "share") && activity.Object.ObjectType == "comment" {
 		h.mu.RLock()
 		messageDecryptor := h.messageDecryptor
 		h.mu.RUnlock()

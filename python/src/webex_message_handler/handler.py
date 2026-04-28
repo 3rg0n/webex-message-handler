@@ -474,8 +474,13 @@ class WebexMessageHandler:
         if len(self._recent_activity_ids) % 100 == 0:
             self._sweep_old_activity_ids()
 
-        # message:created or message:updated — verb=post/update + objectType=comment
-        if activity.verb in ("post", "update") and activity.object.object_type == "comment":
+        # message:created or message:updated.
+        # Normal text messages: verb=post/update + objectType=comment.
+        # File-share messages (with or without accompanying text): verb=share +
+        # objectType=comment. Webex Mercury uses a different verb to signal
+        # that the activity carries file URLs; without this branch, every
+        # attachment message would be dropped silently.
+        if activity.verb in ("post", "update", "share") and activity.object.object_type == "comment":
             if not self._message_decryptor:
                 self._logger.warning("Received activity but decryptor not initialized")
                 return

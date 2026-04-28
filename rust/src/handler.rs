@@ -519,8 +519,13 @@ impl WebexMessageHandler {
         bot_person_id: Option<&str>,
         metrics_callback: Option<Arc<dyn Fn(MetricsEvent) + Send + Sync>>,
     ) {
-        // message:created or message:updated — verb=post/update + objectType=comment
-        if (activity.verb == "post" || activity.verb == "update") && activity.object.object_type == "comment" {
+        // message:created or message:updated.
+        // Normal text messages: verb=post/update + objectType=comment.
+        // File-share messages (with or without accompanying text):
+        // verb=share + objectType=comment. Webex Mercury uses a different
+        // verb to signal that the activity carries file URLs; without
+        // this branch, every attachment message would be dropped silently.
+        if (activity.verb == "post" || activity.verb == "update" || activity.verb == "share") && activity.object.object_type == "comment" {
             let mut decryptor = MessageDecryptor::new(kms);
             let decrypt_start = Instant::now();
             match decryptor.decrypt_activity(activity).await {
