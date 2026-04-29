@@ -273,3 +273,137 @@ class TestFlapStormTripsMaxAttempts:
             socket._handle_close(1000, "")  # type: ignore[attr-defined]
 
         assert "max-attempts-exceeded" in disconnected_reasons
+
+
+class TestReconnectLoopSurvivesRepeatedFailures:
+    """Regression for the silent-hang that replaced the flap-storm bug.
+
+    Prior to this fix, `_reconnect` used a recursive `await self._reconnect()`
+    on failure. The outer call still held `_reconnecting=True`, so the recursive
+    entry returned immediately under the guard — no retry was ever scheduled.
+    A single failed reconnect put the handler into a silent-hang state: process
+    alive, socket dead, no further attempts, no `disconnected` emitted, no
+    systemd restart. Observed in production on 2026-04-28 (6h 36m outage).
+    """
+
+    async def test_persistent_failure_advances_attempts_to_max(self) -> None:
+        """One _reconnect() call, every _connect_internal raises, must drive
+        attempts all the way to max-attempts-exceeded on its own."""
+        ws = FakeWebSocket()
+        socket = _make_socket(
+            ws,
+            max_reconnect_attempts=3,
+            reconnect_backoff_max=0.0,
+            reconnect_stability_seconds=60.0,
+        )
+
+        disconnected_reasons: list[str] = []
+        reconnect_attempts: list[int] = []
+        socket.on("disconnected", lambda reason: disconnected_reasons.append(reason))
+        socket.on("reconnecting", lambda attempt: reconnect_attempts.append(attempt))
+
+        async def always_fail() -> None:
+            raise RuntimeError("boom")
+
+        socket._connect_internal = always_fail  # type: ignore[assignment]
+        socket._token = "tok"  # type: ignore[attr-defined]
+        socket._base_url = "wss://mercury.example.com/socket"  # type: ignore[attr-defined]
+
+        await socket._reconnect()  # type: ignore[attr-defined]
+
+        # Each failed attempt emits `reconnecting`, and after max failures the
+        # loop trips `max-attempts-exceeded` on the next iteration.
+        assert reconnect_attempts == [1, 2, 3]
+        assert "max-attempts-exceeded" in disconnected_reasons
+        assert socket._should_reconnect is False  # type: ignore[attr-defined]
+        assert socket._reconnecting is False  # type: ignore[attr-defined]
+
+    async def test_failure_then_success_emits_connected(self) -> None:
+        """First `_connect_internal` raises, second succeeds: the loop must
+        retry, emit `connected`, and arm the stability reset."""
+        ws = FakeWebSocket()
+        socket = _make_socket(
+            ws,
+            max_reconnect_attempts=5,
+            reconnect_backoff_max=0.0,
+            reconnect_stability_seconds=60.0,
+        )
+
+        connected_events: list[Any] = []
+        socket.on("connected", lambda: connected_events.append(True))
+
+        calls = {"n": 0}
+
+        async def flaky_connect() -> None:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("first-attempt-fails")
+            socket._connection_ready = True  # type: ignore[attr-defined]
+            socket._ws = ws  # type: ignore[attr-defined]
+
+        socket._connect_internal = flaky_connect  # type: ignore[assignment]
+        socket._token = "tok"  # type: ignore[attr-defined]
+        socket._base_url = "wss://mercury.example.com/socket"  # type: ignore[attr-defined]
+
+        await socket._reconnect()  # type: ignore[attr-defined]
+
+        assert calls["n"] == 2
+        assert connected_events == [True]
+        # Stability reset must be scheduled so a later idle period clears attempts.
+        assert socket._stability_timer_handle is not None  # type: ignore[attr-defined]
+        assert socket._reconnecting is False  # type: ignore[attr-defined]
+
+    async def test_persistent_failure_reaches_terminal_state_not_silent_hang(
+        self,
+    ) -> None:
+        """After one `_reconnect()` with only failures, the socket must be in
+        a terminal state (either still retrying OR having hit max-attempts),
+        NOT in the silent-hang shape — `_reconnecting=False` with
+        `_should_reconnect=True` and no task in flight.
+
+        That exact shape is what the prior recursive-await bug produced: the
+        outer call cleared `_reconnecting` in its `finally`, the recursive
+        retry was swallowed by the guard, and nothing else was ever scheduled.
+        """
+        ws = FakeWebSocket()
+        socket = _make_socket(
+            ws,
+            max_reconnect_attempts=2,
+            reconnect_backoff_max=0.0,
+            reconnect_stability_seconds=60.0,
+        )
+
+        async def always_fail() -> None:
+            raise RuntimeError("boom")
+
+        socket._connect_internal = always_fail  # type: ignore[assignment]
+        socket._token = "tok"  # type: ignore[attr-defined]
+        socket._base_url = "wss://mercury.example.com/socket"  # type: ignore[attr-defined]
+
+        await socket._reconnect()  # type: ignore[attr-defined]
+
+        # Drain any queued callbacks so `all_tasks()` is quiescent.
+        for _ in range(5):
+            await asyncio.sleep(0)
+
+        leftover_reconnect_tasks = [
+            t
+            for t in asyncio.all_tasks()
+            if t is not asyncio.current_task()
+            and not t.done()
+            and "_reconnect" in (t.get_coro().__qualname__ if t.get_coro() else "")
+        ]
+
+        # Silent-hang detector: if we're not reconnecting, have no task in
+        # flight, but `_should_reconnect` is still True — the caller thinks
+        # recovery is in progress when nothing is actually happening.
+        silent_hang = (
+            socket._reconnecting is False  # type: ignore[attr-defined]
+            and not leftover_reconnect_tasks
+            and socket._should_reconnect is True  # type: ignore[attr-defined]
+        )
+        assert not silent_hang, (
+            "MercurySocket is in silent-hang state: should_reconnect=True but "
+            "no reconnect in progress and no task scheduled. This is the "
+            f"exact shape of the 2026-04-28 outage. attempts={socket._reconnect_attempts}"  # type: ignore[attr-defined]
+        )

@@ -322,46 +322,54 @@ class MercurySocket:
             self._emit("disconnected", "manual")
 
     async def _reconnect(self) -> None:
+        # Single-entry guarded loop. Earlier revisions used a recursive
+        # `await self._reconnect()` on failure, but the guard below made that
+        # recursion a no-op: the inner call saw `_reconnecting=True` and
+        # returned immediately, leaving no task scheduled and the socket
+        # silently abandoned after a single failed attempt.
         if self._reconnecting:
             return
         self._reconnecting = True
         try:
-            if not self._should_reconnect:
-                return
+            while self._should_reconnect:
+                if self._reconnect_attempts >= self._max_reconnect_attempts:
+                    self._logger.error(
+                        f"Max reconnection attempts ({self._max_reconnect_attempts}) exceeded"
+                    )
+                    self._should_reconnect = False
+                    self._emit("disconnected", "max-attempts-exceeded")
+                    return
 
-            if self._reconnect_attempts >= self._max_reconnect_attempts:
-                self._logger.error(f"Max reconnection attempts ({self._max_reconnect_attempts}) exceeded")
-                self._should_reconnect = False
-                self._emit("disconnected", "max-attempts-exceeded")
-                return
+                self._reconnect_attempts += 1
+                delay = min(
+                    1.0 * math.pow(2, self._reconnect_attempts - 1),
+                    self._reconnect_backoff_max,
+                )
 
-            self._reconnect_attempts += 1
-            delay = min(1.0 * math.pow(2, self._reconnect_attempts - 1), self._reconnect_backoff_max)
+                self._logger.info(
+                    f"Reconnecting (attempt {self._reconnect_attempts}/{self._max_reconnect_attempts}) in {delay}s"
+                )
+                self._emit("reconnecting", self._reconnect_attempts)
 
-            self._logger.info(
-                f"Reconnecting (attempt {self._reconnect_attempts}/{self._max_reconnect_attempts}) in {delay}s"
-            )
-            self._emit("reconnecting", self._reconnect_attempts)
+                await asyncio.sleep(delay)
 
-            await asyncio.sleep(delay)
+                if not self._should_reconnect:
+                    return
 
-            if not self._should_reconnect:
-                return
-
-            try:
-                await self._connect_internal()
-                self._logger.info("Successfully reconnected to Mercury")
-                # Only reset the attempts counter once the connection stays up
-                # for _reconnect_stability_seconds. A flap storm (repeated
-                # short-lived "successful" reconnects) would otherwise reset
-                # the counter on every cycle and never trip max-attempts,
-                # leaving the handler stuck in an infinite reconnect loop.
-                self._schedule_attempts_reset()
-                self._emit("connected")
-            except Exception as exc:
-                self._logger.error(f"Reconnection failed: {exc}")
-                if self._should_reconnect:
-                    await self._reconnect()
+                try:
+                    await self._connect_internal()
+                    self._logger.info("Successfully reconnected to Mercury")
+                    # Only reset the attempts counter once the connection stays up
+                    # for _reconnect_stability_seconds. A flap storm (repeated
+                    # short-lived "successful" reconnects) would otherwise reset
+                    # the counter on every cycle and never trip max-attempts,
+                    # leaving the handler stuck in an infinite reconnect loop.
+                    self._schedule_attempts_reset()
+                    self._emit("connected")
+                    return
+                except Exception as exc:
+                    self._logger.error(f"Reconnection failed: {exc}")
+                    # Fall through; loop re-checks max-attempts and backs off.
         finally:
             self._reconnecting = False
 
