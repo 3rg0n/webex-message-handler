@@ -49,7 +49,7 @@
     "node-jose": "^2.2.0",
     "node-kms": "^0.4.1",
     "undici": "^7.24.6",
-    "uuid": "^11.1.0"
+    "uuid": "^14.0.0"
   },
   "pnpm": {
     "overrides": {
