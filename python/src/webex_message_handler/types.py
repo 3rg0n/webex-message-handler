@@ -188,6 +188,9 @@ class MercuryActivity:
     object: MercuryObject
     target: MercuryTarget
     published: str
+    url: str | None = None
+    """Full Conversation-service activity URL, when present on the raw activity."""
+
     encryption_key_url: str | None = None
     parent: MercuryParent | None = None
 
@@ -226,6 +229,11 @@ class DecryptedMessage:
 
     created: str
     """ISO 8601 timestamp."""
+
+    url: str | None = None
+    """Full Conversation-service activity URL, when present on the raw Mercury
+    activity (e.g. for an outbound "acknowledge" read-receipt). None if Mercury
+    did not include it."""
 
     parent_id: str | None = None
     """Parent activity UUID for threaded replies. None if not a thread reply."""

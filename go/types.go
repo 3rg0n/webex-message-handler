@@ -139,6 +139,7 @@ type MercuryParent struct {
 // MercuryActivity represents a conversation activity from Mercury.
 type MercuryActivity struct {
 	ID               string         `json:"id"`
+	URL              string         `json:"url,omitempty"`
 	Verb             string         `json:"verb"`
 	Actor            MercuryActor   `json:"actor"`
 	Object           MercuryObject  `json:"object"`
@@ -161,6 +162,11 @@ type MercuryEnvelope struct {
 type DecryptedMessage struct {
 	// ID is the Mercury activity UUID. Works as parentId for threaded replies.
 	ID string
+
+	// URL is the full Conversation-service activity URL, when present on the
+	// raw Mercury activity (e.g. for an outbound "acknowledge" read-receipt).
+	// Empty if Mercury did not include it.
+	URL string
 
 	// ParentID is the parent activity UUID for threaded replies. Empty if not a thread reply.
 	ParentID string

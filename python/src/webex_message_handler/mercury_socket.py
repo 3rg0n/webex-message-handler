@@ -421,6 +421,7 @@ def _parse_activity(raw: dict[str, Any]) -> MercuryActivity:
             tags=target_raw.get("tags", []),
         ),
         published=raw.get("published", ""),
+        url=raw.get("url"),
         encryption_key_url=raw.get("encryptionKeyUrl"),
         parent=parent,
     )

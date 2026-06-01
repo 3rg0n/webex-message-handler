@@ -149,6 +149,7 @@ enum HandlerEvent {
 ```rust
 pub struct DecryptedMessage {
     pub id: String,
+    pub url: Option<String>,            // Conversation-service activity URL (when present)
     pub parent_id: Option<String>,      // Parent activity UUID (threaded replies)
     pub room_id: String,
     pub person_id: String,
@@ -243,6 +244,27 @@ This library provides **at-most-once** delivery semantics:
 ## API
 
 See [API.md](API.md) for the full API reference.
+
+### Outbound calls from wrappers
+
+This library is **inbound-only** — it never makes outbound calls. If your wrapper
+needs to send something back to Webex (e.g. a Conversation-service read-receipt),
+discover the service base URL from the WDM catalog the library already holds
+rather than hardcoding cluster hostnames (which vary across clusters and orgs):
+
+```rust
+// Resolve a cluster-correct service URL after connect()
+if let Some(conv_url) = handler.service_url("conversationServiceUrl").await {
+    // Build your outbound acknowledge/activity request against conv_url.
+    // The activity URL needed for the acknowledge object is msg.url.
+}
+
+// Or grab the whole (owned) registration:
+let reg = handler.device_registration().await; // None before connect()
+```
+
+- `device_registration() -> Option<DeviceRegistration>` — clone of the WDM registration
+- `service_url(name) -> Option<String>` — look up a single WDM service URL by name
 
 ## Architecture
 

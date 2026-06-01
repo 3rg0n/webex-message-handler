@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
@@ -208,7 +209,16 @@ class WebexMessageHandler:
     ) -> WebSocketFactory:
         """Create WebSocket adapter using native aiohttp."""
         async def ws_factory(url: str) -> InjectedWebSocket:
-            session = aiohttp.ClientSession(connector=connector)
+            # When a shared connector is provided, don't let the session close it
+            # when the WebSocket is rotated on reconnect — otherwise the next HTTP
+            # call (and every subsequent reconnect) fails with "Connector is closed".
+            # When no connector is provided, let the session own (and close) the
+            # auto-created one. Mirrors _create_native_http_adapter's ownership logic.
+            session = aiohttp.ClientSession(
+                connector=connector,
+                connector_owner=connector is None,
+                trust_env=True,
+            )
             ws = await session.ws_connect(url, max_msg_size=1 * 1024 * 1024)  # 1MB
 
             # Attach session for cleanup
@@ -389,6 +399,34 @@ class WebexMessageHandler:
             reconnect_attempt=reconnect_attempt,
         )
 
+    def device_registration(self) -> DeviceRegistration | None:
+        """Return a read-only copy of the WDM registration obtained at connect
+        time, or None if not yet connected.
+
+        This library stays inbound-only — it does not make outbound calls. This
+        accessor exists so wrapper code can perform its own outbound calls (e.g.
+        a Conversation-service read-receipt) using the service catalog the
+        library already holds. Resolve outbound URLs from ``services`` rather
+        than hardcoding cluster hostnames, which vary across clusters and orgs.
+
+        The returned value is a copy: mutating it does not affect internal state.
+        """
+        if self._registration is None:
+            return None
+        return replace(self._registration, services=dict(self._registration.services))
+
+    def service_url(self, name: str) -> str | None:
+        """Return the URL for a named WDM service from the registration's
+        service catalog (e.g. ``"conversationServiceUrl"``), or None if not yet
+        connected or the service is unknown.
+
+        Use this to discover outbound service base URLs instead of hardcoding
+        cluster hostnames. See :meth:`device_registration` for the rationale.
+        """
+        if self._registration is None:
+            return None
+        return self._registration.services.get(name)
+
     async def _fetch_bot_person_id(self) -> None:
         """Fetch the bot's person ID for self-message filtering.
 
@@ -490,6 +528,7 @@ class WebexMessageHandler:
             mentions = parse_mentions(decrypted.object.content)
             message = DecryptedMessage(
                 id=decrypted.id,
+                url=decrypted.url,
                 room_id=decrypted.target.id,
                 person_id=decrypted.actor.id,
                 person_email=decrypted.actor.email_address or "",

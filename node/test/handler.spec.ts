@@ -676,6 +676,72 @@ describe('WebexMessageHandler', () => {
     });
   });
 
+  describe('deviceRegistration accessor', () => {
+    it('should return null before connect', () => {
+      const handler = new WebexMessageHandler({ token: mockToken });
+      expect(handler.deviceRegistration()).toBeNull();
+      expect(handler.serviceUrl('encryptionServiceUrl')).toBeUndefined();
+    });
+
+    it('should return registration and resolve service URLs after connect', async () => {
+      const handler = new WebexMessageHandler({ token: mockToken });
+      await handler.connect();
+
+      const reg = handler.deviceRegistration();
+      expect(reg).not.toBeNull();
+      expect(reg?.userId).toBe('user-123');
+      expect(reg?.services.encryptionServiceUrl).toBe('https://encryption.example.com');
+      expect(handler.serviceUrl('messenger')).toBe('https://messenger.example.com');
+      expect(handler.serviceUrl('nonexistent')).toBeUndefined();
+    });
+
+    it('should return a copy that does not leak into internal state', async () => {
+      const handler = new WebexMessageHandler({ token: mockToken });
+      await handler.connect();
+
+      const reg = handler.deviceRegistration()!;
+      reg.services.encryptionServiceUrl = 'https://evil.example.com';
+      reg.userId = 'tampered';
+
+      const fresh = handler.deviceRegistration()!;
+      expect(fresh.services.encryptionServiceUrl).toBe('https://encryption.example.com');
+      expect(fresh.userId).toBe('user-123');
+    });
+  });
+
+  describe('activity url propagation', () => {
+    it('should propagate the raw activity url onto DecryptedMessage', async () => {
+      const handler = new WebexMessageHandler({ token: mockToken });
+      await handler.connect();
+
+      const messageListener = jest.fn();
+      handler.on('message:created', messageListener);
+
+      const activity: MercuryActivity = {
+        id: 'msg-123',
+        url: 'https://conv-a.wbx2.com/conversation/api/v1/activities/msg-123',
+        verb: 'post',
+        actor: { id: 'person-456', objectType: 'person', emailAddress: 'user@example.com' },
+        object: { id: 'comment-789', objectType: 'comment', displayName: 'Hi', content: '<p>Hi</p>' },
+        target: { id: 'room-101', objectType: 'conversation', tags: ['GROUP'] },
+        published: '2024-01-01T00:00:00Z',
+      };
+
+      mockMessageDecryptor.decryptActivity.mockResolvedValueOnce(activity);
+
+      const mercury = handler['mercurySocket'] as any;
+      mercury.emit('activity', activity);
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(messageListener).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'msg-123',
+          url: 'https://conv-a.wbx2.com/conversation/api/v1/activities/msg-123',
+        })
+      );
+    });
+  });
+
   describe('constructor options', () => {
     it('should pass logger to components', async () => {
       const logger = {

@@ -202,6 +202,27 @@ WebexMessageHandler(config: WebexMessageHandlerConfig)
 - **`await reconnect(new_token)`** — Update token and re-establish connection
 - **`status()`** — Returns `HandlerStatus` health check
 - **`connected`** — `bool` property: whether currently connected
+- **`device_registration()`** — Read-only copy of the WDM registration (`None` before connect)
+- **`service_url(name)`** — Look up a single WDM service URL by name (`None` if unknown)
+
+##### Outbound calls from wrappers
+
+This library is **inbound-only** — it never makes outbound calls. If your wrapper
+needs to send something back to Webex (e.g. a Conversation-service read-receipt),
+discover the service base URL from the WDM catalog the library already holds
+rather than hardcoding cluster hostnames (which vary across clusters and orgs):
+
+```python
+# Resolve a cluster-correct service URL after connect()
+conv_url = handler.service_url("conversationServiceUrl")
+if conv_url:
+    # Build your outbound acknowledge/activity request against conv_url.
+    # The activity URL needed for the acknowledge object is msg.url.
+    ...
+
+# Or grab the whole (read-only) registration:
+reg = handler.device_registration()  # None before connect()
+```
 
 #### Events
 
@@ -225,6 +246,7 @@ WebexMessageHandler(config: WebexMessageHandlerConfig)
 @dataclass
 class DecryptedMessage:
     id: str
+    url: str | None         # Conversation-service activity URL (when present)
     parent_id: str | None   # Parent activity UUID (threaded replies)
     room_id: str
     person_id: str

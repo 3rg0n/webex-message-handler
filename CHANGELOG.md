@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.10] - 2026-06-01
+
+### Added
+- **WDM service catalog accessors** — New read-only accessors expose the WDM
+  registration the library already holds, so wrappers can make their own
+  outbound calls (e.g. a Conversation-service read-receipt) using
+  cluster-correct service URLs instead of hardcoding hostnames:
+  `deviceRegistration()`/`serviceUrl(name)` (Node.js),
+  `device_registration()`/`service_url(name)` (Python),
+  `DeviceRegistration()`/`ServiceURL(name)` (Go),
+  `device_registration()`/`service_url(name)` (Rust). Returned registration is
+  a copy; the library remains inbound-only. (#23, all 4 languages — see
+  [ADR 0001](docs/adr/0001-expose-wdm-service-catalog.md))
+- **Activity `url` field** — `MercuryActivity` and `DecryptedMessage` now carry
+  the Conversation-service activity `url` when Mercury includes it (needed for
+  outbound `acknowledge` activities). (#23, all 4 languages)
+
+### Fixed
+- **Python: shared aiohttp connector closed on reconnect** — the native
+  WebSocket adapter created its `ClientSession` without `connector_owner=False`,
+  so rotating the WebSocket on reconnect closed a caller-provided shared
+  connector. Every subsequent HTTP/WebSocket attempt then failed with
+  "Connector is closed", causing a ~3-minute backoff storm and process restart.
+  The WS adapter now mirrors the HTTP adapter's ownership logic. (#20)
+- **Go: threaded-reply parent never parsed** — `parseActivity` did not read the
+  raw `parent` object, so `DecryptedMessage.ParentID` and
+  `AttachmentAction.MessageID` were always empty in production despite type and
+  handler support. Now parsed via a `parseParent` helper.
+
 ## [0.6.9] - 2026-04-17
 
 ### Added

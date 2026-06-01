@@ -123,6 +123,8 @@ export interface MercuryParent {
 
 export interface MercuryActivity {
   id: string;
+  /** Full Conversation-service activity URL, when present on the raw activity. */
+  url?: string;
   verb: string;
   actor: MercuryActor;
   object: MercuryObject;
@@ -148,6 +150,12 @@ export interface MercuryEnvelope {
 export interface DecryptedMessage {
   /** Mercury activity UUID. Works as parentId for threaded replies. */
   id: string;
+  /**
+   * Full Conversation-service activity URL, when present on the raw Mercury
+   * activity (e.g. for an outbound "acknowledge" read-receipt). Undefined if
+   * Mercury did not include it.
+   */
+  url?: string;
   /** Parent activity UUID for threaded replies. Undefined if not a thread reply. */
   parentId?: string;
   roomId: string;

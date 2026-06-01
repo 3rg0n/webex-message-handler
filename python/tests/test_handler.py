@@ -7,6 +7,7 @@ import pytest
 from webex_message_handler.handler import WebexMessageHandler
 from webex_message_handler.types import (
     DeviceRegistration,
+    FetchRequest,
     MercuryActivity,
     MercuryActor,
     MercuryObject,
@@ -107,6 +108,83 @@ class TestModeValidation:
     def test_rejects_invalid_mode_string(self):
         with pytest.raises(ValueError, match='Invalid mode.*must be "native" or "injected"'):
             _make_handler(mode="invalid")
+
+
+class TestNativeConnectorOwnership:
+    """Regression tests for issue #20: a shared connector must survive WebSocket
+    rotation on reconnect. The WS session must not own (and therefore close) a
+    caller-provided connector."""
+
+    async def test_ws_adapter_does_not_own_shared_connector(self):
+        shared_connector = MagicMock()
+        handler = _make_handler(mode="native", connector=shared_connector)
+
+        captured = {}
+
+        class FakeSession:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+            async def ws_connect(self, *args, **kwargs):
+                return MagicMock()
+
+        with patch("aiohttp.ClientSession", FakeSession):
+            await handler._ws_factory("wss://mercury.example.com/socket")
+
+        # The WS session must not own the shared connector, otherwise closing the
+        # session on reconnect drags the shared connector down with it.
+        assert captured["connector"] is shared_connector
+        assert captured["connector_owner"] is False
+
+    async def test_ws_adapter_owns_auto_created_connector(self):
+        handler = _make_handler(mode="native")  # no connector → auto-created
+
+        captured = {}
+
+        class FakeSession:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+            async def ws_connect(self, *args, **kwargs):
+                return MagicMock()
+
+        with patch("aiohttp.ClientSession", FakeSession):
+            await handler._ws_factory("wss://mercury.example.com/socket")
+
+        # With no shared connector, the session owns the auto-created one and
+        # is responsible for closing it.
+        assert captured["connector"] is None
+        assert captured["connector_owner"] is True
+
+    async def test_http_adapter_does_not_own_shared_connector(self):
+        shared_connector = MagicMock()
+        handler = _make_handler(mode="native", connector=shared_connector)
+
+        captured = {}
+
+        class FakeResponse:
+            status = 200
+
+            async def read(self):
+                return b"{}"
+
+        class FakeSession:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+            async def request(self, *args, **kwargs):
+                return FakeResponse()
+
+            async def close(self):
+                pass
+
+        with patch("aiohttp.ClientSession", FakeSession):
+            await handler._http_do(
+                FetchRequest(url="https://example.com", method="GET", headers={})
+            )
+
+        assert captured["connector"] is shared_connector
+        assert captured["connector_owner"] is False
 
 
 class TestConnect:
@@ -255,6 +333,22 @@ class TestMessageHandling:
         msg = messages[0]
         assert msg.id == "msg-123"
         assert msg.parent_id == "parent-activity-uuid"
+
+    async def test_handle_message_propagates_url(self):
+        handler = _make_handler()
+        handler._message_decryptor = MagicMock()
+        activity = _make_activity(
+            url="https://conv-a.wbx2.com/conversation/api/v1/activities/msg-123",
+        )
+        handler._message_decryptor.decrypt_activity = AsyncMock(return_value=activity)
+
+        messages = []
+        handler.on("message:created", lambda msg: messages.append(msg))
+
+        await handler._handle_activity(activity)
+
+        assert len(messages) == 1
+        assert messages[0].url == "https://conv-a.wbx2.com/conversation/api/v1/activities/msg-123"
 
     async def test_handle_message_deleted(self):
         handler = _make_handler()
@@ -458,3 +552,42 @@ class TestEventSystem:
         handler.on("connected", callback)
         handler.off("connected", callback)
         assert callback not in handler._listeners["connected"]
+
+
+class TestDeviceRegistrationAccessor:
+    """Issue #23: expose the WDM services catalog read-only so wrappers can make
+    outbound calls without hardcoding cluster hostnames."""
+
+    def test_returns_none_before_connect(self):
+        handler = _make_handler()
+        assert handler.device_registration() is None
+        assert handler.service_url("conversationServiceUrl") is None
+
+    def test_returns_registration_after_connect(self):
+        handler = _make_handler()
+        handler._registration = MOCK_REGISTRATION
+
+        reg = handler.device_registration()
+        assert reg is not None
+        assert reg.user_id == "user-123"
+        assert reg.services["encryptionServiceUrl"] == "https://encryption.example.com"
+        assert handler.service_url("messenger") == "https://messenger.example.com"
+        assert handler.service_url("nonexistent") is None
+
+    def test_returned_copy_is_isolated(self):
+        handler = _make_handler()
+        handler._registration = DeviceRegistration(
+            web_socket_url="wss://mercury.example.com/socket",
+            device_url="https://device.example.com",
+            user_id="user-123",
+            services={"encryptionServiceUrl": "https://encryption.example.com"},
+            encryption_service_url="https://encryption.example.com",
+        )
+
+        reg = handler.device_registration()
+        reg.services["encryptionServiceUrl"] = "https://evil.example.com"
+        reg.user_id = "tampered"
+
+        # Internal state must be unaffected by mutating the returned copy.
+        assert handler._registration.services["encryptionServiceUrl"] == "https://encryption.example.com"
+        assert handler._registration.user_id == "user-123"

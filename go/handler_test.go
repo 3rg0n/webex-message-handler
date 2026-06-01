@@ -603,3 +603,146 @@ func TestHandlerStatusConstruction(t *testing.T) {
 		t.Error("expected WebSocketOpen true")
 	}
 }
+
+func TestDeviceRegistrationNilBeforeConnect(t *testing.T) {
+	h, _ := New(Config{Token: "test-token"})
+	if reg := h.DeviceRegistration(); reg != nil {
+		t.Errorf("expected nil registration before connect, got %+v", reg)
+	}
+	if url, ok := h.ServiceURL("conversationServiceUrl"); ok || url != "" {
+		t.Errorf("expected empty/false before connect, got %q/%v", url, ok)
+	}
+}
+
+func TestDeviceRegistrationAccessor(t *testing.T) {
+	h, _ := New(Config{Token: "test-token"})
+	h.registration = &DeviceRegistration{
+		WebSocketURL: "wss://mercury.example.com/socket",
+		DeviceURL:    "https://device.example.com",
+		UserID:       "user-123",
+		Services: map[string]string{
+			"conversationServiceUrl": "https://conv-a.wbx2.com/conversation/api/v1",
+			"encryptionServiceUrl":   "https://encryption.example.com",
+		},
+		EncryptionServiceURL: "https://encryption.example.com",
+	}
+
+	reg := h.DeviceRegistration()
+	if reg == nil {
+		t.Fatal("expected non-nil registration after connect")
+	}
+	if reg.UserID != "user-123" {
+		t.Errorf("expected user-123, got %q", reg.UserID)
+	}
+	if reg.Services["conversationServiceUrl"] != "https://conv-a.wbx2.com/conversation/api/v1" {
+		t.Errorf("unexpected conversation service URL: %q", reg.Services["conversationServiceUrl"])
+	}
+
+	// Returned copy must be isolated from internal state.
+	reg.Services["conversationServiceUrl"] = "https://evil.example.com"
+	reg.UserID = "tampered"
+	if h.registration.Services["conversationServiceUrl"] != "https://conv-a.wbx2.com/conversation/api/v1" {
+		t.Error("mutating returned Services leaked into internal registration")
+	}
+	if h.registration.UserID != "user-123" {
+		t.Error("mutating returned registration leaked into internal state")
+	}
+
+	url, ok := h.ServiceURL("conversationServiceUrl")
+	if !ok || url != "https://conv-a.wbx2.com/conversation/api/v1" {
+		t.Errorf("ServiceURL returned %q/%v", url, ok)
+	}
+	if _, ok := h.ServiceURL("nonexistentService"); ok {
+		t.Error("expected ServiceURL to report false for unknown service")
+	}
+}
+
+func TestParseActivityExtractsURLAndParent(t *testing.T) {
+	raw := map[string]interface{}{
+		"id":   "activity-uuid",
+		"url":  "https://conv-a.wbx2.com/conversation/api/v1/activities/activity-uuid",
+		"verb": "post",
+		"object": map[string]interface{}{
+			"id":         "obj-1",
+			"objectType": "comment",
+		},
+		"target": map[string]interface{}{
+			"id":         "room-1",
+			"objectType": "conversation",
+		},
+		"parent": map[string]interface{}{
+			"id":   "parent-uuid",
+			"type": "reply",
+		},
+		"published": "2024-01-01T00:00:00.000Z",
+	}
+
+	activity := parseActivity(raw)
+	if activity.URL != "https://conv-a.wbx2.com/conversation/api/v1/activities/activity-uuid" {
+		t.Errorf("expected activity url to be parsed, got %q", activity.URL)
+	}
+	if activity.Parent == nil || activity.Parent.ID != "parent-uuid" {
+		t.Errorf("expected parent to be parsed, got %+v", activity.Parent)
+	}
+}
+
+func TestParseActivityNoURLOrParent(t *testing.T) {
+	raw := map[string]interface{}{
+		"id":   "activity-uuid",
+		"verb": "post",
+		"object": map[string]interface{}{
+			"id":         "obj-1",
+			"objectType": "comment",
+		},
+	}
+
+	activity := parseActivity(raw)
+	if activity.URL != "" {
+		t.Errorf("expected empty url, got %q", activity.URL)
+	}
+	if activity.Parent != nil {
+		t.Errorf("expected nil parent, got %+v", activity.Parent)
+	}
+}
+
+func TestHandleActivityPropagatesURL(t *testing.T) {
+	h, _ := New(Config{Token: "test-token"})
+
+	var received DecryptedMessage
+	h.OnMessageCreated(func(msg DecryptedMessage) {
+		received = msg
+	})
+
+	h.messageDecryptor = &MessageDecryptor{
+		kmsClient: nil,
+		logger:    NoopLogger(),
+	}
+
+	activity := MercuryActivity{
+		ID:   "act-1",
+		URL:  "https://conv-a.wbx2.com/conversation/api/v1/activities/act-1",
+		Verb: "post",
+		Actor: MercuryActor{
+			ID:           "person-1",
+			ObjectType:   "person",
+			EmailAddress: "test@example.com",
+		},
+		Object: MercuryObject{
+			ID:          "obj-1",
+			ObjectType:  "comment",
+			DisplayName: "hi",
+		},
+		Target: MercuryTarget{
+			ID:         "room-1",
+			ObjectType: "conversation",
+		},
+		Published: "2024-01-01T00:00:00.000Z",
+	}
+
+	if err := h.handleActivity(context.TODO(), activity); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if received.URL != "https://conv-a.wbx2.com/conversation/api/v1/activities/act-1" {
+		t.Errorf("expected activity URL to propagate to DecryptedMessage, got %q", received.URL)
+	}
+}

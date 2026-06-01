@@ -62,6 +62,18 @@ async fn test_handler_status_disconnected() {
 }
 
 #[tokio::test]
+async fn test_device_registration_none_before_connect() {
+    let handler = WebexMessageHandler::new(Config {
+        token: "test-token".to_string(),
+        ..Default::default()
+    })
+    .unwrap();
+
+    assert!(handler.device_registration().await.is_none());
+    assert!(handler.service_url("conversationServiceUrl").await.is_none());
+}
+
+#[tokio::test]
 async fn test_event_receiver_can_be_taken_once() {
     let handler = WebexMessageHandler::new(Config {
         token: "test-token".to_string(),
@@ -135,6 +147,26 @@ fn test_mercury_activity_deserialization() {
     assert_eq!(activity.object.display_name, Some("Hello".to_string()));
     assert_eq!(activity.object.content, Some("<p>Hello</p>".to_string()));
     assert_eq!(activity.target.tags, vec!["ONE_ON_ONE"]);
+    // url is absent in this payload → None
+    assert_eq!(activity.url, None);
+}
+
+#[test]
+fn test_mercury_activity_deserializes_url() {
+    let json = serde_json::json!({
+        "id": "activity-123",
+        "url": "https://conv-a.wbx2.com/conversation/api/v1/activities/activity-123",
+        "verb": "post",
+        "object": { "id": "o", "objectType": "comment" },
+        "target": { "id": "t", "objectType": "conversation" },
+        "published": "2024-01-01T00:00:00.000Z"
+    });
+
+    let activity: MercuryActivity = serde_json::from_value(json).unwrap();
+    assert_eq!(
+        activity.url,
+        Some("https://conv-a.wbx2.com/conversation/api/v1/activities/activity-123".to_string())
+    );
 }
 
 #[test]
@@ -295,6 +327,7 @@ fn test_membership_activity_construction() {
         room_type: Some("group".to_string()),
         raw: MercuryActivity {
             id: "membership-1".to_string(),
+            url: None,
             verb: "add".to_string(),
             actor: webex_message_handler::MercuryActor {
                 id: "admin-1".to_string(),
@@ -342,6 +375,7 @@ fn test_membership_activity_all_verbs() {
             room_type: None,
             raw: MercuryActivity {
                 id: "test".to_string(),
+                url: None,
                 verb: verb.to_string(),
                 actor: Default::default(),
                 object: Default::default(),

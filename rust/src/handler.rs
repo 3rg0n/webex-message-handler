@@ -536,6 +536,7 @@ impl WebexMessageHandler {
                     let mentions = parse_mentions(decrypted.object.content.as_deref());
                     let msg = DecryptedMessage {
                         id: decrypted.id.clone(),
+                        url: decrypted.url.clone(),
                         parent_id: decrypted.parent.as_ref().map(|p| p.id.clone()),
                         mentioned_people: mentions.mentioned_people,
                         mentioned_groups: mentions.mentioned_groups,
@@ -735,6 +736,36 @@ impl WebexMessageHandler {
             device_registered: self.registration.lock().await.is_some(),
             reconnect_attempt,
         }
+    }
+
+    /// Returns a clone of the WDM registration obtained at connect time, or
+    /// `None` if not yet connected.
+    ///
+    /// This library stays inbound-only — it does not make outbound calls. This
+    /// accessor exists so wrapper code can perform its own outbound calls (e.g.
+    /// a Conversation-service read-receipt) using the service catalog the
+    /// library already holds. Resolve outbound URLs from `services` rather than
+    /// hardcoding cluster hostnames, which vary across clusters and orgs.
+    ///
+    /// The returned value is an owned clone: mutating it does not affect the
+    /// handler's internal state.
+    pub async fn device_registration(&self) -> Option<DeviceRegistration> {
+        self.registration.lock().await.clone()
+    }
+
+    /// Returns the URL for a named WDM service from the registration's service
+    /// catalog (e.g. `"conversationServiceUrl"`), or `None` if not yet connected
+    /// or the service is unknown.
+    ///
+    /// Use this to discover outbound service base URLs instead of hardcoding
+    /// cluster hostnames. See [`device_registration`](Self::device_registration)
+    /// for the broader rationale.
+    pub async fn service_url(&self, name: &str) -> Option<String> {
+        self.registration
+            .lock()
+            .await
+            .as_ref()
+            .and_then(|reg| reg.services.get(name).cloned())
     }
 }
 

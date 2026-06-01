@@ -343,6 +343,40 @@ export class WebexMessageHandler
     };
   }
 
+  /**
+   * Returns a read-only copy of the WDM registration obtained at connect time,
+   * or null if not yet connected.
+   *
+   * This library stays inbound-only — it does not make outbound calls. This
+   * accessor exists so wrapper code can perform its own outbound calls (e.g. a
+   * Conversation-service read-receipt) using the service catalog the library
+   * already holds. Resolve outbound URLs from `services` rather than hardcoding
+   * cluster hostnames, which vary across clusters and orgs.
+   *
+   * The returned value is a copy: mutating it does not affect internal state.
+   */
+  deviceRegistration(): DeviceRegistration | null {
+    if (!this.registration) {
+      return null;
+    }
+    return {
+      ...this.registration,
+      services: { ...this.registration.services },
+    };
+  }
+
+  /**
+   * Returns the URL for a named WDM service from the registration's service
+   * catalog (e.g. "conversationServiceUrl"), or undefined if not yet connected
+   * or the service is unknown.
+   *
+   * Use this to discover outbound service base URLs instead of hardcoding
+   * cluster hostnames. See {@link deviceRegistration} for the broader rationale.
+   */
+  serviceUrl(name: string): string | undefined {
+    return this.registration?.services[name];
+  }
+
   private _setupMercuryListeners(): void {
     // Forward KMS messages from Mercury to the KMS client
     this.mercurySocket.on('kms:response', (data: Record<string, unknown>) => {
@@ -425,6 +459,7 @@ export class WebexMessageHandler
       const mentions = parseMentions(decrypted.object.content);
       const message: DecryptedMessage = {
         id: decrypted.id,
+        url: decrypted.url,
         parentId: decrypted.parent?.id,
         roomId: decrypted.target.id,
         personId: decrypted.actor.id,

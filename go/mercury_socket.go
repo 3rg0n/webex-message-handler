@@ -544,12 +544,14 @@ func parseActivity(raw map[string]interface{}) MercuryActivity {
 	target := parseTarget(raw["target"])
 
 	id, _ := raw["id"].(string)
+	activityURL, _ := raw["url"].(string)
 	verb, _ := raw["verb"].(string)
 	published, _ := raw["published"].(string)
 	encKeyURL, _ := raw["encryptionKeyUrl"].(string)
 
-	return MercuryActivity{
+	activity := MercuryActivity{
 		ID:               id,
+		URL:              activityURL,
 		Verb:             verb,
 		Actor:            actor,
 		Object:           object,
@@ -557,6 +559,12 @@ func parseActivity(raw map[string]interface{}) MercuryActivity {
 		Published:        published,
 		EncryptionKeyURL: encKeyURL,
 	}
+
+	if parent := parseParent(raw["parent"]); parent != nil {
+		activity.Parent = parent
+	}
+
+	return activity
 }
 
 func parseActor(raw interface{}) MercuryActor {
@@ -612,4 +620,17 @@ func parseTarget(raw interface{}) MercuryTarget {
 		}
 	}
 	return MercuryTarget{ID: id, ObjectType: objectType, EncryptionKeyURL: encKeyURL, Tags: tags}
+}
+
+func parseParent(raw interface{}) *MercuryParent {
+	m, _ := raw.(map[string]interface{})
+	if m == nil {
+		return nil
+	}
+	id, _ := m["id"].(string)
+	parentType, _ := m["type"].(string)
+	if id == "" && parentType == "" {
+		return nil
+	}
+	return &MercuryParent{ID: id, Type: parentType}
 }

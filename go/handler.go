@@ -435,6 +435,54 @@ func (h *WebexMessageHandler) Status() HandlerStatus {
 	}
 }
 
+// DeviceRegistration returns a read-only copy of the WDM registration obtained
+// at Connect time, or nil if not yet connected.
+//
+// This library stays inbound-only — it does not make outbound calls. This
+// accessor exists so wrapper code can perform its own outbound calls (e.g. a
+// Conversation-service read-receipt) using the service catalog the library
+// already holds. Resolve outbound URLs from the returned Services map rather
+// than hardcoding cluster hostnames, which vary across clusters and orgs.
+//
+// The returned value is a deep copy: mutating it does not affect the handler's
+// internal state, and it remains valid after reconnect/disconnect.
+func (h *WebexMessageHandler) DeviceRegistration() *DeviceRegistration {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if h.registration == nil {
+		return nil
+	}
+
+	services := make(map[string]string, len(h.registration.Services))
+	for k, v := range h.registration.Services {
+		services[k] = v
+	}
+
+	return &DeviceRegistration{
+		WebSocketURL:         h.registration.WebSocketURL,
+		DeviceURL:            h.registration.DeviceURL,
+		UserID:               h.registration.UserID,
+		Services:             services,
+		EncryptionServiceURL: h.registration.EncryptionServiceURL,
+	}
+}
+
+// ServiceURL returns the URL for a named WDM service from the registration's
+// service catalog (e.g. "conversationServiceUrl"), and whether it was present.
+// Returns ("", false) if not yet connected or the service is unknown.
+//
+// Use this to discover outbound service base URLs instead of hardcoding cluster
+// hostnames. See DeviceRegistration for the broader rationale.
+func (h *WebexMessageHandler) ServiceURL(name string) (string, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if h.registration == nil {
+		return "", false
+	}
+	url, ok := h.registration.Services[name]
+	return url, ok
+}
+
 func (h *WebexMessageHandler) fetchBotPersonID(ctx context.Context) error {
 	h.logger.Debug("Fetching bot person info for self-message filtering")
 	resp, err := h.httpDo(ctx, FetchRequest{
@@ -581,6 +629,7 @@ func (h *WebexMessageHandler) handleActivity(ctx context.Context, activity Mercu
 
 		msg := DecryptedMessage{
 			ID:              decrypted.ID,
+			URL:             decrypted.URL,
 			ParentID:        parentID,
 			MentionedPeople: mentions.MentionedPeople,
 			MentionedGroups: mentions.MentionedGroups,

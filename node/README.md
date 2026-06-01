@@ -210,6 +210,27 @@ new WebexMessageHandler(config: WebexMessageHandlerConfig)
 - **`disconnect(): Promise<void>`** — Gracefully disconnects (closes WebSocket, unregisters device)
 - **`reconnect(newToken): Promise<void>`** — Update token and re-establish connection
 - **`status(): HandlerStatus`** — Returns structured health check of all subsystems
+- **`deviceRegistration(): DeviceRegistration | null`** — Read-only copy of the WDM registration (null before connect)
+- **`serviceUrl(name): string | undefined`** — Look up a single WDM service URL by name
+
+##### Outbound calls from wrappers
+
+This library is **inbound-only** — it never makes outbound calls. If your wrapper
+needs to send something back to Webex (e.g. a Conversation-service read-receipt),
+discover the service base URL from the WDM catalog the library already holds
+rather than hardcoding cluster hostnames (which vary across clusters and orgs):
+
+```typescript
+// Resolve a cluster-correct service URL after connect()
+const convUrl = handler.serviceUrl('conversationServiceUrl');
+if (convUrl) {
+  // Build your outbound acknowledge/activity request against convUrl.
+  // The activity URL needed for the acknowledge object is msg.url.
+}
+
+// Or grab the whole (read-only) registration:
+const reg = handler.deviceRegistration(); // null before connect()
+```
 
 #### Properties
 
@@ -238,6 +259,7 @@ Shape of decrypted messages:
 ```typescript
 {
   id: string;           // Mercury activity UUID
+  url?: string;         // Conversation-service activity URL (when present)
   parentId?: string;    // Parent activity UUID (threaded replies only)
   roomId: string;
   personId: string;

@@ -216,6 +216,10 @@ pub struct MercuryActivity {
     #[serde(default)]
     pub id: String,
 
+    /// Full Conversation-service activity URL, when present on the raw activity.
+    #[serde(default)]
+    pub url: Option<String>,
+
     #[serde(default)]
     pub verb: String,
 
@@ -243,6 +247,11 @@ pub struct MercuryActivity {
 pub struct DecryptedMessage {
     /// Mercury activity UUID. Works as parentId for threaded replies.
     pub id: String,
+
+    /// Full Conversation-service activity URL, when present on the raw Mercury
+    /// activity (e.g. for an outbound "acknowledge" read-receipt). None if
+    /// Mercury did not include it.
+    pub url: Option<String>,
 
     /// Parent activity UUID for threaded replies. None if not a thread reply.
     pub parent_id: Option<String>,

@@ -168,6 +168,28 @@ Creates a new handler. Config fields:
 - `Reconnect(ctx, newToken) error` — Update token and reconnect
 - `Connected() bool` — Connection status
 - `Status() HandlerStatus` — Health check
+- `DeviceRegistration() *DeviceRegistration` — Read-only copy of the WDM registration (or nil before connect)
+- `ServiceURL(name string) (string, bool)` — Look up a single WDM service URL by name
+
+### Outbound calls from wrappers
+
+This library is **inbound-only** — it never makes outbound calls. If your wrapper
+needs to send something back to Webex (e.g. a Conversation-service read-receipt),
+discover the service base URL from the WDM catalog the library already holds
+rather than hardcoding cluster hostnames (which vary across clusters and orgs):
+
+```go
+// Resolve a cluster-correct service URL after Connect()
+if convURL, ok := handler.ServiceURL("conversationServiceUrl"); ok {
+    // Build your outbound acknowledge/activity request against convURL.
+    // The activity URL needed for the acknowledge object is msg.URL.
+    _ = convURL
+}
+
+// Or grab the whole (read-only) registration:
+reg := handler.DeviceRegistration() // nil before Connect()
+_ = reg
+```
 
 ### Event Callbacks
 
@@ -202,6 +224,7 @@ All implement `error` and extend `WebexError`. Use `errors.As()` for type checki
 ```go
 type DecryptedMessage struct {
     ID              string
+    URL             string          // Conversation-service activity URL (empty if absent)
     ParentID        string          // Parent activity UUID (threaded replies)
     RoomID          string
     PersonID        string
