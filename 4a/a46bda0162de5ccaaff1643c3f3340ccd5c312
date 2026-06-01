@@ -1,0 +1,83 @@
+docs/adr/0001-expose-wdm-service-catalog.md
+  s_25ccca6093f1ae::t_9d8b23b81ea102 1-54
+rust/src/types.rs
+  s_25ccca6093f1ae::t_b68964a69ac96a 219-222
+node/README.md
+  s_25ccca6093f1ae::t_b1749d728fda42 262
+  s_25ccca6093f1ae::t_760d83eef80cf5 213-233
+python/tests/test_handler.py
+  s_25ccca6093f1ae::t_d42123ce5bd77b 113-189
+  s_25ccca6093f1ae::t_b4f64b21094f30 337-352
+  s_25ccca6093f1ae::t_adb81d42091818 10
+  s_25ccca6093f1ae::t_dc84cdf3d28bf6 555-593
+docs/adr/README.md
+  s_25ccca6093f1ae::t_75474e16b13cf5 1-13
+go/handler_test.go
+  s_25ccca6093f1ae::t_05e0ec82770835 606-748
+node/src/types.ts
+  s_25ccca6093f1ae::t_682a491daec03c 153-158
+  s_25ccca6093f1ae::t_6f977139cd57e0 126-127
+go/README.md
+  s_25ccca6093f1ae::t_d74ae3f59bf10b 171-192
+  s_25ccca6093f1ae::t_cd57b288573e07 227
+go/mercury_socket.go
+  s_25ccca6093f1ae::t_9072f3063f0fe0 624-636
+  s_25ccca6093f1ae::t_45c7bc674aa8f8 547,552,554,562-567
+python/pyproject.toml
+  s_25ccca6093f1ae::t_6a9323f66e1089 7
+rust/src/handler.rs
+  s_25ccca6093f1ae::t_7898a202ad2186 539
+  s_25ccca6093f1ae::t_56a93fb17bc2dd 740-769
+rust/Cargo.toml
+  s_25ccca6093f1ae::t_6d61db70586ea7 3
+python/README.md
+  s_25ccca6093f1ae::t_c9cb3c45bc6f8b 249
+  s_25ccca6093f1ae::t_3aa8b7ddd4318f 205-225
+python/src/webex_message_handler/handler.py
+  s_25ccca6093f1ae::t_495d714831a7ee 531
+  s_25ccca6093f1ae::t_18fec5a7d76fb4 8
+  s_25ccca6093f1ae::t_697e126183e319 402-429
+  s_25ccca6093f1ae::t_3fc41175a267ff 212-221
+rust/tests/integration_test.rs
+  s_25ccca6093f1ae::t_46d69dc82f2cff 65-75
+  s_25ccca6093f1ae::t_8691dcc084142b 378
+  s_25ccca6093f1ae::t_28b8c07bf66c2d 330
+  s_25ccca6093f1ae::t_3bf3fe43790d4c 150-169
+node/src/handler.ts
+  s_25ccca6093f1ae::t_ac5e668186bb30 346-379
+  s_25ccca6093f1ae::t_8bb65ab178ecc6 462
+python/src/webex_message_handler/mercury_socket.py
+  s_25ccca6093f1ae::t_f7ee0200868402 424
+go/types.go
+  s_25ccca6093f1ae::t_1a34f70a8b01a9 166-170
+  s_25ccca6093f1ae::t_e4398f99854d46 142
+CHANGELOG.md
+  s_25ccca6093f1ae::t_f5a0461c1c544f 8-36
+go/handler.go
+  s_25ccca6093f1ae::t_547ecb83f7f383 438-485
+  s_25ccca6093f1ae::t_95e4922d4c0d99 632
+node/test/handler.spec.ts
+  s_25ccca6093f1ae::t_d9524d8b8a1dee 679-744
+python/src/webex_message_handler/types.py
+  s_25ccca6093f1ae::t_53038282d6b67d 233-237
+  s_25ccca6093f1ae::t_c84cbb289509d3 191-193
+rust/README.md
+  s_25ccca6093f1ae::t_db2c45a292eb78 152
+  s_25ccca6093f1ae::t_77dcd929ff6568 248-268
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "4aa46bda0162de5ccaaff1643c3f3340ccd5c312",
+  "prompts": {},
+  "sessions": {
+    "s_25ccca6093f1ae": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a5afcede-bc5a-454b-af42-844223f3840c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Ergon Copeland <62959009+3rg0n@users.noreply.github.com>"
+    }
+  }
+}
