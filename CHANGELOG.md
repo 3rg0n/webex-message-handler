@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.11] - 2026-06-02
+
+### Security
+- **Node.js: dropped the `uuid` dependency** — replaced `uuid.v4()` with the
+  built-in `crypto.randomUUID()` (available since the required Node ≥22.4.0).
+  Removes the direct `uuid` dependency entirely, resolving the Dependabot bump
+  to the ESM-only `uuid` 14.x (#21) without a config workaround. Also pinned
+  the transitive `uuid` used by `node-jose` to `>=11.1.1` (GHSA-w5hq-g745-h8pq)
+  and `brace-expansion` to `>=5.0.6` (GHSA-jxxr-4gwj-5jf2) via pnpm overrides.
+  The remaining `node-kms` → `uuid@2` advisory is unreachable (bare `uuid()`
+  v4-style call, no `buf` argument) and `node-kms` is pinned to that API.
+- **Python: bumped crypto floors** — `cryptography>=46.0.7` (PYSEC-2026-36) and
+  `jwcrypto>=1.5.7` (PYSEC-2026-70); both sit in the KMS/JWE decryption path.
+- **Rust: bumped `rustls-webpki` to 0.103.13** — resolves RUSTSEC-2026-0098,
+  -0099, and -0104 (name-constraint handling and a reachable CRL-parsing panic).
+  Added `.cargo/audit.toml` documenting the two remaining advisories that have
+  no fix and are not reachable here (`rsa` RUSTSEC-2023-0071 encrypt-only;
+  `rand` RUSTSEC-2026-0097 unsound only via `rand::rng()` + custom logger, which
+  this crate does not use).
+
 ## [0.6.10] - 2026-06-01
 
 ### Added

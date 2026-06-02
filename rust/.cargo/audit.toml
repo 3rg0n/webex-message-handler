@@ -1,0 +1,22 @@
+# cargo-audit configuration.
+#
+# Each ignored advisory below has no available upstream fix and is not
+# reachable in this crate's usage. Revisit whenever dependencies are bumped —
+# remove an entry the moment a fixed version ships.
+
+[advisories]
+ignore = [
+    # rsa: Marvin timing side-channel (RUSTSEC-2023-0071). No fixed release
+    # exists. Not exploitable here: RSA is used for encryption only (wrapping
+    # the ECDH request to KMS), never decryption, so no private-key timing
+    # oracle is exposed. See rust/Cargo.toml note on the `rsa` dependency.
+    "RUSTSEC-2023-0071",
+
+    # rand: "unsound with a custom logger using `rand::rng()`"
+    # (RUSTSEC-2026-0097). Warning-level, no fixed release. We use
+    # `rand::thread_rng()` (rand 0.8 API) and do not install a custom global
+    # logger that allocates/panics during RNG reseeding, so the unsound path is
+    # not reached. The rand 0.9.x copy is transitive via quinn/reqwest and is
+    # likewise not driven through the affected pattern by our code.
+    "RUSTSEC-2026-0097",
+]

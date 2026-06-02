@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "webex-message-handler"
-version = "0.6.10"
+version = "0.6.11"
 description = "Lightweight Webex Mercury WebSocket + KMS decryption for receiving bot messages without the full Webex SDK"
 readme = "README.md"
 license = "MIT"
@@ -27,8 +27,8 @@ classifiers = [
 ]
 dependencies = [
     "aiohttp>=3.13.4",
-    "cryptography>=46.0.6",
-    "jwcrypto>=1.5",
+    "cryptography>=46.0.7",
+    "jwcrypto>=1.5.7",
 ]
 
 [project.urls]

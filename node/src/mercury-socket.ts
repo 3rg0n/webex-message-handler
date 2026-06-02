@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import type { MercuryEnvelope, MercuryActivity, InjectedWebSocket } from './types.js';
 import { AuthError, MercuryConnectionError } from './errors.js';
 import type { Logger } from './logger.js';
@@ -77,7 +77,7 @@ export class MercurySocket extends EventEmitter {
         this.ws.on('open', () => {
           this.logger.debug('WebSocket opened, sending authorization');
           const authMessage = JSON.stringify({
-            id: uuidv4(),
+            id: randomUUID(),
             type: 'authorization',
             data: { token: `Bearer ${this.token}` },
           });
@@ -161,7 +161,7 @@ export class MercurySocket extends EventEmitter {
   private _startPingLoop(): void {
     this.pingIntervalHandle = setInterval(() => {
       if (this.ws && this.ws.readyState === WS_OPEN) {
-        this.pendingPongId = uuidv4();
+        this.pendingPongId = randomUUID();
         const pingMessage = JSON.stringify({
           id: this.pendingPongId,
           type: 'ping',
