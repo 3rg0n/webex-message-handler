@@ -1,0 +1,30 @@
+rust/.cargo/audit.toml
+  s_25ccca6093f1ae::t_7d3b406f482f6b 1-22
+python/pyproject.toml
+  s_25ccca6093f1ae::t_c9d849d0469eab 7
+  s_25ccca6093f1ae::t_c7bf0f38bf02ff 30-31
+node/src/mercury-socket.ts
+  s_25ccca6093f1ae::t_33baaa0f4aa4b6 2,80,164
+CHANGELOG.md
+  s_25ccca6093f1ae::t_c89cc175523eb9 8-27
+node/package.json
+  s_25ccca6093f1ae::t_c9d849d0469eab 3
+  s_25ccca6093f1ae::t_7c565b7a2a1949 51
+  s_25ccca6093f1ae::t_d1cd4d42f78ff5 55-57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "24baf24635727c41152a11f6b5fe705c82b403b6",
+  "prompts": {},
+  "sessions": {
+    "s_25ccca6093f1ae": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a5afcede-bc5a-454b-af42-844223f3840c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Ergon Copeland <62959009+3rg0n@users.noreply.github.com>"
+    }
+  }
+}
