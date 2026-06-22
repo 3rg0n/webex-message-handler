@@ -1,6 +1,6 @@
 {
   "name": "webex-message-handler",
-  "version": "0.6.11",
+  "version": "0.6.12",
   "description": "Lightweight Webex Mercury WebSocket + KMS decryption for receiving bot messages without the full Webex SDK",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -43,18 +43,21 @@
   },
   "license": "MIT",
   "engines": {
-    "node": ">=22.4.0"
+    "node": ">=24.0.0"
   },
   "dependencies": {
     "node-jose": "^2.2.0",
     "node-kms": "^0.4.1",
-    "undici": "^7.24.6"
+    "undici": "^8.5.0"
   },
   "pnpm": {
     "overrides": {
       "lodash": ">=4.18.1",
       "brace-expansion@>=5.0.0 <5.0.6": ">=5.0.6",
-      "node-jose>uuid": "^11.1.1"
+      "node-jose>uuid": "^11.1.1",
+      "js-yaml@<4.2.0": ">=4.2.0",
+      "esbuild@>=0.27.3 <0.28.1": ">=0.28.1",
+      "@babel/core@<=7.29.0": ">=7.29.6"
     }
   },
   "devDependencies": {

@@ -1,6 +1,6 @@
 module github.com/3rg0n/webex-message-handler/go
 
-go 1.26.2
+go 1.26.4
 
 require (
 	github.com/go-jose/go-jose/v4 v4.1.4

@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.12] - 2026-06-03
+
+### Security
+- **Node.js: bumped `undici` 7.24.6 → 8.5.0** — the v7 line carried 7 advisories
+  (incl. CVE-2026-12151, High); 8.5.0 is the current release with all of them
+  fixed. Resolves Dependabot PR #24. Also remediated dev-tool transitives via
+  pnpm overrides: `js-yaml >=4.2.0`, `esbuild >=0.28.1`, `@babel/core >=7.29.6`.
+- **Python: bumped crypto/HTTP floors** — `aiohttp>=3.14.1` (7 CVEs:
+  CVE-2026-50269/-54274/-54275/-54276/-54277/-54278/-54280) and
+  `cryptography>=48.0.1` (GHSA-537c-gmf6-5ccf). Both are in the KMS/JWE path.
+- **Go: bumped the `go` directive 1.26.2 → 1.26.4** — remediates two called
+  standard-library advisories: GO-2026-5039 (`net/textproto` error escaping,
+  hit via `io.ReadAll` in `fetchBotPersonID`) and GO-2026-5037 (`crypto/x509`
+  hostname parsing, hit via TLS cert verification). `govulncheck` now reports 0.
+
+### Changed
+- **Node.js: raised minimum Node to `>=24.0.0`** (was `>=22.4.0`) — required by
+  `undici` 8.x (`>=22.19.0`) and aligned to the active Node LTS line (24,
+  "Krypton"). **Breaking for consumers still on Node 22.x.**
+
+### Removed
+- **Python: dropped the `aioresponses` dev dependency** — it does not support
+  aiohttp 3.14's internal `ClientResponse` API, which blocked the security
+  bump. Device-manager tests now mock at the injected `http_do` adapter seam
+  (new `MockHttpDo` test helper in `conftest.py`), which is closer to how the
+  library is actually wired and removes the upstream-compat coupling.
+
 ## [0.6.11] - 2026-06-02
 
 ### Security
