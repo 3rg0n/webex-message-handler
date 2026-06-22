@@ -1,0 +1,33 @@
+python/pyproject.toml
+  s_25ccca6093f1ae::t_552fa10b467a99 29-30
+  s_25ccca6093f1ae::t_60727b39785acc 7
+node/package.json
+  s_25ccca6093f1ae::t_282146b6b43199 51
+  s_25ccca6093f1ae::t_60727b39785acc 3
+  s_25ccca6093f1ae::t_5b140807231110 57-60
+  s_25ccca6093f1ae::t_60368930bd6166 46
+python/tests/test_device_manager.py
+  s_25ccca6093f1ae::t_3c6bb7e029893d 5,27,29,38,40-41,44,46-47,50,52-53,58-63,65-66,71,77-81,83-85,88-92,94-96,101-105,107-108,111,117-121,123-125,128-132,134-136,142-144,151-153
+go/go.mod
+  s_25ccca6093f1ae::t_0d2b11ec51a616 3
+python/tests/conftest.py
+  s_25ccca6093f1ae::t_6fa45db0b0a13a 3-4,10-54
+CHANGELOG.md
+  s_25ccca6093f1ae::t_213a85590a2a13 8-34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.10",
+  "base_commit_sha": "c619180aac5f133ff5ab0fb565d4c9a8b3ad1236",
+  "prompts": {},
+  "sessions": {
+    "s_25ccca6093f1ae": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a5afcede-bc5a-454b-af42-844223f3840c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Ergon Copeland <62959009+3rg0n@users.noreply.github.com>"
+    }
+  }
+}
