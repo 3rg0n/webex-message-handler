@@ -14,6 +14,10 @@ Lightweight Webex Mercury WebSocket + KMS decryption for receiving bot messages 
 npm install webex-message-handler
 ```
 
+Requires **Node.js >=24.0.0** (Node 24 LTS "Krypton"). For Node 22, use
+`webex-message-handler@0.6.9` — releases 0.6.10–0.6.12 add no features, only
+security/dependency updates that raised the engine floor.
+
 ## Quick Start
 
 ```typescript

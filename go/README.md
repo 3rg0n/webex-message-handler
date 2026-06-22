@@ -10,7 +10,7 @@ Go port of the [TypeScript webex-message-handler](https://github.com/ecopelan/we
 go get github.com/3rg0n/webex-message-handler/go
 ```
 
-Requires Go 1.21+.
+Requires Go 1.26.4+.
 
 ## Quick Start
 

@@ -17,9 +17,9 @@ Each language directory is self-contained with its own README, API docs, tests, 
 
 ### Prerequisites
 
-- **Node.js**: Node.js 18+ and pnpm
+- **Node.js**: Node.js 24+ (LTS) and pnpm
 - **Python**: Python 3.10+ and pip
-- **Go**: Go 1.21+
+- **Go**: Go 1.26.4+
 - **Rust**: Rust 1.75+ (via rustup)
 
 ### Setup
