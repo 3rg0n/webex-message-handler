@@ -1,0 +1,19 @@
+CONTRIBUTING.md
+  s_25ccca6093f1ae::t_628a1204875f73 20,22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.10",
+  "base_commit_sha": "7239c734bbbd76955fda5e75af93482f523bbe23",
+  "prompts": {},
+  "sessions": {
+    "s_25ccca6093f1ae": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a5afcede-bc5a-454b-af42-844223f3840c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Ergon Copeland <62959009+3rg0n@users.noreply.github.com>"
+    }
+  }
+}
