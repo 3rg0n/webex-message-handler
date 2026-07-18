@@ -172,7 +172,7 @@ func (ms *MercurySocket) connectInternal(ctx context.Context) error {
 	authMsg, _ := json.Marshal(map[string]interface{}{
 		"id":   uuid.New().String(),
 		"type": "authorization",
-		"data": map[string]string{"token": ms.token},
+		"data": map[string]string{"token": "Bearer " + ms.token},
 	})
 	if err := conn.Write(connCtx, websocket.MessageText, authMsg); err != nil {
 		cancel()
