@@ -14,11 +14,11 @@ import (
 
 // WebexMessageHandler receives and decrypts Webex messages over Mercury WebSocket.
 type WebexMessageHandler struct {
-	token      string
-	logger     Logger
-	httpClient *http.Client
-	httpDo     fetchDoFn
-	wsFactory  wsFactoryFn
+	token           string
+	logger          Logger
+	httpClient      *http.Client
+	httpDo          fetchDoFn
+	wsFactory       wsFactoryFn
 	metricsCallback MetricsCallback
 
 	deviceManager    *DeviceManager
@@ -141,7 +141,14 @@ func New(cfg Config) (*WebexMessageHandler, error) {
 	// Create adapters based on mode
 	if mode == NetworkModeNative {
 		h.httpDo = createNativeHTTPAdapter(httpClient)
-		h.wsFactory = createNativeWSAdapter(httpClient)
+		// Native WS dial presents the token on the upgrade request's
+		// Authorization header (read dynamically so Reconnect's new token is
+		// used). Mercury binds live activity delivery to this identity.
+		h.wsFactory = createNativeWSAdapter(httpClient, func() string {
+			h.mu.RLock()
+			defer h.mu.RUnlock()
+			return h.token
+		})
 	} else {
 		// injected mode
 		h.httpDo = cfg.Fetch
@@ -191,11 +198,19 @@ func createNativeHTTPAdapter(client *http.Client) fetchDoFn {
 	}
 }
 
-// createNativeWSAdapter creates a WebSocket adapter using gorilla/websocket.
-func createNativeWSAdapter(client *http.Client) wsFactoryFn {
+// createNativeWSAdapter creates a WebSocket adapter using coder/websocket.
+// tokenFn supplies the current access token so the dial can present it on the
+// upgrade request's Authorization header (required for Mercury to route live
+// conversation activities to the socket).
+func createNativeWSAdapter(client *http.Client, tokenFn func() string) wsFactoryFn {
 	return func(ctx context.Context, url string) (WebSocket, error) {
-		// Will be implemented when refactoring MercurySocket
-		return newNativeWebSocket(ctx, url, client)
+		var header http.Header
+		if tokenFn != nil {
+			if tok := tokenFn(); tok != "" {
+				header = http.Header{"Authorization": []string{"Bearer " + tok}}
+			}
+		}
+		return newNativeWebSocketWithHeaders(ctx, url, client, header)
 	}
 }
 
@@ -396,7 +411,11 @@ func (h *WebexMessageHandler) Reconnect(ctx context.Context, newToken string) er
 	if err := h.Disconnect(ctx); err != nil {
 		return err
 	}
+	// Guard the token write: the native WS dial reads h.token under RLock from
+	// the connect goroutine, so the update must be synchronized.
+	h.mu.Lock()
 	h.token = newToken
+	h.mu.Unlock()
 	return h.Connect(ctx)
 }
 

@@ -1,0 +1,57 @@
+Description: Users create attachment actions by interacting with message attachments such as clicking on a submit button in a card.
+Source: https://developer.webex.com/messaging/docs/api/v1/attachment-actions
+
+Description: Enterprise Content Management folder-linking in Webex is how users configure existing OneDrive and SharePoint online folders as the (default or reference) storage backend for spaces. This configuration can be done in our native clients and via API. A space participant will be able to configure an ECM folder for a space. Only one ECM folder per space and only OneDrive and SharePoint online are currently supported.
+Source:https://developer.webex.com/messaging/docs/api/v1/ecm-folder-linking
+
+Description: Events are generated when actions take place within Webex, such as when someone creates or deletes a message.
+The Events API can only be used by a Compliance Officer with an API access token that contains the spark-compliance:events_read scope. See the Compliance Guide for more information.
+Source: https://developer.webex.com/messaging/docs/api/v1/events
+
+Description: Hybrid Data Security (HDS) Developer APIs provide organization admins with the ability to retrieve analytics and monitoring data, set up their own monitoring applications, and quickly isolate and identify the root cause of issues affecting the normal functioning of their Hybrid Data Security deployments.
+To obtain the Organization ID needed for these APIs, use the Organizations API.
+Source: https://developer.webex.com/messaging/docs/api/v1/hybrid-data-security-hds
+
+Description: Memberships represent a person's relationship to a room. Use this API to list members of any room that you're in or create memberships to invite someone to a room. Compliance Officers can now also list memberships for personEmails where the CO is not part of the room. Memberships can also be updated to make someone a moderator, or deleted, to remove someone from the room.
+Just like in the Webex client, you must be a member of the room in order to list its memberships or invite people.
+Source: https://developer.webex.com/messaging/docs/api/v1/memberships
+
+Description: Messages are how you communicate in a room. In Webex, each message is displayed on its own line along with a timestamp and sender information. Use this API to list, create, update, and delete messages.
+Message can contain plain text, rich text, and a file attachment.
+Just like in the Webex app, you must be a member of the room in order to target it with this API.
+Source: https://developer.webex.com/messaging/docs/api/v1/messages
+
+Description: As of January 2024, the Webex APIs have been fully upgraded to support the industry-standard SCIM 2.0 protocol, which is used for user and group management, provisioning, and maintenance. Developers are advised to use this API instead of the people API, due to its higher performance and readily available connectors. Users created via SCIM should be licensed using the /licenses API, even in large quantities, using the new PATCH method.
+People are registered users of Webex. Searching and viewing People requires an auth token with a scope of spark:people_read. Viewing the list of all People in your organization requires an administrator auth token with spark-admin:people_read scope. Adding, updating, and removing People requires an administrator auth token with the spark-admin:people_write and spark-admin:people_read scope.
+A person's call settings are for Webex Calling and necessitate Webex Calling licenses.
+To learn more about managing people in a room see the Memberships API. For information about how to allocate Hybrid Services licenses to people, see the Managing Hybrid Services guide.
+Source: https://developer.webex.com/messaging/docs/api/v1/people
+
+Description: A Room Tab represents a URL shortcut that is added as a persistent tab to a Webex room (space) tab row. Use this API to list tabs of any Webex room that you belong to. Room Tabs can also be updated to point to a different content URL, or deleted to remove the tab from the room.
+Just like in the Webex app, you must be a member of the room in order to list its Room Tabs.
+Source: https://developer.webex.com/messaging/docs/api/v1/room-tabs
+
+Description: Rooms are virtual meeting places where people post messages and collaborate to get work done. This API is used to manage the rooms themselves. Rooms are created and deleted with this API. You can also update a room to change its title or make it public, for example.
+To create a team room, specify the a teamId in the POST payload. Note that once a room is added to a team, it cannot be moved. To learn more about managing teams, see the Teams API.
+To manage people in a room see the Memberships API.
+To post content see the Messages API.
+Source: https://developer.webex.com/messaging/docs/api/v1/rooms
+
+Description: Manipulating Team Memberships as a Compliance Officer
+As a Compliance Officer, you can indirectly manage the memberships of a team to which you do not belong. Individuals added to the team's general space are automatically considered team members. Therefore, you can utilize your standard privilege of adding individuals to a space or room by adding them to the team's general space.
+The team ID contains the general room ID with a different prefix. To locate the general room ID of a team, you need to decode and recode the team ID using the new prefix. Below is a command-line example for this process. Note that the final sed replacement is used to remove padding characters.
+Example: echo "Y2lzY29zcGFyazovL3VzL1RFQU0vYjQ5ODhmODAtN2QzMS0xMWVkLTk4Y2MtNWY5MTFhZWU1OTA0" | base64 -d | sed 's/TEAM/ROOM/' | base64 | sed 's/=.//'
+Source: https://developer.webex.com/messaging/docs/api/v1/team-memberships
+
+Description: Teams are groups of people with a set of rooms that are visible to all members of that team. This API is used to manage the teams themselves. Teams are created and deleted with this API. You can also update a team to change its name, for example.
+To manage people in a team see the Team Memberships API.
+To manage team rooms see the Rooms API.
+Source: https://developer.webex.com/messaging/docs/api/v1/teams
+
+Description: 
+Webhooks allow your app to be notified via HTTP when a specific event occurs in Webex. For example, your app can register a webhook to be notified when a new message is posted into a specific room.
+Events trigger in near real-time allowing your app and backend IT systems to stay in sync with new content and room activity.
+Check The Webhooks Guide and our blog regularly for announcements of additional webhook resources and event types.
+Long result sets will be split into pages.
+Source: https://developer.webex.com/messaging/docs/api/v1/webhooks
+

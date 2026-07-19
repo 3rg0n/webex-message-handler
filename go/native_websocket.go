@@ -15,9 +15,15 @@ type nativeWebSocket struct {
 	done chan struct{}
 }
 
-func newNativeWebSocket(ctx context.Context, url string, httpClient *http.Client) (WebSocket, error) {
+// newNativeWebSocketWithHeaders dials the WebSocket with optional extra HTTP
+// headers on the upgrade request. Mercury binds the connection's live activity
+// subscription to the identity on the upgrade request's Authorization header,
+// so the token must be presented there (in addition to the in-band auth frame)
+// for conversation.activity events to be routed to the socket.
+func newNativeWebSocketWithHeaders(ctx context.Context, url string, httpClient *http.Client, header http.Header) (WebSocket, error) {
 	conn, _, err := websocket.Dial(ctx, url, &websocket.DialOptions{
 		HTTPClient: httpClient,
+		HTTPHeader: header,
 	})
 	if err != nil {
 		return nil, err

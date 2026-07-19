@@ -3,6 +3,7 @@ package webexmessagehandler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -41,17 +42,53 @@ func NewDeviceManager(logger Logger, httpDo fetchDoFn) *DeviceManager {
 	}
 }
 
-// Register registers a new device with WDM.
+// Register obtains a usable WDM device registration.
+//
+// To avoid leaking a new device on every Connect() (which eventually trips the
+// Webex per-user device cap → HTTP 403), it first lists existing devices and
+// reuses/refreshes one matching this client's name+deviceType. Only when no
+// reusable device exists does it POST a new one. If registration fails because
+// the account already has excessive registrations, it reaps this client's own
+// devices and retries once.
 func (dm *DeviceManager) Register(ctx context.Context, token string) (*DeviceRegistration, error) {
 	dm.logger.Debug("Registering device with WDM")
 
+	// Reuse-before-register: if a device of ours already exists, refresh it.
+	if existing := dm.findReusableDevice(ctx, token); existing != "" {
+		dm.deviceURL = existing
+		if reg, err := dm.Refresh(ctx, token); err == nil {
+			dm.logger.Info("Reused existing WDM device registration")
+			return reg, nil
+		}
+		// Refresh failed (device stale/deleted server-side) — fall through to
+		// create a fresh one.
+		dm.deviceURL = ""
+	}
+
+	reg, err := dm.createDevice(ctx, token)
+	if err != nil {
+		if isExcessiveRegistrationsError(err) {
+			dm.logger.Warn("Excessive device registrations detected — reaping this client's devices and retrying")
+			dm.reapOwnDevices(ctx, token)
+			return dm.createDevice(ctx, token)
+		}
+		return nil, err
+	}
+	return reg, nil
+}
+
+// createDevice performs the raw POST /devices registration.
+func (dm *DeviceManager) createDevice(ctx context.Context, token string) (*DeviceRegistration, error) {
 	bodyBytes, err := json.Marshal(deviceBody)
 	if err != nil {
 		return nil, NewDeviceRegistrationError("Failed to marshal device body", 0)
 	}
 
+	// includeUpstreamServices=all requests the full service catalog on the
+	// registration response (matches the reference Webex SDKs).
+	registerURL := wdmAPIBase + "?includeUpstreamServices=all"
 	resp, err := dm.httpDo(ctx, FetchRequest{
-		URL:    wdmAPIBase,
+		URL:    registerURL,
 		Method: http.MethodPost,
 		Headers: map[string]string{
 			"Authorization": "Bearer " + token,
@@ -87,6 +124,80 @@ func (dm *DeviceManager) Register(ctx context.Context, token string) (*DeviceReg
 	}
 	dm.logger.Info("Device registered successfully")
 	return reg, nil
+}
+
+// findReusableDevice lists existing WDM devices and returns the URL of one
+// matching this client's name+deviceType, or "" if none/on any error (in which
+// case the caller falls back to creating a new device — best-effort, never fatal).
+func (dm *DeviceManager) findReusableDevice(ctx context.Context, token string) string {
+	devices, err := dm.listDevices(ctx, token)
+	if err != nil {
+		dm.logger.Debug(fmt.Sprintf("Could not list existing devices (will create new): %v", err))
+		return ""
+	}
+	for _, d := range devices {
+		if d.Name == deviceBody["name"] && d.DeviceType == deviceBody["deviceType"] && d.URL != "" {
+			return d.URL
+		}
+	}
+	return ""
+}
+
+// reapOwnDevices best-effort deletes all WDM devices matching this client's
+// name+deviceType, to recover from the per-user device cap. Never fatal.
+func (dm *DeviceManager) reapOwnDevices(ctx context.Context, token string) {
+	devices, err := dm.listDevices(ctx, token)
+	if err != nil {
+		dm.logger.Warn(fmt.Sprintf("Could not list devices to reap: %v", err))
+		return
+	}
+	reaped := 0
+	for _, d := range devices {
+		if d.Name != deviceBody["name"] || d.DeviceType != deviceBody["deviceType"] || d.URL == "" {
+			continue
+		}
+		resp, err := dm.httpDo(ctx, FetchRequest{
+			URL:     d.URL,
+			Method:  http.MethodDelete,
+			Headers: map[string]string{"Authorization": "Bearer " + token},
+		})
+		if err != nil {
+			dm.logger.Debug(fmt.Sprintf("Failed to reap device %s: %v", d.URL, err))
+			continue
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		if resp.OK || resp.Status == 404 {
+			reaped++
+		}
+	}
+	dm.logger.Info(fmt.Sprintf("Reaped %d stale WDM device(s)", reaped))
+}
+
+// listDevices fetches the account's current WDM device registrations.
+func (dm *DeviceManager) listDevices(ctx context.Context, token string) ([]wdmDeviceResponse, error) {
+	resp, err := dm.httpDo(ctx, FetchRequest{
+		URL:     wdmAPIBase,
+		Method:  http.MethodGet,
+		Headers: map[string]string{"Authorization": "Bearer " + token},
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.Status == 401 {
+		return nil, NewAuthError("Unauthorized to list devices")
+	}
+	if !resp.OK {
+		return nil, NewDeviceRegistrationError(fmt.Sprintf("Failed to list devices: %d", resp.Status), resp.Status)
+	}
+
+	var list wdmDeviceListResponse
+	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
+		return nil, NewDeviceRegistrationError("Failed to parse device list", 0)
+	}
+	return list.Devices, nil
 }
 
 // Refresh refreshes an existing device registration.
@@ -182,7 +293,24 @@ type wdmDeviceResponse struct {
 	WebSocketURL string            `json:"webSocketUrl"`
 	URL          string            `json:"url"`
 	UserID       string            `json:"userId"`
+	Name         string            `json:"name"`
+	DeviceType   string            `json:"deviceType"`
 	Services     map[string]string `json:"services"`
+}
+
+// wdmDeviceListResponse is the shape of GET /wdm/api/v1/devices.
+type wdmDeviceListResponse struct {
+	Devices []wdmDeviceResponse `json:"devices"`
+}
+
+// isExcessiveRegistrationsError reports whether err is the WDM per-user device
+// cap rejection (HTTP 403 on device creation).
+func isExcessiveRegistrationsError(err error) bool {
+	var de *DeviceRegistrationError
+	if errors.As(err, &de) {
+		return de.StatusCode == http.StatusForbidden
+	}
+	return false
 }
 
 func (dm *DeviceManager) parseDeviceResponse(data *wdmDeviceResponse) (*DeviceRegistration, error) {

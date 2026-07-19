@@ -14,9 +14,12 @@ class ParsedMentions:
     mentioned_groups: list[str] = field(default_factory=list)
 
 
-_MENTION_RE = re.compile(
-    r'<spark-mention[^>]*data-object-type="([^"]*)"[^>]*>', re.IGNORECASE
-)
+# Match the whole opening tag with a single bounded ``[^>]*`` (linear), then
+# pull attributes out of the captured tag. A prior form used two ``[^>]*``
+# around the attribute, which is a polynomial-ReDoS risk under Python's
+# backtracking ``re`` engine on crafted ``<spark-mention…`` input.
+_MENTION_RE = re.compile(r"<spark-mention[^>]*>", re.IGNORECASE)
+_OBJECT_TYPE_RE = re.compile(r'data-object-type="([^"]*)"', re.IGNORECASE)
 _PERSON_ID_RE = re.compile(r'data-object-id="([^"]*)"', re.IGNORECASE)
 _GROUP_TYPE_RE = re.compile(r'data-group-type="([^"]*)"', re.IGNORECASE)
 
@@ -41,7 +44,8 @@ def parse_mentions(html: str | None) -> ParsedMentions:
 
     for match in _MENTION_RE.finditer(html):
         tag = match.group(0)
-        object_type = match.group(1)
+        type_match = _OBJECT_TYPE_RE.search(tag)
+        object_type = type_match.group(1) if type_match else ""
 
         if object_type == "person":
             id_match = _PERSON_ID_RE.search(tag)

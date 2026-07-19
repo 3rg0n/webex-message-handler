@@ -135,6 +135,14 @@ pub struct DeviceRegistration {
     #[serde(rename = "userId")]
     pub user_id: String,
 
+    /// Device name.
+    #[serde(default)]
+    pub name: Option<String>,
+
+    /// Device type.
+    #[serde(rename = "deviceType", default)]
+    pub device_type: Option<String>,
+
     /// Service catalog from WDM.
     #[serde(default)]
     pub services: HashMap<String, String>,

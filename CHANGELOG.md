@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.13] - 2026-07-19
+
+### Security
+- **ReDoS in mention parsing (CodeQL `js/polynomial-redos`, high)** — the
+  `<spark-mention>` regex used two unbounded `[^>]*` around the attribute, which
+  backtracks polynomially on crafted message HTML. Rewritten to match the tag
+  with a single bounded `[^>]*` and extract attributes from the captured tag.
+  Fixed in **Node.js** and **Python** (both backtracking engines); Go (RE2) and
+  Rust (`regex` crate) are linear-time and were never vulnerable. Added
+  mention-parser unit tests incl. a ReDoS regression guard.
+
+### Fixed
+- **Device registration leak → per-user cap 403 (#26)** — device registration
+  now lists existing WDM devices and reuses/refreshes one matching this client's
+  name+deviceType instead of POSTing a new device on every connect. On a 403
+  "excessive device registrations" it reaps this client's own devices and
+  retries once. Prevents long-lived services from silently marching into a hard
+  WDM lockout across restarts/crash-loops. (all 4 languages)
+- **Go: `Reconnect` token write now synchronized** — `h.token` was written
+  without the mutex while the native WS dial reads it under `RLock`; guarded to
+  remove the data race (found by review; `go test -race` clean).
+
+### Changed
+- **Go: WS-upgrade `Authorization` header + `includeUpstreamServices=all`** —
+  the native dial now presents the token on the upgrade request and registration
+  requests the full upstream-service catalog, matching the reference Webex SDKs.
+  *(Investigated as a candidate fix for #27 but not the cause — see below.)*
+- **Dependency bumps to latest:** Go `golang.org/x/crypto` 0.49→0.54,
+  `github.com/coder/websocket` 1.8.14→1.8.15 (supersedes Dependabot #25);
+  Node `undici` 8.5→8.7.
+
+### Notes
+- **#27 (zero `conversation.activity` over Mercury) is a Webex sandbox-org
+  backend limitation, not a library bug.** Confirmed by testing: the identical
+  client works in a production org (3/3 messages received live) but receives
+  zero activities in the `*.wbx.ai` developer sandbox — reproduced across three
+  independent clients (this library, WebexCommunity/webex-go-sdk, and the
+  official Webex JS SDK via Hookbuster) and two different sandbox accounts. See
+  `docs/mercury-sandbox-activity-report.md`.
+
 ## [0.6.12] - 2026-06-03
 
 ### Security

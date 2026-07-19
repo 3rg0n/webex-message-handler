@@ -14,10 +14,26 @@ interface WDMDeviceResponse {
   webSocketUrl: string;
   url: string;
   userId: string;
+  name?: string;
+  deviceType?: string;
   services: Record<string, string>;
 }
 
+interface WDMDeviceListResponse {
+  devices: WDMDeviceResponse[];
+}
+
 const WDM_API_BASE = 'https://wdm-a.wbx2.com/wdm/api/v1/devices';
+
+const DEVICE_BODY = {
+  deviceName: 'webex-message-handler',
+  deviceType: 'DESKTOP',
+  localizedModel: 'nodejs',
+  model: 'nodejs',
+  name: 'webex-message-handler',
+  systemName: 'webex-message-handler',
+  systemVersion: '1.0.0',
+};
 
 export class DeviceManager {
   private logger: Logger;
@@ -32,25 +48,46 @@ export class DeviceManager {
   async register(token: string): Promise<DeviceRegistration> {
     this.logger.debug('Registering device with WDM');
 
-    const body = {
-      deviceName: 'webex-message-handler',
-      deviceType: 'DESKTOP',
-      localizedModel: 'nodejs',
-      model: 'nodejs',
-      name: 'webex-message-handler',
-      systemName: 'webex-message-handler',
-      systemVersion: '1.0.0',
-    };
+    // Reuse-before-register: if a device of ours already exists, refresh it.
+    const existingDeviceUrl = await this.findReusableDevice(token);
+    if (existingDeviceUrl) {
+      this.deviceUrl = existingDeviceUrl;
+      try {
+        const reg = await this.refresh(token);
+        this.logger.info('Reused existing WDM device registration');
+        return reg;
+      } catch {
+        // Refresh failed (device stale/deleted server-side) — fall through to
+        // create a fresh one.
+        this.deviceUrl = undefined;
+      }
+    }
 
+    let reg: DeviceRegistration;
     try {
+      reg = await this.createDevice(token);
+    } catch (error) {
+      if (this.isExcessiveRegistrationsError(error)) {
+        this.logger.warn('Excessive device registrations detected — reaping this client\'s devices and retrying');
+        await this.reapOwnDevices(token);
+        return this.createDevice(token);
+      }
+      throw error;
+    }
+    return reg;
+  }
+
+  private async createDevice(token: string): Promise<DeviceRegistration> {
+    try {
+      const createUrl = `${WDM_API_BASE}?includeUpstreamServices=all`;
       const response = await this.httpDo({
-        url: WDM_API_BASE,
+        url: createUrl,
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(DEVICE_BODY),
       });
 
       if (response.status === 401) {
@@ -83,6 +120,81 @@ export class DeviceManager {
     }
   }
 
+  private async findReusableDevice(token: string): Promise<string | undefined> {
+    try {
+      const devices = await this.listDevices(token);
+      for (const device of devices) {
+        if (
+          device.name === DEVICE_BODY.name &&
+          device.deviceType === DEVICE_BODY.deviceType &&
+          device.url
+        ) {
+          return device.url;
+        }
+      }
+    } catch (error) {
+      this.logger.debug(`Could not list existing devices (will create new): ${error}`);
+    }
+    return undefined;
+  }
+
+  private async reapOwnDevices(token: string): Promise<void> {
+    try {
+      const devices = await this.listDevices(token);
+      let reaped = 0;
+      for (const device of devices) {
+        if (
+          device.name !== DEVICE_BODY.name ||
+          device.deviceType !== DEVICE_BODY.deviceType ||
+          !device.url
+        ) {
+          continue;
+        }
+        try {
+          const response = await this.httpDo({
+            url: device.url,
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (response.ok || response.status === 404) {
+            reaped++;
+          }
+        } catch (error) {
+          this.logger.debug(`Failed to reap device ${device.url}: ${error}`);
+        }
+      }
+      this.logger.info(`Reaped ${reaped} stale WDM device(s)`);
+    } catch (error) {
+      this.logger.warn(`Could not list devices to reap: ${error}`);
+    }
+  }
+
+  private async listDevices(token: string): Promise<WDMDeviceResponse[]> {
+    const response = await this.httpDo({
+      url: WDM_API_BASE,
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (response.status === 401) {
+      throw new AuthError('Unauthorized to list devices');
+    }
+
+    if (!response.ok) {
+      throw new DeviceRegistrationError(
+        `Failed to list devices: ${response.status}`,
+        response.status
+      );
+    }
+
+    const list = (await response.json()) as WDMDeviceListResponse;
+    return list.devices || [];
+  }
+
+  private isExcessiveRegistrationsError(error: unknown): boolean {
+    return error instanceof DeviceRegistrationError && error.statusCode === 403;
+  }
+
   async refresh(token: string): Promise<DeviceRegistration> {
     if (!this.deviceUrl) {
       throw new DeviceRegistrationError(
@@ -92,16 +204,6 @@ export class DeviceManager {
 
     this.logger.debug('Refreshing device registration');
 
-    const body = {
-      deviceName: 'webex-message-handler',
-      deviceType: 'DESKTOP',
-      localizedModel: 'nodejs',
-      model: 'nodejs',
-      name: 'webex-message-handler',
-      systemName: 'webex-message-handler',
-      systemVersion: '1.0.0',
-    };
-
     try {
       const response = await this.httpDo({
         url: this.deviceUrl,
@@ -110,7 +212,7 @@ export class DeviceManager {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(DEVICE_BODY),
       });
 
       if (response.status === 401) {

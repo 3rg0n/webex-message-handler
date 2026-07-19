@@ -8,7 +8,12 @@ export interface ParsedMentions {
   mentionedGroups: string[];
 }
 
-const MENTION_RE = /<spark-mention[^>]*data-object-type="([^"]*)"[^>]*>/gi;
+// Match the whole opening tag with a single bounded `[^>]*` (linear, no
+// backtracking), then pull attributes out of the captured tag. A prior form
+// used two `[^>]*` around the attribute, which CodeQL flagged as a polynomial
+// ReDoS (js/polynomial-redos) on crafted `<spark-mention…` input.
+const MENTION_RE = /<spark-mention[^>]*>/gi;
+const OBJECT_TYPE_RE = /data-object-type="([^"]*)"/i;
 const PERSON_ID_RE = /data-object-id="([^"]*)"/i;
 const GROUP_TYPE_RE = /data-group-type="([^"]*)"/i;
 
@@ -23,7 +28,8 @@ export function parseMentions(html: string | undefined | null): ParsedMentions {
   MENTION_RE.lastIndex = 0;
   while ((match = MENTION_RE.exec(html)) !== null) {
     const tag = match[0];
-    const objectType = match[1];
+    const typeMatch = OBJECT_TYPE_RE.exec(tag);
+    const objectType = typeMatch ? typeMatch[1] : '';
 
     if (objectType === 'person') {
       const idMatch = PERSON_ID_RE.exec(tag);

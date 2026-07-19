@@ -2,6 +2,8 @@
 
 Lightweight Webex Mercury WebSocket + KMS decryption for receiving bot messages — no Webex SDK required.
 
+📖 **[Documentation & overview →](https://3rg0n.github.io/webex-message-handler/)**
+
 ## Why?
 
 - **The Webex JS SDK has unpatched vulnerabilities and ~300+ transitive dependencies**

@@ -2,6 +2,8 @@
 
 Lightweight Rust crate for receiving and decrypting Webex messages over the Mercury WebSocket, without the full Webex SDK.
 
+📖 **[Documentation & overview →](https://3rg0n.github.io/webex-message-handler/)**
+
 ## Features
 
 - **Mercury WebSocket** — connects to Webex Mercury with auth, ping/pong heartbeat, and automatic reconnection with exponential backoff
@@ -12,11 +14,15 @@ Lightweight Rust crate for receiving and decrypting Webex messages over the Merc
 
 ## Installation
 
-Add to your `Cargo.toml`:
+```bash
+cargo add webex-message-handler
+```
+
+Or add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-webex-message-handler = { git = "https://github.com/ecopelan/webex-message-handler-rs" }
+webex-message-handler = "0.6"
 ```
 
 ## Quick Start
