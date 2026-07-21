@@ -1,0 +1,133 @@
+python/src/webex_message_handler/device_manager.py
+  s_25ccca6093f1ae::t_97bb385a233580 14,39-61,70,87,92,94
+  s_25ccca6093f1ae::t_2b2913d0e56089 64-66,74,83
+  s_25ccca6093f1ae::t_c1e7c4d09964a3 62-63,72-73,81-82
+  s_25ccca6093f1ae::t_af45ce6292bd04 67-69
+  s_25ccca6093f1ae::t_4a8569c71cdb0a 71
+  s_25ccca6093f1ae::t_9e9e14382120c7 75-80
+  s_25ccca6093f1ae::t_c7b73d449b3a61 84-86
+  s_25ccca6093f1ae::t_ef4fd44a56153f 88-91
+  s_25ccca6093f1ae::t_dbf67c9e0d71eb 93
+  s_25ccca6093f1ae::t_b04b69eae4326b 95-97
+  s_5c8201d058714a::t_b9ee328f6e6b4d 98,139-140,224-225,228
+node/src/device-manager.ts
+  s_25ccca6093f1ae::t_7152daf4461c30 27,43,50-61,95,101-102
+  s_25ccca6093f1ae::t_83d07a54158d66 62-63,74
+  s_25ccca6093f1ae::t_7b67c3416d1b96 64-65,76,86
+  s_25ccca6093f1ae::t_2c990ef2044de8 66-68,71-73
+  s_25ccca6093f1ae::t_bcf648b920b536 75
+  s_25ccca6093f1ae::t_0192473d75e6b2 77-79,83-85
+  s_25ccca6093f1ae::t_a178245dace343 87-89,92-94
+  s_25ccca6093f1ae::t_019326da48266b 96-100
+  s_25ccca6093f1ae::t_683bb86540c9d3 103-105
+  s_5c8201d058714a::t_abb14fbe50c1d5 69-70,80-82,90-91,106-108,143-144,235,237
+python/README.md
+  s_25ccca6093f1ae::t_ce31957272e14e 160-168
+python/pyproject.toml
+  s_25ccca6093f1ae::t_c8cc626596677f 7
+rust/src/device_manager.rs
+  s_25ccca6093f1ae::t_bd535bd9702a35 90-91
+  s_25ccca6093f1ae::t_cec041d93b7acf 92-93
+  s_25ccca6093f1ae::t_cedbd8c6480a7b 11,29,37,41-89
+  s_25ccca6093f1ae::t_7303748d08a5c2 118,121-122,125-128,531,644,661,680,701,728
+  s_25ccca6093f1ae::t_ab8e3d8dcb8d0c 99
+  s_25ccca6093f1ae::t_49c0f77ea2a484 96-98
+  s_25ccca6093f1ae::t_4b2303521473dc 95
+  s_25ccca6093f1ae::t_c25ee252a2fa6f 174-175,219,239,273
+  s_25ccca6093f1ae::t_790577b9eca396 94
+  s_25ccca6093f1ae::t_0294dcd1a23c2d 100-117,119-120,123-124,514-515,520,526
+  s_25ccca6093f1ae::t_b1286248200b57 269,275,331,491-513,516-519,521-525,527-530,532,552-553,583-584,605-606,614-643,645-660,662-679,681-700,702-727
+go/device_manager_test.go
+  s_25ccca6093f1ae::t_af15f11345242e 51,87,116,175,213,248,305,381
+  s_25ccca6093f1ae::t_64ffb037868ed3 399-498
+rust/Cargo.toml
+  s_25ccca6093f1ae::t_c8cc626596677f 3
+rust/README.md
+  s_25ccca6093f1ae::t_ce31957272e14e 236-244
+CHANGELOG.md
+  s_25ccca6093f1ae::t_dbad47d1f58a95 9-22
+  s_25ccca6093f1ae::t_c8cc626596677f 8
+  s_25ccca6093f1ae::t_16bcfbf989d698 55-60
+node/package.json
+  s_25ccca6093f1ae::t_c8cc626596677f 3
+node/test/device-manager.spec.ts
+  s_25ccca6093f1ae::t_2a6db73f9e39b8 177,228,258,290,338,368
+  s_25ccca6093f1ae::t_511ebd3ff1c03d 547
+  s_25ccca6093f1ae::t_1a88c3a8794da4 588-682,684,687-857
+  s_25ccca6093f1ae::t_caf4008e9e8223 473
+  s_25ccca6093f1ae::t_f15f19c59182aa 400
+  s_25ccca6093f1ae::t_697ab6aad4bab2 580
+  s_25ccca6093f1ae::t_500c1656387387 683,685-686
+  s_25ccca6093f1ae::t_8ef58e99ab570c 123
+  s_25ccca6093f1ae::t_88b2f32dceedc8 102
+  s_25ccca6093f1ae::t_92cc84d9e5753a 58
+  s_25ccca6093f1ae::t_b08875882980de 142
+  s_25ccca6093f1ae::t_0abec193522b26 431
+python/tests/test_device_manager.py
+  s_25ccca6093f1ae::t_1d6b79fe5b09ac 6
+  s_25ccca6093f1ae::t_50df7920cecdae 33
+  s_25ccca6093f1ae::t_35c3c01306e502 283
+  s_25ccca6093f1ae::t_471b3a6c94fd99 378
+  s_25ccca6093f1ae::t_b160fcb2d76aa9 75
+  s_25ccca6093f1ae::t_19cd46ce0ce827 263
+  s_25ccca6093f1ae::t_c91399852227da 229
+  s_25ccca6093f1ae::t_db10cda0fa6406 289-377,379-406
+  s_25ccca6093f1ae::t_0ec66b9a6787c5 49
+  s_25ccca6093f1ae::t_b3565e56652402 90,110,123,138,156,169
+  s_25ccca6093f1ae::t_7c24108ef921b9 60
+go/README.md
+  s_25ccca6093f1ae::t_ce31957272e14e 134-142
+go/device_manager.go
+  s_25ccca6093f1ae::t_1306f5671689a2 255-256,259
+  s_25ccca6093f1ae::t_5c76cc6d1c060b 10
+  s_25ccca6093f1ae::t_af18bdefd823d9 30-34
+  s_25ccca6093f1ae::t_6680ef931d0aab 13-17,20-23,27-28,50-108
+  s_25ccca6093f1ae::t_a7b0d60c1d540d 165-167
+  s_51f8013849aba4::t_0d2960f1475fa9 29
+docs/mercury-sandbox-activity-report.md
+  s_25ccca6093f1ae::t_6f3e53d6294d23 9-24
+node/README.md
+  s_77c5e323ad5400::t_7ab688bb77be3e 173-181
+rust/src/handler.rs
+  s_25ccca6093f1ae::t_99bd9ee5c79968 458
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "62affeeec9f1cf670f8775b1d142e1265273bdc9",
+  "prompts": {},
+  "sessions": {
+    "s_25ccca6093f1ae": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a5afcede-bc5a-454b-af42-844223f3840c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Ergon Copeland <3rg0n@users.noreply.github.com>"
+    },
+    "s_51f8013849aba4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fa0318cf-aa46-452e-88e1-773f7dfd38b8",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Ergon Copeland <3rg0n@users.noreply.github.com>"
+    },
+    "s_5c8201d058714a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a7ba724c1522c2478",
+        "model": "unknown"
+      },
+      "human_author": "Ergon Copeland <3rg0n@users.noreply.github.com>"
+    },
+    "s_77c5e323ad5400": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2db1b9bd-30ff-4002-9382-6b26ac9a840b",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Ergon Copeland <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
