@@ -455,7 +455,7 @@ impl WebexMessageHandler {
                         {
                             let reg_guard = registration.lock().await;
                             if reg_guard.is_some() {
-                                let dm = device_manager.lock().await;
+                                let mut dm = device_manager.lock().await;
                                 match dm.refresh(&tok).await {
                                     Ok(new_reg) => {
                                         drop(reg_guard);

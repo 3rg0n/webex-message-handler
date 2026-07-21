@@ -7,12 +7,30 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
 
+// wdmAPIBase is the fallback WDM devices endpoint, used only if U2C region
+// discovery fails. Webex assigns each org to a region (e.g. wdm-r.wbx2.com);
+// registering against the wrong region yields a socket that authorizes and
+// completes KMS but never receives that org's conversation activities. The
+// region-correct base is discovered per-token from U2C — see discoverWdmBase.
 var wdmAPIBase = "https://wdm-a.wbx2.com/wdm/api/v1/devices"
+
+// u2cCatalogURL is the User-to-Cloud service discovery endpoint. The hostmap
+// catalog resolves service URLs to the token's org-assigned region.
+var u2cCatalogURL = "https://u2c.wbx2.com/u2c/api/v1/catalog?format=hostmap"
 
 // setWdmAPIBase overrides the WDM API base URL (used in tests).
 func setWdmAPIBase(url string) { wdmAPIBase = url }
+
+// setU2CCatalogURL overrides the U2C discovery URL (used in tests).
+func setU2CCatalogURL(url string) { u2cCatalogURL = url }
+
+// setWdmDevicesURL pre-seeds the discovered WDM devices endpoint, bypassing U2C
+// discovery. Test-only helper for device-lifecycle tests that aren't exercising
+// discovery itself.
+func (dm *DeviceManager) setWdmDevicesURL(url string) { dm.wdmDevicesURL = url }
 
 var deviceBody = map[string]string{
 	"deviceName":     "webex-message-handler",
@@ -29,6 +47,65 @@ type DeviceManager struct {
 	logger    Logger
 	httpDo    fetchDoFn
 	deviceURL string
+
+	// wdmDevicesURL is the region-correct "<wdm>/devices" endpoint discovered
+	// from U2C, cached for the lifetime of this DeviceManager. Empty until
+	// discoverWdmBase runs.
+	wdmDevicesURL string
+}
+
+// discoverWdmBase resolves the org-assigned WDM devices endpoint from U2C.
+// It caches the result. On any failure it falls back to the hard-coded
+// wdmAPIBase (never fatal), so a U2C outage degrades to today's behavior.
+func (dm *DeviceManager) discoverWdmBase(ctx context.Context, token string) string {
+	if dm.wdmDevicesURL != "" {
+		return dm.wdmDevicesURL
+	}
+
+	resp, err := dm.httpDo(ctx, FetchRequest{
+		URL:     u2cCatalogURL,
+		Method:  http.MethodGet,
+		Headers: map[string]string{"Authorization": "Bearer " + token},
+	})
+	if err != nil {
+		dm.logger.Warn(fmt.Sprintf("U2C discovery failed (%v); falling back to %s", err, wdmAPIBase))
+		dm.wdmDevicesURL = wdmAPIBase
+		return dm.wdmDevicesURL
+	}
+	defer resp.Body.Close()
+
+	if !resp.OK {
+		dm.logger.Warn(fmt.Sprintf("U2C discovery returned %d; falling back to %s", resp.Status, wdmAPIBase))
+		dm.wdmDevicesURL = wdmAPIBase
+		return dm.wdmDevicesURL
+	}
+
+	var catalog struct {
+		ServiceLinks map[string]string `json:"serviceLinks"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&catalog); err != nil {
+		dm.logger.Warn(fmt.Sprintf("U2C catalog parse failed (%v); falling back to %s", err, wdmAPIBase))
+		dm.wdmDevicesURL = wdmAPIBase
+		return dm.wdmDevicesURL
+	}
+
+	wdm := catalog.ServiceLinks["wdm"]
+	if wdm == "" {
+		dm.logger.Warn(fmt.Sprintf("U2C catalog has no wdm service link; falling back to %s", wdmAPIBase))
+		dm.wdmDevicesURL = wdmAPIBase
+		return dm.wdmDevicesURL
+	}
+
+	// Validate the discovered host against the Webex domain allowlist before use.
+	if err := validateWebexURL(wdm, "https"); err != nil {
+		dm.logger.Error(fmt.Sprintf("U2C-discovered wdm URL %q untrusted (%v); falling back to %s", wdm, err, wdmAPIBase))
+		dm.wdmDevicesURL = wdmAPIBase
+		return dm.wdmDevicesURL
+	}
+
+	dm.wdmDevicesURL = strings.TrimRight(wdm, "/") + "/devices"
+	dm.logger.Info(fmt.Sprintf("Discovered region-correct WDM endpoint: %s", dm.wdmDevicesURL))
+	return dm.wdmDevicesURL
 }
 
 // NewDeviceManager creates a new DeviceManager.
@@ -85,8 +162,9 @@ func (dm *DeviceManager) createDevice(ctx context.Context, token string) (*Devic
 	}
 
 	// includeUpstreamServices=all requests the full service catalog on the
-	// registration response (matches the reference Webex SDKs).
-	registerURL := wdmAPIBase + "?includeUpstreamServices=all"
+	// registration response (matches the reference Webex SDKs). The base is the
+	// region-correct endpoint discovered from U2C.
+	registerURL := dm.discoverWdmBase(ctx, token) + "?includeUpstreamServices=all"
 	resp, err := dm.httpDo(ctx, FetchRequest{
 		URL:    registerURL,
 		Method: http.MethodPost,
@@ -174,10 +252,11 @@ func (dm *DeviceManager) reapOwnDevices(ctx context.Context, token string) {
 	dm.logger.Info(fmt.Sprintf("Reaped %d stale WDM device(s)", reaped))
 }
 
-// listDevices fetches the account's current WDM device registrations.
+// listDevices fetches the account's current WDM device registrations from the
+// region-correct endpoint.
 func (dm *DeviceManager) listDevices(ctx context.Context, token string) ([]wdmDeviceResponse, error) {
 	resp, err := dm.httpDo(ctx, FetchRequest{
-		URL:     wdmAPIBase,
+		URL:     dm.discoverWdmBase(ctx, token),
 		Method:  http.MethodGet,
 		Headers: map[string]string{"Authorization": "Bearer " + token},
 	})

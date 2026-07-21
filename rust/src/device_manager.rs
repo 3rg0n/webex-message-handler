@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use tracing::{debug, error, info, warn};
 
 const WDM_API_BASE: &str = "https://wdm-a.wbx2.com/wdm/api/v1/devices";
+const U2C_CATALOG_URL: &str = "https://u2c.wbx2.com/u2c/api/v1/catalog?format=hostmap";
 
 fn device_body() -> serde_json::Value {
     json!({
@@ -25,6 +26,7 @@ fn device_body() -> serde_json::Value {
 pub struct DeviceManager {
     device_url: Option<String>,
     http_do: FetchFn,
+    wdm_devices_url: Option<String>,
 }
 
 impl DeviceManager {
@@ -32,7 +34,96 @@ impl DeviceManager {
         Self {
             device_url: None,
             http_do,
+            wdm_devices_url: None,
         }
+    }
+
+    async fn discover_wdm_base(&mut self, token: &str) -> String {
+        if let Some(url) = &self.wdm_devices_url {
+            return url.clone();
+        }
+
+        match (self.http_do)(FetchRequest {
+            url: U2C_CATALOG_URL.to_string(),
+            method: "GET".to_string(),
+            headers: {
+                let mut h = HashMap::new();
+                h.insert("Authorization".to_string(), format!("Bearer {}", token));
+                h
+            },
+            body: None,
+        }).await {
+            Ok(response) => {
+                if !response.ok {
+                    warn!(
+                        "U2C discovery returned {}; falling back to {}",
+                        response.status, WDM_API_BASE
+                    );
+                    self.wdm_devices_url = Some(WDM_API_BASE.to_string());
+                    return WDM_API_BASE.to_string();
+                }
+
+                match serde_json::from_slice::<serde_json::Value>(&response.body) {
+                    Ok(catalog) => {
+                        if let Some(wdm) = catalog
+                            .get("serviceLinks")
+                            .and_then(|sl| sl.get("wdm"))
+                            .and_then(|v| v.as_str())
+                        {
+                            if wdm.is_empty() {
+                                warn!(
+                                    "U2C catalog has no wdm service link; falling back to {}",
+                                    WDM_API_BASE
+                                );
+                                self.wdm_devices_url = Some(WDM_API_BASE.to_string());
+                                return WDM_API_BASE.to_string();
+                            }
+
+                            if let Err(e) = validate_webex_url(wdm, "https") {
+                                error!(
+                                    "U2C-discovered wdm URL \"{}\" untrusted ({}); falling back to {}",
+                                    wdm, e, WDM_API_BASE
+                                );
+                                self.wdm_devices_url = Some(WDM_API_BASE.to_string());
+                                return WDM_API_BASE.to_string();
+                            }
+
+                            let url = format!("{}/devices", wdm.trim_end_matches('/'));
+                            info!("Discovered region-correct WDM endpoint: {}", url);
+                            self.wdm_devices_url = Some(url.clone());
+                            url
+                        } else {
+                            warn!(
+                                "U2C catalog has no wdm service link; falling back to {}",
+                                WDM_API_BASE
+                            );
+                            self.wdm_devices_url = Some(WDM_API_BASE.to_string());
+                            WDM_API_BASE.to_string()
+                        }
+                    }
+                    Err(e) => {
+                        warn!(
+                            "U2C catalog parse failed ({}); falling back to {}",
+                            e, WDM_API_BASE
+                        );
+                        self.wdm_devices_url = Some(WDM_API_BASE.to_string());
+                        WDM_API_BASE.to_string()
+                    }
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "U2C discovery failed ({}); falling back to {}",
+                    e, WDM_API_BASE
+                );
+                self.wdm_devices_url = Some(WDM_API_BASE.to_string());
+                WDM_API_BASE.to_string()
+            }
+        }
+    }
+
+    pub fn set_wdm_devices_url(&mut self, url: String) {
+        self.wdm_devices_url = Some(url);
     }
 
     /// Register a new device with WDM.
@@ -80,7 +171,8 @@ impl DeviceManager {
         let body = serde_json::to_string(&device_body())
             .map_err(|e| WebexError::device_registration(format!("Failed to serialize body: {e}"), None))?;
 
-        let register_url = format!("{}?includeUpstreamServices=all", WDM_API_BASE);
+        let base = self.discover_wdm_base(token).await;
+        let register_url = format!("{}?includeUpstreamServices=all", base);
         let response = (self.http_do)(FetchRequest {
             url: register_url,
             method: "POST".to_string(),
@@ -124,7 +216,7 @@ impl DeviceManager {
         Ok(reg)
     }
 
-    async fn find_reusable_device(&self, token: &str) -> Option<String> {
+    async fn find_reusable_device(&mut self, token: &str) -> Option<String> {
         match self.list_devices(token).await {
             Ok(devices) => {
                 for device in devices {
@@ -144,7 +236,7 @@ impl DeviceManager {
         }
     }
 
-    async fn reap_own_devices(&self, token: &str) {
+    async fn reap_own_devices(&mut self, token: &str) {
         match self.list_devices(token).await {
             Ok(devices) => {
                 let mut reaped = 0;
@@ -174,12 +266,13 @@ impl DeviceManager {
         }
     }
 
-    async fn list_devices(&self, token: &str) -> Result<Vec<DeviceRegistration>> {
+    async fn list_devices(&mut self, token: &str) -> Result<Vec<DeviceRegistration>> {
         let mut headers = HashMap::new();
         headers.insert("Authorization".to_string(), format!("Bearer {}", token));
 
+        let base = self.discover_wdm_base(token).await;
         let response = (self.http_do)(FetchRequest {
-            url: WDM_API_BASE.to_string(),
+            url: base,
             method: "GET".to_string(),
             headers,
             body: None,
@@ -235,7 +328,7 @@ impl DeviceManager {
     }
 
     /// Refresh an existing device registration.
-    pub async fn refresh(&self, token: &str) -> Result<DeviceRegistration> {
+    pub async fn refresh(&mut self, token: &str) -> Result<DeviceRegistration> {
         let device_url = self.device_url.as_deref().ok_or_else(|| {
             WebexError::device_registration("Device not registered. Call register() first.", None)
         })?;
@@ -395,6 +488,48 @@ mod tests {
         })
     }
 
+    /// Mock that routes by both method and URL for more granular control
+    fn mock_fetch_by_url(
+        routes: Vec<(&'static str, &'static str, u16, serde_json::Value)>,
+    ) -> (FetchFn, Arc<Mutex<Vec<Call>>>) {
+        let calls: Arc<Mutex<Vec<Call>>> = Arc::new(Mutex::new(Vec::new()));
+        let routes_map: Arc<Mutex<Vec<_>>> = Arc::new(Mutex::new(routes));
+        let calls_c = calls.clone();
+
+        let f: FetchFn = Arc::new(move |req: FetchRequest| {
+            let calls_c = calls_c.clone();
+            let routes_map = routes_map.clone();
+            Box::pin(async move {
+                calls_c.lock().unwrap().push(Call {
+                    method: req.method.clone(),
+                    url: req.url.clone(),
+                });
+
+                let mut routes = routes_map.lock().unwrap();
+                let mut found: Option<(usize, u16, serde_json::Value)> = None;
+                for (i, (method, url, status, body)) in routes.iter().enumerate() {
+                    if req.method == *method && req.url.contains(url) {
+                        found = Some((i, *status, body.clone()));
+                        break;
+                    }
+                }
+                if let Some((i, status, body)) = found {
+                    // Keep the last matching response for repeated calls.
+                    if routes.len() > 1 && i < routes.len() - 1 {
+                        routes.remove(i);
+                    }
+                    return Ok(FetchResponse {
+                        status,
+                        ok: (200..300).contains(&status),
+                        body: serde_json::to_vec(&body).unwrap(),
+                    });
+                }
+                Err(format!("unexpected request: {} {}", req.method, req.url).into())
+            })
+        });
+        (f, calls)
+    }
+
     #[tokio::test]
     async fn reuses_existing_device_via_refresh_not_create() {
         // GET (list) returns a device matching our name+deviceType; register
@@ -414,6 +549,8 @@ mod tests {
             ("PUT", 200, device_json()),
         ]);
         let mut dm = DeviceManager::new(fetch);
+        // Bypass U2C discovery: this test exercises the reuse path, not discovery.
+        dm.set_wdm_devices_url(WDM_API_BASE.to_string());
         let reg = dm.register("tok").await.unwrap();
         assert_eq!(reg.device_url, DEVICE_URL);
 
@@ -443,6 +580,8 @@ mod tests {
             ("POST", 200, device_json()), // retry create → success
         ]);
         let mut dm = DeviceManager::new(fetch);
+        // Bypass U2C discovery: this test exercises the reap/retry path.
+        dm.set_wdm_devices_url(WDM_API_BASE.to_string());
         let reg = dm.register("tok").await.unwrap();
         assert_eq!(reg.device_url, DEVICE_URL);
 
@@ -463,12 +602,129 @@ mod tests {
             ("POST", 200, device_json()),
         ]);
         let mut dm = DeviceManager::new(fetch);
+        // Bypass U2C discovery: this test exercises list-failure fallback.
+        dm.set_wdm_devices_url(WDM_API_BASE.to_string());
         let reg = dm.register("tok").await.unwrap();
         assert_eq!(reg.device_url, DEVICE_URL);
 
         let calls = calls.lock().unwrap();
         let methods: Vec<&str> = calls.iter().map(|c| c.method.as_str()).collect();
         assert_eq!(methods, vec!["GET", "POST"]);
+    }
+
+    // --- U2C region discovery (#27) tests ---
+
+    #[tokio::test]
+    async fn discovers_region_correct_wdm_endpoint_from_u2c() {
+        // Verify that register resolves the org-assigned WDM region from U2C.
+        let u2c_response = json!({
+            "serviceLinks": {"wdm": "https://wdm-r.wbx2.com/wdm/api/v1"}
+        });
+        let regional_device_url = "https://wdm-r.wbx2.com/wdm/api/v1/devices/test-123";
+        let regional_response = json!({
+            "webSocketUrl": WS_URL,
+            "url": regional_device_url,
+            "userId": "user-123",
+            "services": {}
+        });
+
+        let (fetch, calls) = mock_fetch_by_url(vec![
+            ("GET", "u2c.wbx2.com", 200, u2c_response),        // U2C discovery
+            ("GET", "wdm-r.wbx2.com", 200, json!({"devices": []})), // list
+            ("POST", "wdm-r.wbx2.com", 200, regional_response), // create
+        ]);
+        let mut dm = DeviceManager::new(fetch);
+        let reg = dm.register("tok").await.unwrap();
+
+        assert_eq!(reg.device_url, regional_device_url);
+        let calls = calls.lock().unwrap();
+        // Verify POST went to wdm-r, not wdm-a
+        let post_call = calls.iter().find(|c| c.method == "POST").unwrap();
+        assert!(post_call.url.contains("wdm-r.wbx2.com"));
+    }
+
+    #[tokio::test]
+    async fn falls_back_to_wdm_a_when_u2c_returns_non_2xx() {
+        // Verify discovery is best-effort: non-2xx U2C falls back to wdm-a.
+        let (fetch, calls) = mock_fetch_by_url(vec![
+            ("GET", "u2c.wbx2.com", 500, json!({})),           // U2C discovery fails
+            ("GET", "wdm-a.wbx2.com", 200, json!({"devices": []})), // list uses fallback
+            ("POST", "wdm-a.wbx2.com", 200, device_json()),    // create
+        ]);
+        let mut dm = DeviceManager::new(fetch);
+        let reg = dm.register("tok").await.unwrap();
+
+        assert_eq!(reg.device_url, DEVICE_URL);
+        let calls = calls.lock().unwrap();
+        let post_call = calls.iter().find(|c| c.method == "POST").unwrap();
+        assert!(post_call.url.contains("wdm-a.wbx2.com"));
+    }
+
+    #[tokio::test]
+    async fn falls_back_to_wdm_a_when_u2c_has_no_wdm_link() {
+        // Verify that missing wdm link in U2C response falls back to wdm-a.
+        let u2c_response = json!({"serviceLinks": {}});
+
+        let (fetch, calls) = mock_fetch_by_url(vec![
+            ("GET", "u2c.wbx2.com", 200, u2c_response),        // U2C discovery (no wdm link)
+            ("GET", "wdm-a.wbx2.com", 200, json!({"devices": []})), // list uses fallback
+            ("POST", "wdm-a.wbx2.com", 200, device_json()),    // create
+        ]);
+        let mut dm = DeviceManager::new(fetch);
+        let reg = dm.register("tok").await.unwrap();
+
+        assert_eq!(reg.device_url, DEVICE_URL);
+        let calls = calls.lock().unwrap();
+        let post_call = calls.iter().find(|c| c.method == "POST").unwrap();
+        assert!(post_call.url.contains("wdm-a.wbx2.com"));
+    }
+
+    #[tokio::test]
+    async fn rejects_untrusted_wdm_host_from_u2c_and_falls_back() {
+        // Verify that non-Webex wdm link from U2C is rejected and falls back.
+        let u2c_response = json!({
+            "serviceLinks": {"wdm": "https://evil.example.com/wdm/api/v1"}
+        });
+
+        let (fetch, calls) = mock_fetch_by_url(vec![
+            ("GET", "u2c.wbx2.com", 200, u2c_response),        // U2C discovery (untrusted host)
+            ("GET", "wdm-a.wbx2.com", 200, json!({"devices": []})), // list uses fallback
+            ("POST", "wdm-a.wbx2.com", 200, device_json()),    // create
+        ]);
+        let mut dm = DeviceManager::new(fetch);
+        let reg = dm.register("tok").await.unwrap();
+
+        assert_eq!(reg.device_url, DEVICE_URL);
+        let calls = calls.lock().unwrap();
+        let post_call = calls.iter().find(|c| c.method == "POST").unwrap();
+        assert!(post_call.url.contains("wdm-a.wbx2.com"));
+    }
+
+    #[tokio::test]
+    async fn caches_discovered_wdm_endpoint() {
+        // Verify that the discovered WDM endpoint is cached.
+        let u2c_response = json!({
+            "serviceLinks": {"wdm": "https://wdm-r.wbx2.com/wdm/api/v1"}
+        });
+        let regional_response = json!({
+            "webSocketUrl": WS_URL,
+            "url": "https://wdm-r.wbx2.com/wdm/api/v1/devices/test-123",
+            "userId": "user-123",
+            "services": {}
+        });
+
+        let (fetch, calls) = mock_fetch_by_url(vec![
+            ("GET", "u2c.wbx2.com", 200, u2c_response),         // U2C discovery (called once)
+            ("GET", "wdm-r.wbx2.com", 200, json!({"devices": []})), // list
+            ("POST", "wdm-r.wbx2.com", 200, regional_response), // create
+        ]);
+        let mut dm = DeviceManager::new(fetch);
+        let _ = dm.register("tok").await.unwrap();
+
+        let calls = calls.lock().unwrap();
+        let u2c_calls: Vec<_> = calls.iter().filter(|c| c.url.contains("u2c.wbx2.com")).collect();
+        // Should only be called once; the response is cached
+        assert_eq!(u2c_calls.len(), 1, "U2C should be called only once for discovery");
     }
 }
 

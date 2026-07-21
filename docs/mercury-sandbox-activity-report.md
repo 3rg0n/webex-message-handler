@@ -6,6 +6,22 @@
 
 ---
 
+> ## ✅ RESOLVED (2026-07-21) — root cause was client-side region registration
+> Webex Engineering identified it: the sandbox org's WDM service maps to
+> **`wdm-r.wbx2.com`**, but the library hard-coded **`wdm-a.wbx2.com`** and did
+> no service discovery. Registering a device in the wrong region yields a socket
+> that authorizes + completes KMS but never receives that org's
+> `conversation.activity`. (Production worked only because that org maps to `-a`.)
+>
+> **Fix:** discover the org-correct WDM base from U2C
+> (`GET https://u2c.wbx2.com/u2c/api/v1/catalog?format=hostmap` → `serviceLinks.wdm`)
+> before registering; fall back to `wdm-a` only if discovery fails. Verified in
+> the previously-failing sandbox: registers `wdm-r`, connects to the `-r` Mercury
+> region, and receives all messages (3/3). Shipped in all 4 languages. The
+> analysis below is retained for the record.
+
+---
+
 ## Summary
 
 A Mercury WebSocket that **connects, authorizes, and completes the KMS handshake** in a Webex **developer sandbox org** receives the connect-time buffer state and KMS messages, and then **only ping/pong frames** — **no `conversation.activity` events are ever delivered**. Messages posted live to a room the account belongs to never reach the socket, even though the same messages are immediately visible via the REST API (`GET /v1/messages`).

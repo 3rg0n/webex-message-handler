@@ -24,6 +24,7 @@ interface WDMDeviceListResponse {
 }
 
 const WDM_API_BASE = 'https://wdm-a.wbx2.com/wdm/api/v1/devices';
+const U2C_CATALOG_URL = 'https://u2c.wbx2.com/u2c/api/v1/catalog?format=hostmap';
 
 const DEVICE_BODY = {
   deviceName: 'webex-message-handler',
@@ -39,10 +40,70 @@ export class DeviceManager {
   private logger: Logger;
   private httpDo: HttpDoFn;
   private deviceUrl: string | undefined;
+  private wdmDevicesUrl: string | undefined;
 
   constructor(options: DeviceManagerOptions) {
     this.logger = options.logger ?? noopLogger;
     this.httpDo = options.httpDo;
+  }
+
+  private async discoverWdmBase(token: string): Promise<string> {
+    if (this.wdmDevicesUrl) {
+      return this.wdmDevicesUrl;
+    }
+
+    try {
+      const response = await this.httpDo({
+        url: U2C_CATALOG_URL,
+        method: 'GET',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!response.ok) {
+        this.logger.warn(
+          `U2C discovery returned ${response.status}; falling back to ${WDM_API_BASE}`
+        );
+        this.wdmDevicesUrl = WDM_API_BASE;
+        return this.wdmDevicesUrl;
+      }
+
+      const catalog = (await response.json()) as { serviceLinks?: Record<string, string> };
+      const wdm = catalog.serviceLinks?.['wdm'];
+
+      if (!wdm) {
+        this.logger.warn(
+          `U2C catalog has no wdm service link; falling back to ${WDM_API_BASE}`
+        );
+        this.wdmDevicesUrl = WDM_API_BASE;
+        return this.wdmDevicesUrl;
+      }
+
+      try {
+        validateWebexUrl(wdm, 'https:');
+      } catch (error) {
+        this.logger.error(
+          `U2C-discovered wdm URL "${wdm}" untrusted (${error instanceof Error ? error.message : String(error)}); falling back to ${WDM_API_BASE}`
+        );
+        this.wdmDevicesUrl = WDM_API_BASE;
+        return this.wdmDevicesUrl;
+      }
+
+      this.wdmDevicesUrl = wdm.replace(/\/$/, '') + '/devices';
+      this.logger.info(
+        `Discovered region-correct WDM endpoint: ${this.wdmDevicesUrl}`
+      );
+      return this.wdmDevicesUrl;
+    } catch (error) {
+      this.logger.warn(
+        `U2C discovery failed (${error instanceof Error ? error.message : String(error)}); falling back to ${WDM_API_BASE}`
+      );
+      this.wdmDevicesUrl = WDM_API_BASE;
+      return this.wdmDevicesUrl;
+    }
+  }
+
+  setWdmDevicesUrl(url: string): void {
+    this.wdmDevicesUrl = url;
   }
 
   async register(token: string): Promise<DeviceRegistration> {
@@ -79,7 +140,8 @@ export class DeviceManager {
 
   private async createDevice(token: string): Promise<DeviceRegistration> {
     try {
-      const createUrl = `${WDM_API_BASE}?includeUpstreamServices=all`;
+      const base = await this.discoverWdmBase(token);
+      const createUrl = `${base}?includeUpstreamServices=all`;
       const response = await this.httpDo({
         url: createUrl,
         method: 'POST',
@@ -170,8 +232,9 @@ export class DeviceManager {
   }
 
   private async listDevices(token: string): Promise<WDMDeviceResponse[]> {
+    const base = await this.discoverWdmBase(token);
     const response = await this.httpDo({
-      url: WDM_API_BASE,
+      url: base,
       method: 'GET',
       headers: { Authorization: `Bearer ${token}` },
     });

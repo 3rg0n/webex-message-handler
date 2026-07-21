@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.14] - 2026-07-21
+
+### Fixed
+- **Zero `conversation.activity` over Mercury for non-`wdm-a` orgs (#27)** — the
+  library hard-coded the WDM endpoint `wdm-a.wbx2.com` and never performed
+  service discovery. Webex assigns each org to a region; registering a device
+  in the wrong region produces a socket that authorizes and completes the KMS
+  handshake but never receives that org's conversation activities (REST still
+  works). Now, before registering, the library discovers the org-correct WDM
+  base from U2C (`GET https://u2c.wbx2.com/u2c/api/v1/catalog?format=hostmap`,
+  `serviceLinks.wdm`), validates the host against the Webex allowlist, and falls
+  back to `wdm-a` only if discovery fails. Verified end-to-end in a previously
+  failing sandbox org (registers `wdm-r`, 3/3 messages received). (all 4
+  languages) — thanks to Webex Engineering for the region diagnosis.
+
 ## [0.6.13] - 2026-07-19
 
 ### Security
@@ -37,13 +52,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Node `undici` 8.5→8.7.
 
 ### Notes
-- **#27 (zero `conversation.activity` over Mercury) is a Webex sandbox-org
-  backend limitation, not a library bug.** Confirmed by testing: the identical
-  client works in a production org (3/3 messages received live) but receives
-  zero activities in the `*.wbx.ai` developer sandbox — reproduced across three
-  independent clients (this library, WebexCommunity/webex-go-sdk, and the
-  official Webex JS SDK via Hookbuster) and two different sandbox accounts. See
-  `docs/mercury-sandbox-activity-report.md`.
+- **#27 (zero `conversation.activity` over Mercury)** — at 0.6.13 this was
+  believed to be a Webex sandbox-org backend limitation. **Superseded by 0.6.14:**
+  the true root cause was client-side — the library registered against the wrong
+  WDM region. Fixed by U2C region discovery in 0.6.14. (The production-vs-sandbox
+  contrast that pointed here: production orgs happen to map to `wdm-a`, which the
+  library hard-coded.) See `docs/mercury-sandbox-activity-report.md`.
 
 ## [0.6.12] - 2026-06-03
 

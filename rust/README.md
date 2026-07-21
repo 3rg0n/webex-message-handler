@@ -233,6 +233,15 @@ if let Some(parent) = &msg.parent_id {
 
 Resource types: `"MESSAGE"`, `"PEOPLE"`, `"ROOM"`.
 
+## Region Discovery
+
+Webex assigns each org to a service region (e.g. `wdm-a`, `wdm-r`). On connect,
+the library discovers your org's correct WDM endpoint from the Webex U2C service
+catalog and registers there automatically — no configuration needed. Registering
+in the wrong region produces a socket that authorizes and completes the KMS
+handshake but never receives that org's messages, so this is done for you. If
+discovery fails for any reason, it falls back to the default region.
+
 ## Delivery Guarantees
 
 This library provides **at-most-once** delivery semantics:

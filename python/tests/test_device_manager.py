@@ -3,7 +3,7 @@
 import pytest
 
 from tests.conftest import MockHttpDo
-from webex_message_handler.device_manager import WDM_API_BASE, DeviceManager
+from webex_message_handler.device_manager import U2C_CATALOG_URL, WDM_API_BASE, DeviceManager
 from webex_message_handler.errors import AuthError, DeviceRegistrationError
 
 MOCK_TOKEN = "test-token"
@@ -30,6 +30,7 @@ class TestRegister:
             .add("POST", f"{WDM_API_BASE}?includeUpstreamServices=all", payload=MOCK_WDM_RESPONSE)  # create
         )
         dm = DeviceManager(http_do=http_do)
+        dm.set_wdm_devices_url(WDM_API_BASE)
         result = await dm.register(MOCK_TOKEN)
 
         assert result.web_socket_url == MOCK_WS_URL
@@ -45,6 +46,7 @@ class TestRegister:
             .add("POST", f"{WDM_API_BASE}?includeUpstreamServices=all", status=401)  # create fails with 401
         )
         dm = DeviceManager(http_do=http_do)
+        dm.set_wdm_devices_url(WDM_API_BASE)
         with pytest.raises(AuthError):
             await dm.register(MOCK_TOKEN)
 
@@ -55,6 +57,7 @@ class TestRegister:
             .add("POST", f"{WDM_API_BASE}?includeUpstreamServices=all", status=400)  # create fails
         )
         dm = DeviceManager(http_do=http_do)
+        dm.set_wdm_devices_url(WDM_API_BASE)
         with pytest.raises(DeviceRegistrationError, match="Failed to register device"):
             await dm.register(MOCK_TOKEN)
 
@@ -69,6 +72,7 @@ class TestRegister:
             )  # create fails
         )
         dm = DeviceManager(http_do=http_do)
+        dm.set_wdm_devices_url(WDM_API_BASE)
         with pytest.raises(DeviceRegistrationError):
             await dm.register(MOCK_TOKEN)
 
@@ -83,6 +87,7 @@ class TestRefresh:
             .add("PUT", MOCK_DEVICE_URL, payload=refreshed)  # refresh
         )
         dm = DeviceManager(http_do=http_do)
+        dm.set_wdm_devices_url(WDM_API_BASE)
         await dm.register(MOCK_TOKEN)
         result = await dm.refresh(MOCK_TOKEN)
 
@@ -102,6 +107,7 @@ class TestRefresh:
             .add("PUT", MOCK_DEVICE_URL, status=401)  # refresh fails
         )
         dm = DeviceManager(http_do=http_do)
+        dm.set_wdm_devices_url(WDM_API_BASE)
         await dm.register(MOCK_TOKEN)
         with pytest.raises(AuthError):
             await dm.refresh(MOCK_TOKEN)
@@ -114,6 +120,7 @@ class TestRefresh:
             .add("PUT", MOCK_DEVICE_URL, status=500)  # refresh fails
         )
         dm = DeviceManager(http_do=http_do)
+        dm.set_wdm_devices_url(WDM_API_BASE)
         await dm.register(MOCK_TOKEN)
         with pytest.raises(DeviceRegistrationError):
             await dm.refresh(MOCK_TOKEN)
@@ -128,6 +135,7 @@ class TestUnregister:
             .add("DELETE", MOCK_DEVICE_URL, status=204)  # unregister
         )
         dm = DeviceManager(http_do=http_do)
+        dm.set_wdm_devices_url(WDM_API_BASE)
         await dm.register(MOCK_TOKEN)
         await dm.unregister(MOCK_TOKEN)
 
@@ -145,6 +153,7 @@ class TestUnregister:
             .add("DELETE", MOCK_DEVICE_URL, status=401)  # unregister fails
         )
         dm = DeviceManager(http_do=http_do)
+        dm.set_wdm_devices_url(WDM_API_BASE)
         await dm.register(MOCK_TOKEN)
         with pytest.raises(AuthError):
             await dm.unregister(MOCK_TOKEN)
@@ -157,6 +166,7 @@ class TestUnregister:
             .add("DELETE", MOCK_DEVICE_URL, status=500)  # unregister fails
         )
         dm = DeviceManager(http_do=http_do)
+        dm.set_wdm_devices_url(WDM_API_BASE)
         await dm.register(MOCK_TOKEN)
         with pytest.raises(DeviceRegistrationError):
             await dm.unregister(MOCK_TOKEN)
@@ -216,6 +226,7 @@ class TestDeviceReuseAndReaping:
             .add("PUT", MOCK_DEVICE_URL, payload=MOCK_WDM_RESPONSE)
         )
         dm = DeviceManager(http_do=http_do)
+        dm.set_wdm_devices_url(WDM_API_BASE)
         result = await dm.register(MOCK_TOKEN)
 
         assert result.device_url == MOCK_DEVICE_URL
@@ -249,6 +260,7 @@ class TestDeviceReuseAndReaping:
             .add("POST", f"{WDM_API_BASE}?includeUpstreamServices=all", payload=MOCK_WDM_RESPONSE)  # retry POST
         )
         dm = DeviceManager(http_do=http_do)
+        dm.set_wdm_devices_url(WDM_API_BASE)
         result = await dm.register(MOCK_TOKEN)
 
         assert result.device_url == MOCK_DEVICE_URL
@@ -268,8 +280,127 @@ class TestDeviceReuseAndReaping:
             .add("POST", f"{WDM_API_BASE}?includeUpstreamServices=all", payload=MOCK_WDM_RESPONSE)  # create succeeds
         )
         dm = DeviceManager(http_do=http_do)
+        dm.set_wdm_devices_url(WDM_API_BASE)
         result = await dm.register(MOCK_TOKEN)
 
         assert result.device_url == MOCK_DEVICE_URL
         # Should be: GET (list fails) + POST (create succeeds)
         assert len(http_do.calls) == 2
+
+
+class TestU2CRegionDiscovery:
+    """Tests for U2C region discovery (#27)."""
+
+    async def test_discovers_region_correct_wdm_endpoint_from_u2c(self):
+        """Verify that register resolves the org-assigned WDM region from U2C."""
+        u2c_catalog = {"serviceLinks": {"wdm": "https://wdm-r.wbx2.com/wdm/api/v1"}}
+        regional_device_url = "https://wdm-r.wbx2.com/wdm/api/v1/devices/test-device-id"
+        regional_response = {**MOCK_WDM_RESPONSE, "url": regional_device_url}
+
+        http_do = (
+            MockHttpDo()
+            .add("GET", U2C_CATALOG_URL, payload=u2c_catalog)  # U2C discovery
+            .add("GET", "https://wdm-r.wbx2.com/wdm/api/v1/devices", payload={"devices": []})  # list
+            .add(
+                "POST",
+                "https://wdm-r.wbx2.com/wdm/api/v1/devices?includeUpstreamServices=all",
+                payload=regional_response,
+            )  # create
+        )
+        dm = DeviceManager(http_do=http_do)
+        result = await dm.register(MOCK_TOKEN)
+
+        assert result.device_url == regional_device_url
+        # Verify POST went to discovered regional endpoint, not hardcoded wdm-a
+        post_calls = [c for c in http_do.calls if c.method == "POST"]
+        assert "wdm-r.wbx2.com" in post_calls[0].url
+
+    async def test_caches_discovered_wdm_endpoint(self):
+        """Verify that the discovered WDM endpoint is cached."""
+        u2c_catalog = {"serviceLinks": {"wdm": "https://wdm-r.wbx2.com/wdm/api/v1"}}
+
+        http_do = (
+            MockHttpDo()
+            .add("GET", U2C_CATALOG_URL, payload=u2c_catalog)  # U2C discovery (first call)
+            .add("GET", "https://wdm-r.wbx2.com/wdm/api/v1/devices", payload={"devices": []})  # list
+            .add(
+                "POST",
+                "https://wdm-r.wbx2.com/wdm/api/v1/devices?includeUpstreamServices=all",
+                payload={**MOCK_WDM_RESPONSE, "url": "https://wdm-r.wbx2.com/wdm/api/v1/devices/id1"},
+            )  # create
+        )
+        dm = DeviceManager(http_do=http_do)
+
+        # Register once; U2C should be called
+        await dm.register(MOCK_TOKEN)
+        u2c_calls = [c for c in http_do.calls if "u2c.wbx2.com" in c.url]
+        assert len(u2c_calls) == 1
+
+        # Pre-seed the cache
+        dm.set_wdm_devices_url("https://wdm-r.wbx2.com/wdm/api/v1/devices")
+        # Verify cache doesn't trigger another U2C call (would fail with assertion)
+
+    async def test_falls_back_to_wdm_a_when_u2c_returns_non_2xx(self):
+        """Verify discovery is best-effort: non-2xx U2C falls back to wdm-a."""
+        http_do = (
+            MockHttpDo()
+            .add("GET", U2C_CATALOG_URL, status=500)  # U2C discovery fails
+            .add("GET", WDM_API_BASE, payload={"devices": []})  # list uses fallback
+            .add("POST", f"{WDM_API_BASE}?includeUpstreamServices=all", payload=MOCK_WDM_RESPONSE)  # create
+        )
+        dm = DeviceManager(http_do=http_do)
+        result = await dm.register(MOCK_TOKEN)
+
+        assert result.device_url == MOCK_DEVICE_URL
+        # Verify POST went to fallback wdm-a
+        post_calls = [c for c in http_do.calls if c.method == "POST"]
+        assert "wdm-a.wbx2.com" in post_calls[0].url
+
+    async def test_falls_back_to_wdm_a_when_u2c_has_no_wdm_link(self):
+        """Verify that missing wdm link in U2C response falls back to wdm-a."""
+        u2c_catalog = {"serviceLinks": {}}  # Missing wdm link
+
+        http_do = (
+            MockHttpDo()
+            .add("GET", U2C_CATALOG_URL, payload=u2c_catalog)  # U2C discovery
+            .add("GET", WDM_API_BASE, payload={"devices": []})  # list uses fallback
+            .add("POST", f"{WDM_API_BASE}?includeUpstreamServices=all", payload=MOCK_WDM_RESPONSE)  # create
+        )
+        dm = DeviceManager(http_do=http_do)
+        result = await dm.register(MOCK_TOKEN)
+
+        assert result.device_url == MOCK_DEVICE_URL
+        post_calls = [c for c in http_do.calls if c.method == "POST"]
+        assert "wdm-a.wbx2.com" in post_calls[0].url
+
+    async def test_rejects_untrusted_wdm_host_from_u2c_and_falls_back(self):
+        """Verify that non-Webex wdm link from U2C is rejected and falls back."""
+        u2c_catalog = {"serviceLinks": {"wdm": "https://evil.attacker.com/wdm/api/v1"}}
+
+        http_do = (
+            MockHttpDo()
+            .add("GET", U2C_CATALOG_URL, payload=u2c_catalog)  # U2C discovery
+            .add("GET", WDM_API_BASE, payload={"devices": []})  # list uses fallback
+            .add("POST", f"{WDM_API_BASE}?includeUpstreamServices=all", payload=MOCK_WDM_RESPONSE)  # create
+        )
+        dm = DeviceManager(http_do=http_do)
+        result = await dm.register(MOCK_TOKEN)
+
+        assert result.device_url == MOCK_DEVICE_URL
+        post_calls = [c for c in http_do.calls if c.method == "POST"]
+        assert "wdm-a.wbx2.com" in post_calls[0].url
+
+    async def test_falls_back_to_wdm_a_on_u2c_fetch_error(self):
+        """Verify that U2C fetch errors fall back to wdm-a."""
+        http_do = (
+            MockHttpDo()
+            .add("GET", U2C_CATALOG_URL, exc=ConnectionError("Network error"))  # U2C discovery fails
+            .add("GET", WDM_API_BASE, payload={"devices": []})  # list uses fallback
+            .add("POST", f"{WDM_API_BASE}?includeUpstreamServices=all", payload=MOCK_WDM_RESPONSE)  # create
+        )
+        dm = DeviceManager(http_do=http_do)
+        result = await dm.register(MOCK_TOKEN)
+
+        assert result.device_url == MOCK_DEVICE_URL
+        post_calls = [c for c in http_do.calls if c.method == "POST"]
+        assert "wdm-a.wbx2.com" in post_calls[0].url

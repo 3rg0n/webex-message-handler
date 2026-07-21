@@ -48,6 +48,7 @@ func TestDeviceManagerRegisterSuccess(t *testing.T) {
 	setWdmAPIBase(server.URL)
 
 	dm := NewDeviceManager(NoopLogger(), createTestHTTPAdapter(nil))
+	dm.setWdmDevicesURL(server.URL)
 	reg, err := dm.Register(context.Background(), "test-token")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -83,6 +84,7 @@ func TestDeviceManagerRegister401(t *testing.T) {
 	setWdmAPIBase(server.URL)
 
 	dm := NewDeviceManager(NoopLogger(), createTestHTTPAdapter(nil))
+	dm.setWdmDevicesURL(server.URL)
 	_, err := dm.Register(context.Background(), "bad-token")
 	if err == nil {
 		t.Fatal("expected error for 401")
@@ -111,6 +113,7 @@ func TestDeviceManagerRegister500(t *testing.T) {
 	setWdmAPIBase(server.URL)
 
 	dm := NewDeviceManager(NoopLogger(), createTestHTTPAdapter(nil))
+	dm.setWdmDevicesURL(server.URL)
 	_, err := dm.Register(context.Background(), "test-token")
 	if err == nil {
 		t.Fatal("expected error for 500")
@@ -169,6 +172,7 @@ func TestDeviceManagerUnregisterSuccess(t *testing.T) {
 	setWdmAPIBase(server.URL)
 
 	dm := NewDeviceManager(NoopLogger(), createTestHTTPAdapter(nil))
+	dm.setWdmDevicesURL(server.URL)
 	_, err := dm.Register(context.Background(), "test-token")
 	if err != nil {
 		t.Fatalf("unexpected register error: %v", err)
@@ -206,6 +210,7 @@ func TestDeviceManagerUnregister401(t *testing.T) {
 	setWdmAPIBase(server.URL)
 
 	dm := NewDeviceManager(NoopLogger(), createTestHTTPAdapter(nil))
+	dm.setWdmDevicesURL(server.URL)
 	dm.Register(context.Background(), "test-token")
 
 	err := dm.Unregister(context.Background(), "test-token")
@@ -240,6 +245,7 @@ func TestDeviceManagerEmptyServices(t *testing.T) {
 	setWdmAPIBase(server.URL)
 
 	dm := NewDeviceManager(NoopLogger(), createTestHTTPAdapter(nil))
+	dm.setWdmDevicesURL(server.URL)
 	reg, err := dm.Register(context.Background(), "test-token")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -296,6 +302,7 @@ func TestDeviceManagerReusesExistingDevice(t *testing.T) {
 	setWdmAPIBase(server.URL)
 
 	dm := NewDeviceManager(NoopLogger(), createTestHTTPAdapter(nil))
+	dm.setWdmDevicesURL(server.URL)
 	reg, err := dm.Register(context.Background(), "test-token")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -371,6 +378,7 @@ func TestDeviceManagerReapsOnExcessiveRegistrations(t *testing.T) {
 	setWdmAPIBase(server.URL)
 
 	dm := NewDeviceManager(NoopLogger(), createTestHTTPAdapter(nil))
+	dm.setWdmDevicesURL(server.URL)
 	reg, err := dm.Register(context.Background(), "test-token")
 	if err != nil {
 		t.Fatalf("unexpected error after reap+retry: %v", err)
@@ -386,5 +394,105 @@ func TestDeviceManagerReapsOnExcessiveRegistrations(t *testing.T) {
 	}
 	if postCount != 2 {
 		t.Errorf("expected 2 POSTs (initial 403 + retry), got %d", postCount)
+	}
+}
+
+// --- U2C region discovery (#27 root cause) ---
+
+// TestDiscoverWdmBaseResolvesRegion verifies that register() resolves the
+// org-assigned WDM region from the U2C hostmap instead of the hard-coded
+// wdm-a endpoint. This is the fix for silent same-org message loss when an org
+// lives in a non-"a" region (e.g. wdm-r).
+func TestDiscoverWdmBaseResolvesRegion(t *testing.T) {
+	var gotRegisterHost string
+	// The regional WDM server (stands in for wdm-r).
+	wdmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			emptyDeviceList(w)
+			return
+		}
+		gotRegisterHost = r.Host
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(wdmDeviceResponse{
+			WebSocketURL: "wss://mercury-connection-a2.wbx2.com/ws",
+			URL:          "https://wdm-r.wbx2.com/devices/xyz",
+			UserID:       "user-1",
+			Services:     map[string]string{},
+		})
+	}))
+	defer wdmServer.Close()
+
+	// The U2C catalog returns a wbx2 wdm link; validateWebexURL requires a
+	// *.wbx2.com host, so we assert the resolution + append behavior by pointing
+	// the discovered base back through a rewrite: since localhost fails the
+	// allowlist, this test instead drives discovery via a stubbed catalog whose
+	// wdm link is a trusted host, and checks discoverWdmBase output directly.
+	u2c := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"serviceLinks": map[string]string{"wdm": "https://wdm-r.wbx2.com/wdm/api/v1"},
+			"format":       "hostmap",
+		})
+	}))
+	defer u2c.Close()
+
+	origU2C := u2cCatalogURL
+	defer func() { setU2CCatalogURL(origU2C) }()
+	setU2CCatalogURL(u2c.URL)
+
+	dm := NewDeviceManager(NoopLogger(), createTestHTTPAdapter(nil))
+	base := dm.discoverWdmBase(context.Background(), "tok")
+	if base != "https://wdm-r.wbx2.com/wdm/api/v1/devices" {
+		t.Errorf("expected region-correct wdm-r devices URL, got %q", base)
+	}
+	// Cached on second call (no re-fetch).
+	if base2 := dm.discoverWdmBase(context.Background(), "tok"); base2 != base {
+		t.Errorf("expected cached base %q, got %q", base, base2)
+	}
+	_ = gotRegisterHost
+}
+
+// TestDiscoverWdmBaseFallsBackOnU2CError verifies discovery is best-effort: a
+// failed U2C request falls back to the hard-coded wdmAPIBase (no regression).
+func TestDiscoverWdmBaseFallsBackOnU2CError(t *testing.T) {
+	u2c := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+	}))
+	defer u2c.Close()
+
+	origU2C := u2cCatalogURL
+	origBase := wdmAPIBase
+	defer func() { setU2CCatalogURL(origU2C); setWdmAPIBase(origBase) }()
+	setU2CCatalogURL(u2c.URL)
+	setWdmAPIBase("https://wdm-a.wbx2.com/wdm/api/v1/devices")
+
+	dm := NewDeviceManager(NoopLogger(), createTestHTTPAdapter(nil))
+	base := dm.discoverWdmBase(context.Background(), "tok")
+	if base != "https://wdm-a.wbx2.com/wdm/api/v1/devices" {
+		t.Errorf("expected fallback to wdm-a on U2C error, got %q", base)
+	}
+}
+
+// TestDiscoverWdmBaseRejectsUntrustedHost verifies a non-Webex wdm link from
+// U2C is rejected by the domain allowlist and falls back safely.
+func TestDiscoverWdmBaseRejectsUntrustedHost(t *testing.T) {
+	u2c := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"serviceLinks": map[string]string{"wdm": "https://evil.example.com/wdm/api/v1"},
+		})
+	}))
+	defer u2c.Close()
+
+	origU2C := u2cCatalogURL
+	origBase := wdmAPIBase
+	defer func() { setU2CCatalogURL(origU2C); setWdmAPIBase(origBase) }()
+	setU2CCatalogURL(u2c.URL)
+	setWdmAPIBase("https://wdm-a.wbx2.com/wdm/api/v1/devices")
+
+	dm := NewDeviceManager(NoopLogger(), createTestHTTPAdapter(nil))
+	base := dm.discoverWdmBase(context.Background(), "tok")
+	if base != "https://wdm-a.wbx2.com/wdm/api/v1/devices" {
+		t.Errorf("expected fallback to wdm-a for untrusted host, got %q", base)
 	}
 }

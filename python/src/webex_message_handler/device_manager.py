@@ -11,6 +11,7 @@ from .types import DeviceRegistration, FetchFunction, FetchRequest
 from .url_validation import validate_webex_url
 
 WDM_API_BASE = "https://wdm-a.wbx2.com/wdm/api/v1/devices"
+U2C_CATALOG_URL = "https://u2c.wbx2.com/u2c/api/v1/catalog?format=hostmap"
 
 _DEVICE_BODY = {
     "deviceName": "webex-message-handler",
@@ -35,6 +36,66 @@ class DeviceManager:
         self._logger: Logger = logger or noop_logger  # type: ignore[assignment]
         self._http_do = http_do
         self._device_url: str | None = None
+        self._wdm_devices_url: str | None = None
+
+    async def _discover_wdm_base(self, token: str) -> str:
+        """Discover the org-assigned WDM devices endpoint from U2C.
+
+        Caches the result. On any failure falls back to the hard-coded WDM_API_BASE
+        (never fatal), so a U2C outage degrades to today's behavior.
+        """
+        if self._wdm_devices_url:
+            return self._wdm_devices_url
+
+        try:
+            response = await self._http_do(
+                FetchRequest(
+                    url=U2C_CATALOG_URL,
+                    method="GET",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+            )
+
+            if not response.ok:
+                self._logger.warning(
+                    f"U2C discovery returned {response.status}; falling back to {WDM_API_BASE}"
+                )
+                self._wdm_devices_url = WDM_API_BASE
+                return self._wdm_devices_url
+
+            catalog = await response.json()
+            wdm = catalog.get("serviceLinks", {}).get("wdm")
+
+            if not wdm:
+                self._logger.warning(
+                    f"U2C catalog has no wdm service link; falling back to {WDM_API_BASE}"
+                )
+                self._wdm_devices_url = WDM_API_BASE
+                return self._wdm_devices_url
+
+            try:
+                validate_webex_url(wdm, "https")
+            except ValueError as exc:
+                self._logger.error(
+                    f'U2C-discovered wdm URL "{wdm}" untrusted ({exc}); falling back to {WDM_API_BASE}'
+                )
+                self._wdm_devices_url = WDM_API_BASE
+                return self._wdm_devices_url
+
+            self._wdm_devices_url = wdm.rstrip("/") + "/devices"
+            self._logger.info(f"Discovered region-correct WDM endpoint: {self._wdm_devices_url}")
+            return self._wdm_devices_url
+
+        except Exception as exc:
+            self._logger.warning(
+                f"U2C discovery failed ({exc}); falling back to {WDM_API_BASE}"
+            )
+            self._wdm_devices_url = WDM_API_BASE
+            return self._wdm_devices_url
+
+    def set_wdm_devices_url(self, url: str) -> None:
+        """Pre-seed the discovered WDM devices endpoint (test helper)."""
+        self._wdm_devices_url = url
 
     async def register(self, token: str) -> DeviceRegistration:
         """Register a new device with WDM.
@@ -75,7 +136,8 @@ class DeviceManager:
     async def _create_device(self, token: str) -> DeviceRegistration:
         """Perform the raw POST /devices registration."""
         try:
-            create_url = f"{WDM_API_BASE}?includeUpstreamServices=all"
+            base = await self._discover_wdm_base(token)
+            create_url = f"{base}?includeUpstreamServices=all"
             response = await self._http_do(
                 FetchRequest(
                     url=create_url,
@@ -159,10 +221,11 @@ class DeviceManager:
             self._logger.warning(f"Could not list devices to reap: {exc}")
 
     async def _list_devices(self, token: str) -> list[Any]:
-        """Fetches the account's current WDM device registrations."""
+        """Fetches the account's current WDM device registrations from the region-correct endpoint."""
+        base = await self._discover_wdm_base(token)
         response = await self._http_do(
             FetchRequest(
-                url=WDM_API_BASE,
+                url=base,
                 method="GET",
                 headers={"Authorization": f"Bearer {token}"},
             )
