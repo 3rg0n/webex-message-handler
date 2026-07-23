@@ -1,0 +1,84 @@
+go/message_decryptor_test.go
+  s_25ccca6093f1ae::t_05c4260ec5d74c 5-6,8-9,12-82,84,87-88
+  s_25ccca6093f1ae::t_4163eb9bd4a870 83,85-86,89
+go/mercury_socket.go
+  s_25ccca6093f1ae::t_305538846279a9 9
+  s_25ccca6093f1ae::t_2efe253242a68b 10
+  s_25ccca6093f1ae::t_ca2ba181af26a2 375-384,553-598,649-651,653-658,668
+go/mercury_socket_test.go
+  s_25ccca6093f1ae::t_05c4260ec5d74c 8-31,33,36-37
+  s_25ccca6093f1ae::t_4b4c3edb700a88 32,34-35,38
+python/tests/test_message_decryptor.py
+  s_25ccca6093f1ae::t_f88b019e0a6c66 3,7
+  s_25ccca6093f1ae::t_e0760e570c0cf0 255-357
+go/message_decryptor.go
+  s_25ccca6093f1ae::t_05c4260ec5d74c 5
+  s_25ccca6093f1ae::t_ea9a31c64b8da3 74-90
+python/tests/test_mercury_socket.py
+  s_25ccca6093f1ae::t_127672725bf64f 1-46
+CHANGELOG.md
+  s_25ccca6093f1ae::t_05c4260ec5d74c 8-17
+  s_25ccca6093f1ae::t_3bc998a8fdd53c 18-24
+python/src/webex_message_handler/message_decryptor.py
+  s_25ccca6093f1ae::t_aaa4988e67e81f 6
+  s_25ccca6093f1ae::t_48368a129be714 86-101
+rust/src/message_decryptor.rs
+  s_25ccca6093f1ae::t_fa1076fbf94808 109-132,136-218,244,246,250,253,255-257,259,262,264-267,269-270,272,274-275,293,311,330
+  s_25ccca6093f1ae::t_1bf48c076389c5 219-220,261,271,276-277
+  s_25ccca6093f1ae::t_0e841fe029bd5a 221-243,245,247-249,251-252,254,258,260,263,268,273,278-292,294-310,312-329,331
+go/examples/observe-harness/main.go
+  s_25ccca6093f1ae::t_05c4260ec5d74c 25-31
+  s_25ccca6093f1ae::t_8d124326b04c16 121-125,200-230,292-349
+go/handler.go
+  s_25ccca6093f1ae::t_bec816c7bf024b 724-740
+go/types.go
+  s_25ccca6093f1ae::t_679da86710c510 121-130
+node/package.json
+  s_25ccca6093f1ae::t_4de76f2ab5a54d 3
+node/src/handler.ts
+  s_25ccca6093f1ae::t_8817b7918952e2 527-546,548-555
+node/src/message-decryptor.ts
+  s_25ccca6093f1ae::t_cd49376d5c3ef2 69-82
+node/src/types.ts
+  s_25ccca6093f1ae::t_4f3bf02305a043 106-107
+node/test/handler.spec.ts
+  s_25ccca6093f1ae::t_2bf8dff84177ba 1018-1293
+node/test/message-decryptor.spec.ts
+  s_25ccca6093f1ae::t_2fb55297a9fac2 437-674
+python/pyproject.toml
+  s_25ccca6093f1ae::t_16f6712bcd3f84 7
+python/src/webex_message_handler/handler.py
+  s_25ccca6093f1ae::t_367c5bea78524b 591-599,603-610
+python/src/webex_message_handler/mercury_socket.py
+  s_25ccca6093f1ae::t_808d91a430bd85 400-408,423-424
+python/src/webex_message_handler/types.py
+  s_25ccca6093f1ae::t_80037e08efd51e 167-169
+rust/Cargo.toml
+  s_25ccca6093f1ae::t_a9aabc6d5d8c07 3
+rust/src/handler.rs
+  s_25ccca6093f1ae::t_c9e8cc11cf08f7 626-630,632-658,660-667
+rust/src/kms_client.rs
+  s_25ccca6093f1ae::t_8a33a510bc1714 152-159
+rust/src/mercury_socket.rs
+  s_25ccca6093f1ae::t_152d7701dc44bb 324-327
+rust/src/types.rs
+  s_25ccca6093f1ae::t_453d0df2034a0c 187-189,193-197,203-214
+rust/tests/integration_test.rs
+  s_25ccca6093f1ae::t_22b79869bef778 344
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "fbf1c62c1a51ead882975b4f367f63f6b2e3ad9e",
+  "prompts": {},
+  "sessions": {
+    "s_25ccca6093f1ae": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a5afcede-bc5a-454b-af42-844223f3840c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Ergon Copeland <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
