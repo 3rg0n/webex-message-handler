@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.15] - 2026-07-23
+
+### Fixed
+- **Adaptive-Card `Action.Submit` inputs always empty over Mercury** — when a
+  user clicks a card's submit button, Webex delivers a `conversation.activity`
+  with `verb="cardAction"` / `object.objectType="submit"`, and `object.inputs`
+  arrives as a **JWE-encrypted string** (encrypted under the activity's
+  `encryptionKeyUrl`, same key as message content). The parser type-asserted
+  `inputs` as an object and silently dropped the string, so
+  `AttachmentAction.Inputs` was always empty — the `onAttachmentActionCreated`
+  callback fired but carried no form values. The parser now captures the raw
+  JWE string, the message decryptor decrypts it (dir/A256GCM) and parses the
+  JSON, and the card-action handler routes the activity through the decryptor
+  before emitting. On decrypt failure it warns and falls through with empty
+  inputs (never throws). Confirmed live: inputs now decrypt to the card's
+  `data` payload. (all 4 languages)
+
 ## [0.6.14] - 2026-07-21
 
 ### Fixed

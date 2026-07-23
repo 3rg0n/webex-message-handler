@@ -1,8 +1,10 @@
 """Tests for MessageDecryptor."""
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from jwcrypto import jwe, jwk
 
 from webex_message_handler.errors import DecryptionError
 from webex_message_handler.message_decryptor import MessageDecryptor
@@ -250,3 +252,106 @@ class TestDecryptActivity:
         decryptor = MessageDecryptor(kms_client=mock_kms)
         with pytest.raises(DecryptionError):
             await decryptor.decrypt_activity(activity)
+
+    async def test_decrypts_encrypted_inputs_with_dir_a256gcm(self):
+        """Test decryption of JWE-encrypted card inputs (dir/A256GCM algorithm)."""
+        # Create a 256-bit key for dir algorithm
+        key_bytes = b"0" * 32  # 256 bits / 8 bytes = 32 bytes
+        key = jwk.JWK(kty="oct", k=jwk.base64url_encode(key_bytes))
+
+        # Create the plaintext inputs dict
+        plaintext_inputs = {
+            "card_action": "answer_feedback",
+            "response_event_id": "evt-123",
+            "verdict": "up",
+        }
+        plaintext_json = json.dumps(plaintext_inputs)
+
+        # Encrypt using JWE with dir algorithm and A256GCM
+        protected = json.dumps({"alg": "dir", "enc": "A256GCM"})
+        jwe_obj = jwe.JWE(plaintext_json.encode("utf-8"), protected=protected)
+        jwe_obj.add_recipient(key)
+        encrypted_inputs = jwe_obj.serialize(compact=True)
+
+        # Create activity with encrypted inputs
+        obj = MercuryObject(
+            id="card-msg-id",
+            object_type="submit",
+            inputs_encrypted=encrypted_inputs,
+        )
+        activity = _make_activity(
+            verb="cardAction",
+            object=obj,
+            encryption_key_url="https://kms.example.com/keys/card-key",
+        )
+
+        # Mock KMS to return our test key
+        mock_kms = AsyncMock()
+        mock_kms.get_key = AsyncMock(return_value=key)
+
+        decryptor = MessageDecryptor(kms_client=mock_kms)
+        result = await decryptor.decrypt_activity(activity)
+
+        # Verify the encrypted inputs were decrypted and parsed as dict
+        mock_kms.get_key.assert_called_once_with("https://kms.example.com/keys/card-key")
+        assert result.object.inputs == plaintext_inputs
+        assert result.object.inputs["card_action"] == "answer_feedback"
+        assert result.object.inputs["response_event_id"] == "evt-123"
+        assert result.object.inputs["verdict"] == "up"
+
+    async def test_handles_encrypted_inputs_decryption_failure(self):
+        """Test that inputs decryption failure logs warning and leaves inputs empty."""
+        mock_kms = AsyncMock()
+        mock_key = MagicMock()
+        mock_kms.get_key = AsyncMock(return_value=mock_key)
+
+        obj = MercuryObject(
+            id="card-msg-id",
+            object_type="submit",
+            inputs_encrypted="malformed-jwe-string",
+        )
+        activity = _make_activity(
+            verb="cardAction",
+            object=obj,
+            encryption_key_url="https://kms.example.com/keys/card-key",
+        )
+
+        mock_logger = MagicMock()
+        decryptor = MessageDecryptor(kms_client=mock_kms, logger=mock_logger)
+
+        with patch("webex_message_handler.message_decryptor.jwe") as mock_jwe:
+            mock_jwe_obj = MagicMock()
+            mock_jwe_obj.deserialize.side_effect = Exception("Invalid JWE format")
+            mock_jwe.JWE.return_value = mock_jwe_obj
+
+            result = await decryptor.decrypt_activity(activity)
+
+        # Warning should be logged
+        mock_logger.warning.assert_called()
+        # Inputs should remain empty (or None)
+        assert result.object.inputs is None
+
+    async def test_skips_empty_encrypted_inputs(self):
+        """Test that empty encrypted inputs string is skipped."""
+        mock_kms = AsyncMock()
+        mock_key = MagicMock()
+        mock_kms.get_key = AsyncMock(return_value=mock_key)
+
+        obj = MercuryObject(
+            id="card-msg-id",
+            object_type="submit",
+            inputs_encrypted="",
+        )
+        activity = _make_activity(
+            verb="cardAction",
+            object=obj,
+            encryption_key_url="https://kms.example.com/keys/card-key",
+        )
+
+        with patch("webex_message_handler.message_decryptor.jwe") as mock_jwe:
+            decryptor = MessageDecryptor(kms_client=mock_kms)
+            result = await decryptor.decrypt_activity(activity)
+
+        # JWE should not be called for empty inputs_encrypted
+        mock_jwe.JWE.assert_not_called()
+        assert result.object.inputs_encrypted == ""

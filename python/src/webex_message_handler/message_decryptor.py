@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from typing import TYPE_CHECKING
 
 from jwcrypto import jwe
@@ -80,6 +81,22 @@ class MessageDecryptor:
                 except Exception as exc:
                     self._logger.warning(
                         f"Failed to decrypt content in activity {activity.id}: {exc}"
+                    )
+
+            # Decrypt inputs (card action form values)
+            if (
+                decrypted.object.inputs_encrypted
+                and isinstance(decrypted.object.inputs_encrypted, str)
+                and len(decrypted.object.inputs_encrypted) > 0
+            ):
+                try:
+                    jwe_obj = jwe.JWE()
+                    jwe_obj.deserialize(decrypted.object.inputs_encrypted, key=key)
+                    plaintext = jwe_obj.payload.decode("utf-8")
+                    decrypted.object.inputs = json.loads(plaintext)
+                except Exception as exc:
+                    self._logger.warning(
+                        f"Failed to decrypt inputs in activity {activity.id}: {exc}"
                     )
 
             return decrypted

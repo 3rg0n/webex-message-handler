@@ -164,6 +164,9 @@ class MercuryObject:
     inputs: dict[str, Any] | None = None
     """Card form input values (present on cardAction/submit activities)."""
 
+    inputs_encrypted: str | None = None
+    """Raw JWE-encrypted inputs string (when inputs is encrypted on the wire)."""
+
     files: list[str] | None = None
     """File URLs attached to the message (present on file-share messages)."""
 

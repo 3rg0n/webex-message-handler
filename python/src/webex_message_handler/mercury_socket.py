@@ -397,6 +397,15 @@ def _parse_activity(raw: dict[str, Any]) -> MercuryActivity:
             type=parent_raw.get("type", ""),
         )
 
+    # Parse inputs: if it's a string (JWE), store as inputs_encrypted; if dict, keep as inputs
+    inputs_raw = object_raw.get("inputs")
+    inputs: dict[str, Any] | None = None
+    inputs_encrypted: str | None = None
+    if isinstance(inputs_raw, dict):
+        inputs = inputs_raw
+    elif isinstance(inputs_raw, str):
+        inputs_encrypted = inputs_raw
+
     return MercuryActivity(
         id=raw.get("id", ""),
         verb=raw.get("verb", ""),
@@ -411,7 +420,8 @@ def _parse_activity(raw: dict[str, Any]) -> MercuryActivity:
             display_name=object_raw.get("displayName"),
             content=object_raw.get("content"),
             encryption_key_url=object_raw.get("encryptionKeyUrl"),
-            inputs=object_raw.get("inputs"),
+            inputs=inputs,
+            inputs_encrypted=inputs_encrypted,
             files=object_raw.get("files"),
         ),
         target=MercuryTarget(

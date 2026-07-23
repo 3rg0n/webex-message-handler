@@ -588,17 +588,26 @@ class WebexMessageHandler:
 
         # attachmentAction:created — verb=cardAction + objectType=submit
         if activity.verb == "cardAction" and activity.object.object_type == "submit":
+            # Decrypt the activity (including encrypted card inputs) if decryptor is available
+            decrypted_activity = activity
+            if self._message_decryptor:
+                try:
+                    decrypted_activity = await self._message_decryptor.decrypt_activity(activity)
+                except Exception as exc:
+                    self._logger.warning(f"Failed to decrypt card action inputs in activity {activity.id}: {exc}")
+                    # Continue with the original activity if decryption fails
+
             self._emit(
                 "attachmentAction:created",
                 AttachmentAction(
-                    id=activity.id,
-                    message_id=activity.parent.id if activity.parent else "",
-                    person_id=activity.actor.id,
-                    person_email=activity.actor.email_address or "",
-                    room_id=activity.target.id,
-                    inputs=activity.object.inputs or {},
-                    created=activity.published,
-                    raw=activity,
+                    id=decrypted_activity.id,
+                    message_id=decrypted_activity.parent.id if decrypted_activity.parent else "",
+                    person_id=decrypted_activity.actor.id,
+                    person_email=decrypted_activity.actor.email_address or "",
+                    room_id=decrypted_activity.target.id,
+                    inputs=decrypted_activity.object.inputs or {},
+                    created=decrypted_activity.published,
+                    raw=decrypted_activity,
                 ),
             )
             return

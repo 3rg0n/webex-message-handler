@@ -118,8 +118,16 @@ type MercuryObject struct {
 	DisplayName      string                 `json:"displayName,omitempty"`
 	Content          string                 `json:"content,omitempty"`
 	EncryptionKeyURL string                 `json:"encryptionKeyUrl,omitempty"`
-	Inputs           map[string]interface{} `json:"inputs,omitempty"`
-	Files            []string               `json:"files,omitempty"`
+	// Inputs holds the decrypted card-action form values on cardAction/submit
+	// activities. On the wire object.inputs is a JWE-encrypted string (see
+	// InputsEncrypted); it is decrypted into this map by the message decryptor.
+	Inputs map[string]interface{} `json:"inputs,omitempty"`
+	// InputsEncrypted holds the raw JWE ciphertext of object.inputs as delivered
+	// by Mercury, before decryption. Card-action inputs are encrypted under the
+	// activity's encryptionKeyUrl (same KMS key path as message content), so the
+	// decryptor must resolve the key and decrypt this into Inputs.
+	InputsEncrypted string   `json:"-"`
+	Files           []string `json:"files,omitempty"`
 }
 
 // MercuryTarget represents the target in a Mercury activity.

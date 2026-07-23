@@ -341,6 +341,7 @@ fn test_membership_activity_construction() {
                 content: None,
                 encryption_key_url: None,
                 inputs: None,
+                inputs_encrypted: None,
                 files: None,
             },
             target: webex_message_handler::MercuryTarget {

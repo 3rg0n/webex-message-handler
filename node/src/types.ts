@@ -103,8 +103,8 @@ export interface MercuryObject {
   displayName?: string;
   content?: string;
   encryptionKeyUrl?: string;
-  /** Card form input values (present on cardAction/submit activities). */
-  inputs?: Record<string, unknown>;
+  /** Card form input values (present on cardAction/submit activities). May be encrypted on wire. */
+  inputs?: string | Record<string, unknown>;
   /** File URLs attached to the message (present on file-share messages). */
   files?: string[];
 }

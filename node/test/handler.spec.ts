@@ -1015,6 +1015,282 @@ describe('WebexMessageHandler', () => {
     });
   });
 
+  describe('card action handling', () => {
+    it('should emit attachmentAction:created for cardAction/submit with plaintext inputs', async () => {
+      const handler = new WebexMessageHandler({ token: mockToken });
+      await handler.connect();
+
+      const actionListener = jest.fn();
+      handler.on('attachmentAction:created', actionListener);
+
+      const activity: MercuryActivity = {
+        id: 'action-123',
+        verb: 'cardAction',
+        actor: {
+          id: 'person-456',
+          objectType: 'person',
+          emailAddress: 'user@example.com',
+        },
+        object: {
+          id: 'card-789',
+          objectType: 'submit',
+          inputs: {
+            card_action: 'answer_feedback',
+            response_event_id: 'evt-123',
+            verdict: 'up',
+          },
+        },
+        target: {
+          id: 'room-101',
+          objectType: 'conversation',
+          tags: ['GROUP'],
+        },
+        parent: {
+          id: 'msg-parent-123',
+          type: 'activity',
+        },
+        published: '2024-01-01T00:00:00Z',
+      };
+
+      mockMessageDecryptor.decryptActivity.mockResolvedValueOnce(activity);
+
+      const mercury = handler['mercurySocket'] as any;
+      mercury.emit('activity', activity);
+
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(actionListener).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'action-123',
+          messageId: 'msg-parent-123',
+          personId: 'person-456',
+          personEmail: 'user@example.com',
+          roomId: 'room-101',
+          inputs: {
+            card_action: 'answer_feedback',
+            response_event_id: 'evt-123',
+            verdict: 'up',
+          },
+          created: '2024-01-01T00:00:00Z',
+        })
+      );
+    });
+
+    it('should decrypt encrypted inputs in cardAction/submit activity', async () => {
+      const handler = new WebexMessageHandler({ token: mockToken });
+      await handler.connect();
+
+      const actionListener = jest.fn();
+      handler.on('attachmentAction:created', actionListener);
+
+      const encryptedInputsString = 'eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIn0.encrypted.data.tag';
+      const decryptedInputs = {
+        card_action: 'answer_feedback',
+        response_event_id: 'evt-123',
+        verdict: 'up',
+      };
+
+      // Activity as it arrives on wire with encrypted inputs
+      const activityWithEncryptedInputs: MercuryActivity = {
+        id: 'action-123',
+        verb: 'cardAction',
+        actor: {
+          id: 'person-456',
+          objectType: 'person',
+          emailAddress: 'user@example.com',
+        },
+        object: {
+          id: 'card-789',
+          objectType: 'submit',
+          inputs: encryptedInputsString,
+          encryptionKeyUrl: 'https://kms.example.com/keys/key-123',
+        },
+        target: {
+          id: 'room-101',
+          objectType: 'conversation',
+          tags: ['GROUP'],
+        },
+        parent: {
+          id: 'msg-parent-123',
+          type: 'activity',
+        },
+        published: '2024-01-01T00:00:00Z',
+      };
+
+      // After decryption, inputs should be an object
+      const decryptedActivity: MercuryActivity = {
+        ...activityWithEncryptedInputs,
+        object: {
+          ...activityWithEncryptedInputs.object,
+          inputs: decryptedInputs,
+        },
+      };
+
+      mockMessageDecryptor.decryptActivity.mockResolvedValueOnce(decryptedActivity);
+
+      const mercury = handler['mercurySocket'] as any;
+      mercury.emit('activity', activityWithEncryptedInputs);
+
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(mockMessageDecryptor.decryptActivity).toHaveBeenCalledWith(activityWithEncryptedInputs);
+      expect(actionListener).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'action-123',
+          inputs: decryptedInputs,
+        })
+      );
+    });
+
+    it('should handle cardAction/submit with decryption failure gracefully', async () => {
+      const logger = { warn: jest.fn(), debug: jest.fn(), info: jest.fn(), error: jest.fn() };
+      const handlerWithLogger = new WebexMessageHandler({ token: mockToken, logger });
+      await handlerWithLogger.connect();
+
+      const actionListener = jest.fn();
+      handlerWithLogger.on('attachmentAction:created', actionListener);
+
+      const activity: MercuryActivity = {
+        id: 'action-123',
+        verb: 'cardAction',
+        actor: {
+          id: 'person-456',
+          objectType: 'person',
+          emailAddress: 'user@example.com',
+        },
+        object: {
+          id: 'card-789',
+          objectType: 'submit',
+          inputs: 'invalid-encrypted-data',
+        },
+        target: {
+          id: 'room-101',
+          objectType: 'conversation',
+        },
+        parent: {
+          id: 'msg-parent-123',
+          type: 'activity',
+        },
+        published: '2024-01-01T00:00:00Z',
+      };
+
+      mockMessageDecryptor.decryptActivity.mockRejectedValueOnce(
+        new Error('Decryption failed')
+      );
+
+      const mercury = handlerWithLogger['mercurySocket'] as any;
+      mercury.emit('activity', activity);
+
+      await new Promise(resolve => setImmediate(resolve));
+
+      // Should emit attachmentAction with empty inputs
+      expect(actionListener).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'action-123',
+          inputs: {},
+        })
+      );
+    });
+
+    it('should emit attachmentAction:created without decryptor when messageDecryptor not initialized', async () => {
+      const handler = new WebexMessageHandler({ token: mockToken });
+      await handler.connect();
+
+      // Clear the message decryptor to simulate it not being initialized
+      handler['messageDecryptor'] = null;
+
+      const actionListener = jest.fn();
+      handler.on('attachmentAction:created', actionListener);
+
+      const activity: MercuryActivity = {
+        id: 'action-123',
+        verb: 'cardAction',
+        actor: {
+          id: 'person-456',
+          objectType: 'person',
+          emailAddress: 'user@example.com',
+        },
+        object: {
+          id: 'card-789',
+          objectType: 'submit',
+          inputs: {
+            card_action: 'answer',
+          },
+        },
+        target: {
+          id: 'room-101',
+          objectType: 'conversation',
+        },
+        parent: {
+          id: 'msg-parent-123',
+          type: 'activity',
+        },
+        published: '2024-01-01T00:00:00Z',
+      };
+
+      const mercury = handler['mercurySocket'] as any;
+      mercury.emit('activity', activity);
+
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(actionListener).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'action-123',
+          inputs: {
+            card_action: 'answer',
+          },
+        })
+      );
+    });
+
+    it('should include raw activity in attachmentAction event', async () => {
+      const handler = new WebexMessageHandler({ token: mockToken });
+      await handler.connect();
+
+      const actionListener = jest.fn();
+      handler.on('attachmentAction:created', actionListener);
+
+      const activity: MercuryActivity = {
+        id: 'action-123',
+        verb: 'cardAction',
+        actor: {
+          id: 'person-456',
+          objectType: 'person',
+          emailAddress: 'user@example.com',
+        },
+        object: {
+          id: 'card-789',
+          objectType: 'submit',
+          inputs: {
+            response: 'yes',
+          },
+        },
+        target: {
+          id: 'room-101',
+          objectType: 'conversation',
+        },
+        parent: {
+          id: 'msg-parent-123',
+          type: 'activity',
+        },
+        published: '2024-01-01T00:00:00Z',
+      };
+
+      mockMessageDecryptor.decryptActivity.mockResolvedValueOnce(activity);
+
+      const mercury = handler['mercurySocket'] as any;
+      mercury.emit('activity', activity);
+
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(actionListener).toHaveBeenCalledWith(
+        expect.objectContaining({
+          raw: activity,
+        })
+      );
+    });
+  });
+
   describe('edge cases', () => {
     it('should handle activity with missing optional fields', async () => {
       const handler = new WebexMessageHandler({ token: mockToken });

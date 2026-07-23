@@ -2,6 +2,7 @@ package webexmessagehandler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/go-jose/go-jose/v4"
@@ -67,6 +68,23 @@ func (md *MessageDecryptor) DecryptActivity(ctx context.Context, activity Mercur
 			md.logger.Warn(fmt.Sprintf("Failed to decrypt content in activity %s: %v", activity.ID, err))
 		} else {
 			decrypted.Object.Content = string(plaintext)
+		}
+	}
+
+	// Decrypt card-action inputs. On cardAction/submit activities object.inputs
+	// is a JWE string encrypted under the same key; the decrypted plaintext is a
+	// JSON object of the card's form values.
+	if decrypted.Object.InputsEncrypted != "" {
+		plaintext, err := decryptJWE(decrypted.Object.InputsEncrypted, key)
+		if err != nil {
+			md.logger.Warn(fmt.Sprintf("Failed to decrypt inputs in activity %s: %v", activity.ID, err))
+		} else {
+			var inputs map[string]interface{}
+			if err := json.Unmarshal(plaintext, &inputs); err != nil {
+				md.logger.Warn(fmt.Sprintf("Failed to parse decrypted inputs in activity %s: %v", activity.ID, err))
+			} else {
+				decrypted.Object.Inputs = inputs
+			}
 		}
 	}
 

@@ -524,15 +524,35 @@ export class WebexMessageHandler
       activity.verb === 'cardAction' &&
       activity.object?.objectType === 'submit'
     ) {
+      let decryptedActivity = activity;
+
+      // Decrypt the activity to handle encrypted inputs
+      if (this.messageDecryptor) {
+        try {
+          decryptedActivity = await this.messageDecryptor.decryptActivity(activity);
+        } catch (error) {
+          this.logger.warn(
+            `Failed to decrypt card-action inputs in activity ${activity.id}: ${error instanceof Error ? error.message : String(error)}`
+          );
+          // Fall through with unencrypted activity; inputs will be empty object
+        }
+      }
+
+      // Extract inputs, handling the case where it might still be encrypted (on decrypt failure) or a plaintext object
+      let inputs: Record<string, unknown> = {};
+      if (decryptedActivity.object.inputs && typeof decryptedActivity.object.inputs === 'object') {
+        inputs = decryptedActivity.object.inputs as Record<string, unknown>;
+      }
+
       const attachmentAction: AttachmentAction = {
-        id: activity.id,
-        messageId: activity.parent?.id ?? '',
-        personId: activity.actor.id,
-        personEmail: activity.actor.emailAddress ?? '',
-        roomId: activity.target.id,
-        inputs: activity.object.inputs ?? {},
-        created: activity.published,
-        raw: activity,
+        id: decryptedActivity.id,
+        messageId: decryptedActivity.parent?.id ?? '',
+        personId: decryptedActivity.actor.id,
+        personEmail: decryptedActivity.actor.emailAddress ?? '',
+        roomId: decryptedActivity.target.id,
+        inputs,
+        created: decryptedActivity.published,
+        raw: decryptedActivity,
       };
       this.emit('attachmentAction:created', attachmentAction);
       return;

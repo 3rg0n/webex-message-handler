@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"math"
 	"net/url"
+	"os"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -370,6 +372,16 @@ func (ms *MercurySocket) handleActivityEnvelope(message map[string]interface{}) 
 			return
 		}
 
+		// Diagnostic: when WMH_DEBUG_RAW_ACTIVITY=1, log the structural shape of
+		// EVERY conversation.activity before any verb/objectType branching, so
+		// activities the handler does not match are still visible. Logs only
+		// shape (verb, objectType, key presence) — never decrypted content —
+		// and is off by default. Useful for confirming whether an expected
+		// activity (e.g. a card action) is actually being delivered.
+		if os.Getenv("WMH_DEBUG_RAW_ACTIVITY") == "1" {
+			ms.logger.Info(debugRawActivity(activityRaw))
+		}
+
 		activity := parseActivity(activityRaw)
 		ms.logger.Debug(fmt.Sprintf("Emitting activity: %s", activity.ID))
 		if ms.onActivity != nil {
@@ -538,6 +550,52 @@ func (ms *MercurySocket) CurrentReconnectAttempts() int {
 	return ms.reconnectAttempts
 }
 
+// debugRawActivity formats a one-line summary of a raw conversation.activity for
+// the opt-in WMH_DEBUG_RAW_ACTIVITY instrument: verb, object.objectType,
+// parent presence, object.inputs presence, and the sorted top-level activity
+// keys. It never decrypts or logs content — just structural shape — so it is
+// safe to leave enabled. Off by default; set WMH_DEBUG_RAW_ACTIVITY=1 to reveal
+// activities the handler does not match (e.g. to confirm whether an expected
+// card action is actually being delivered).
+func debugRawActivity(raw map[string]interface{}) string {
+	verb, _ := raw["verb"].(string)
+
+	objType := "<none>"
+	inputs := "absent"
+	if obj, ok := raw["object"].(map[string]interface{}); ok {
+		if ot, ok := obj["objectType"].(string); ok {
+			objType = ot
+		}
+		// object.inputs on a cardAction arrives as a JWE-encrypted string; older
+		// plaintext shapes deliver a map. Distinguish both so the instrument does
+		// not report "absent" for encrypted inputs that are actually present.
+		switch in := obj["inputs"].(type) {
+		case string:
+			if in != "" {
+				inputs = "encrypted-string"
+			}
+		case map[string]interface{}:
+			inputs = fmt.Sprintf("present(%d keys)", len(in))
+		}
+	}
+
+	parent := "absent"
+	if _, ok := raw["parent"].(map[string]interface{}); ok {
+		parent = "present"
+	}
+
+	keys := make([]string, 0, len(raw))
+	for k := range raw {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	return fmt.Sprintf(
+		"[WMH_DEBUG_RAW_ACTIVITY] verb=%q object.objectType=%q parent=%s object.inputs=%s topLevelKeys=%v",
+		verb, objType, parent, inputs, keys,
+	)
+}
+
 func parseActivity(raw map[string]interface{}) MercuryActivity {
 	actor := parseActor(raw["actor"])
 	object := parseObject(raw["object"])
@@ -588,9 +646,16 @@ func parseObject(raw interface{}) MercuryObject {
 	displayName, _ := m["displayName"].(string)
 	content, _ := m["content"].(string)
 	encKeyURL, _ := m["encryptionKeyUrl"].(string)
+	// object.inputs on a cardAction/submit activity arrives as a JWE-encrypted
+	// string (decrypted later by the message decryptor). Older/plaintext shapes
+	// may deliver it as a map; accept both.
 	var inputs map[string]interface{}
-	if rawInputs, ok := m["inputs"].(map[string]interface{}); ok {
-		inputs = rawInputs
+	var inputsEncrypted string
+	switch v := m["inputs"].(type) {
+	case string:
+		inputsEncrypted = v
+	case map[string]interface{}:
+		inputs = v
 	}
 	var files []string
 	if rawFiles, ok := m["files"].([]interface{}); ok {
@@ -600,7 +665,7 @@ func parseObject(raw interface{}) MercuryObject {
 			}
 		}
 	}
-	return MercuryObject{ID: id, ObjectType: objectType, DisplayName: displayName, Content: content, EncryptionKeyURL: encKeyURL, Inputs: inputs, Files: files}
+	return MercuryObject{ID: id, ObjectType: objectType, DisplayName: displayName, Content: content, EncryptionKeyURL: encKeyURL, Inputs: inputs, InputsEncrypted: inputsEncrypted, Files: files}
 }
 
 func parseTarget(raw interface{}) MercuryTarget {

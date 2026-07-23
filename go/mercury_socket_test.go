@@ -5,6 +5,37 @@ import (
 	"time"
 )
 
+func TestParseObjectInputsEncryptedString(t *testing.T) {
+	// Card-action inputs arrive as a JWE-encrypted string; parseObject must
+	// capture it in InputsEncrypted (for later decryption), not drop it.
+	raw := map[string]interface{}{
+		"objectType": "submit",
+		"inputs":     "eyJlbmMiOiJBMjU2R0NNIn0..abc.def.ghi",
+	}
+	obj := parseObject(raw)
+	if obj.InputsEncrypted != "eyJlbmMiOiJBMjU2R0NNIn0..abc.def.ghi" {
+		t.Errorf("expected InputsEncrypted to hold the JWE string, got %q", obj.InputsEncrypted)
+	}
+	if obj.Inputs != nil {
+		t.Errorf("expected Inputs to be nil for an encrypted string, got %v", obj.Inputs)
+	}
+}
+
+func TestParseObjectInputsPlaintextMap(t *testing.T) {
+	// Defensive: a plaintext map still populates Inputs directly.
+	raw := map[string]interface{}{
+		"objectType": "submit",
+		"inputs":     map[string]interface{}{"verdict": "up"},
+	}
+	obj := parseObject(raw)
+	if obj.InputsEncrypted != "" {
+		t.Errorf("expected InputsEncrypted empty for a map, got %q", obj.InputsEncrypted)
+	}
+	if obj.Inputs == nil || obj.Inputs["verdict"] != "up" {
+		t.Errorf("expected Inputs map with verdict=up, got %v", obj.Inputs)
+	}
+}
+
 func TestMercurySocketDefaults(t *testing.T) {
 	ms := NewMercurySocket(MercurySocketConfig{})
 	if ms.pingInterval != 15*time.Second {

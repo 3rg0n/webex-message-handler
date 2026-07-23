@@ -184,12 +184,32 @@ pub struct MercuryObject {
     pub encryption_key_url: Option<String>,
 
     /// Card form input values (present on cardAction/submit activities).
+    /// On the wire this may be either a plaintext object (back-compat) or a
+    /// JWE-encrypted string (current behavior). Serde accepts both via Value;
+    /// `finalize_inputs` then moves an encrypted string into `inputs_encrypted`.
     #[serde(default)]
     pub inputs: Option<serde_json::Value>,
+
+    /// Raw JWE-encrypted inputs string, split out of `inputs` after parsing so
+    /// the decryptor can decrypt it. Not present on the wire; internal only.
+    #[serde(skip)]
+    pub inputs_encrypted: Option<String>,
 
     /// File URLs attached to the message (present on file-share messages).
     #[serde(default)]
     pub files: Option<Vec<String>>,
+}
+
+impl MercuryObject {
+    /// If `inputs` arrived as a JWE string, move it into `inputs_encrypted` and
+    /// clear `inputs`. A plaintext object is left in place. Called once after
+    /// deserialization, before decryption.
+    pub fn finalize_inputs(&mut self) {
+        if let Some(serde_json::Value::String(s)) = self.inputs.as_ref() {
+            self.inputs_encrypted = Some(s.clone());
+            self.inputs = None;
+        }
+    }
 }
 
 /// Target in a Mercury activity.

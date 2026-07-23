@@ -434,6 +434,244 @@ describe('MessageDecryptor', () => {
       expect(result.object.content).toBeUndefined();
     });
 
+    it('should decrypt inputs if present as encrypted JWE string', async () => {
+      const keyUrl = 'https://kms.example.com/keys/key-123';
+      const encryptedInputsJwe = 'eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIn0.encrypted.data.tag';
+      const inputsJson = JSON.stringify({
+        card_action: 'answer_feedback',
+        response_event_id: 'evt-123',
+        verdict: 'up',
+      });
+
+      const activity: MercuryActivity = {
+        id: 'test-123',
+        verb: 'cardAction',
+        actor: {
+          id: 'actor-id',
+          objectType: 'person',
+          emailAddress: 'user@example.com',
+        },
+        object: {
+          id: 'card-id',
+          objectType: 'submit',
+          inputs: encryptedInputsJwe,
+          encryptionKeyUrl: keyUrl,
+        },
+        target: {
+          id: 'room-id',
+          objectType: 'conversation',
+        },
+        published: '2024-01-01T00:00:00Z',
+      };
+
+      const mockKey = { kty: 'oct' };
+      mockKmsClient.getKey.mockResolvedValueOnce(mockKey);
+
+      const jose = require('node-jose');
+      const mockDecryptor = {
+        decrypt: jest
+          .fn()
+          .mockResolvedValueOnce({ payload: Buffer.from(inputsJson) }),
+      };
+      jose.JWE.createDecrypt.mockReturnValue(mockDecryptor);
+
+      const decryptor = new MessageDecryptor({ kmsClient: mockKmsClient as any });
+      const result = await decryptor.decryptActivity(activity);
+
+      expect(mockKmsClient.getKey).toHaveBeenCalledWith(keyUrl);
+      expect(mockDecryptor.decrypt).toHaveBeenCalledTimes(1);
+      expect(result.object.inputs).toEqual({
+        card_action: 'answer_feedback',
+        response_event_id: 'evt-123',
+        verdict: 'up',
+      });
+    });
+
+    it('should skip empty encrypted inputs string', async () => {
+      const keyUrl = 'https://kms.example.com/keys/key-123';
+      const activity: MercuryActivity = {
+        id: 'test-123',
+        verb: 'cardAction',
+        actor: {
+          id: 'actor-id',
+          objectType: 'person',
+          emailAddress: 'user@example.com',
+        },
+        object: {
+          id: 'card-id',
+          objectType: 'submit',
+          inputs: '',
+          encryptionKeyUrl: keyUrl,
+        },
+        target: {
+          id: 'room-id',
+          objectType: 'conversation',
+        },
+        published: '2024-01-01T00:00:00Z',
+      };
+
+      const mockKey = { kty: 'oct' };
+      mockKmsClient.getKey.mockResolvedValueOnce(mockKey);
+
+      const jose = require('node-jose');
+      const mockDecryptor = {
+        decrypt: jest.fn(),
+      };
+      jose.JWE.createDecrypt.mockReturnValue(mockDecryptor);
+
+      const decryptor = new MessageDecryptor({ kmsClient: mockKmsClient as any });
+      const result = await decryptor.decryptActivity(activity);
+
+      // decrypt should not be called (empty string is skipped)
+      expect(mockDecryptor.decrypt).not.toHaveBeenCalled();
+      expect(result.object.inputs).toBe('');
+    });
+
+    it('should handle inputs decryption failure with warning', async () => {
+      const keyUrl = 'https://kms.example.com/keys/key-123';
+      const encryptedInputsJwe = 'eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIn0.invalid.data.tag';
+
+      const activity: MercuryActivity = {
+        id: 'test-123',
+        verb: 'cardAction',
+        actor: {
+          id: 'actor-id',
+          objectType: 'person',
+          emailAddress: 'user@example.com',
+        },
+        object: {
+          id: 'card-id',
+          objectType: 'submit',
+          inputs: encryptedInputsJwe,
+          encryptionKeyUrl: keyUrl,
+        },
+        target: {
+          id: 'room-id',
+          objectType: 'conversation',
+        },
+        published: '2024-01-01T00:00:00Z',
+      };
+
+      const mockKey = { kty: 'oct' };
+      mockKmsClient.getKey.mockResolvedValueOnce(mockKey);
+
+      const jose = require('node-jose');
+      const mockDecryptor = {
+        decrypt: jest
+          .fn()
+          .mockRejectedValueOnce(new Error('Inputs decryption failed')),
+      };
+      jose.JWE.createDecrypt.mockReturnValue(mockDecryptor);
+
+      const logger = { warn: jest.fn(), debug: jest.fn(), info: jest.fn(), error: jest.fn() };
+
+      const decryptor = new MessageDecryptor({
+        kmsClient: mockKmsClient as any,
+        logger,
+      });
+      const result = await decryptor.decryptActivity(activity);
+
+      // Should warn but not throw
+      expect(logger.warn).toHaveBeenCalled();
+      // inputs should remain as encrypted string on failure
+      expect(result.object.inputs).toBe(encryptedInputsJwe);
+    });
+
+    it('should handle inputs JSON parse failure with warning', async () => {
+      const keyUrl = 'https://kms.example.com/keys/key-123';
+      const encryptedInputsJwe = 'eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIn0.bad.json.tag';
+
+      const activity: MercuryActivity = {
+        id: 'test-123',
+        verb: 'cardAction',
+        actor: {
+          id: 'actor-id',
+          objectType: 'person',
+          emailAddress: 'user@example.com',
+        },
+        object: {
+          id: 'card-id',
+          objectType: 'submit',
+          inputs: encryptedInputsJwe,
+          encryptionKeyUrl: keyUrl,
+        },
+        target: {
+          id: 'room-id',
+          objectType: 'conversation',
+        },
+        published: '2024-01-01T00:00:00Z',
+      };
+
+      const mockKey = { kty: 'oct' };
+      mockKmsClient.getKey.mockResolvedValueOnce(mockKey);
+
+      const jose = require('node-jose');
+      const mockDecryptor = {
+        decrypt: jest
+          .fn()
+          .mockResolvedValueOnce({ payload: Buffer.from('{invalid json}') }),
+      };
+      jose.JWE.createDecrypt.mockReturnValue(mockDecryptor);
+
+      const logger = { warn: jest.fn(), debug: jest.fn(), info: jest.fn(), error: jest.fn() };
+
+      const decryptor = new MessageDecryptor({
+        kmsClient: mockKmsClient as any,
+        logger,
+      });
+      const result = await decryptor.decryptActivity(activity);
+
+      // Should warn but not throw
+      expect(logger.warn).toHaveBeenCalled();
+      // inputs should remain as encrypted string on JSON parse failure
+      expect(result.object.inputs).toBe(encryptedInputsJwe);
+    });
+
+    it('should preserve plaintext inputs object if not a string', async () => {
+      const keyUrl = 'https://kms.example.com/keys/key-123';
+      const plaintextInputs = {
+        card_action: 'answer',
+        response: 'yes',
+      };
+
+      const activity: MercuryActivity = {
+        id: 'test-123',
+        verb: 'cardAction',
+        actor: {
+          id: 'actor-id',
+          objectType: 'person',
+          emailAddress: 'user@example.com',
+        },
+        object: {
+          id: 'card-id',
+          objectType: 'submit',
+          inputs: plaintextInputs,
+          encryptionKeyUrl: keyUrl,
+        },
+        target: {
+          id: 'room-id',
+          objectType: 'conversation',
+        },
+        published: '2024-01-01T00:00:00Z',
+      };
+
+      const mockKey = { kty: 'oct' };
+      mockKmsClient.getKey.mockResolvedValueOnce(mockKey);
+
+      const jose = require('node-jose');
+      const mockDecryptor = {
+        decrypt: jest.fn(),
+      };
+      jose.JWE.createDecrypt.mockReturnValue(mockDecryptor);
+
+      const decryptor = new MessageDecryptor({ kmsClient: mockKmsClient as any });
+      const result = await decryptor.decryptActivity(activity);
+
+      // decrypt should not be called for plaintext object inputs
+      expect(mockDecryptor.decrypt).not.toHaveBeenCalled();
+      expect(result.object.inputs).toEqual(plaintextInputs);
+    });
+
     it('should throw DecryptionError if KMS getKey fails', async () => {
       const keyUrl = 'https://kms.example.com/keys/key-123';
       const activity: MercuryActivity = {

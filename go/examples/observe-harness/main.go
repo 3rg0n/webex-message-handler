@@ -22,6 +22,13 @@
 //	POSTER_EMAIL    — email of the poster (added to a newly-created room).
 //	CREATE_ROOM     — "1" to create a fresh test room.
 //	ROUNDTRIPS      — number of test messages to post (default 3).
+//	CARD_TEST       — "1" to also post an Adaptive Card with an Action.Submit
+//	                  button and submit it, verifying the observer receives an
+//	                  attachmentAction:created with decrypted Inputs.
+//
+// Set WMH_DEBUG_RAW_ACTIVITY=1 to log the structural shape of every Mercury
+// conversation.activity (verb, object.objectType, key presence — never
+// content), which reveals activities the handler does not match.
 //
 // Everything the harness prints is timestamped so inbound/outbound ordering and
 // latency are visible.
@@ -111,6 +118,11 @@ func main() {
 	handler.OnMembershipCreated(func(m webex.MembershipActivity) {
 		logf("INBOUND membership room=%s person=%s action=%s", short(m.RoomID), m.PersonID, m.Action)
 	})
+	handler.OnAttachmentActionCreated(func(a webex.AttachmentAction) {
+		logf("INBOUND attachmentAction room=%s from=%s messageID=%s inputs=%#v",
+			short(a.RoomID), a.PersonEmail, short(a.MessageID), a.Inputs)
+		rec.add("attachmentAction")
+	})
 	handler.OnConnected(func() { logf("OBSERVER connected") })
 	handler.OnDisconnected(func(reason string) { logf("OBSERVER disconnected: %s", reason) })
 	handler.OnError(func(err error) { logf("OBSERVER error: %v", err) })
@@ -185,6 +197,37 @@ func main() {
 		logf("round-trips complete. Leaving the socket open for further manual observation; Ctrl-C to exit.")
 	}
 
+	// Card-action test: the observer posts an Adaptive Card with an
+	// Action.Submit button, then submits the attachment action against it via
+	// POST /v1/attachment/actions — the programmatic equivalent of clicking the
+	// button. The observer socket should then receive an attachmentAction:created
+	// with non-empty Inputs (card actions carry no self-message filter, so a
+	// self-submit is delivered). With WMH_DEBUG_RAW_ACTIVITY=1 the structural
+	// shape of every activity is logged, so a missed card action is visible even
+	// if the matcher never fires.
+	if os.Getenv("CARD_TEST") == "1" && roomID != "" {
+		logf("CARD_TEST: posting an Adaptive Card with an Action.Submit button…")
+		msgID, err := postCard(ctx, observerToken, roomID)
+		if err != nil {
+			logf("CARD_TEST: post card failed: %v", err)
+		} else {
+			logf("CARD_TEST: card posted messageID=%s — submitting attachment action…", short(msgID))
+			time.Sleep(2 * time.Second)
+			if sErr := submitAttachmentAction(ctx, observerToken, msgID); sErr != nil {
+				logf("CARD_TEST: submit attachment action failed: %v", sErr)
+			} else {
+				logf("CARD_TEST: attachment action submitted — waiting up to 15s for observer to receive…")
+				got := waitFor(ctx, func() bool { return rec.has("attachmentAction") }, 15*time.Second)
+				if got {
+					logf("CARD_TEST: ✓ observer received the attachmentAction")
+				} else {
+					logf("CARD_TEST: ✗ observer did NOT receive the attachmentAction (check WMH_DEBUG_RAW_ACTIVITY output above for the raw shape, if any)")
+				}
+			}
+		}
+		logf("CARD_TEST complete. Socket stays open for manual clicks; Ctrl-C to exit.")
+	}
+
 	<-ctx.Done()
 }
 
@@ -244,6 +287,64 @@ func addMembershipByObserver(ctx context.Context, observerToken, roomID, posterT
 func postMessage(ctx context.Context, token, roomID, text string) error {
 	body, _ := json.Marshal(map[string]string{"roomId": roomID, "text": text})
 	return doJSON(ctx, token, http.MethodPost, "/messages", body, nil)
+}
+
+// postCard posts an Adaptive Card with a single Action.Submit button whose data
+// mirrors SignalStack's shape ({card_action, response_event_id, verdict}) and
+// returns the created message ID.
+func postCard(ctx context.Context, token, roomID string) (string, error) {
+	card := map[string]interface{}{
+		"$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+		"type":    "AdaptiveCard",
+		"version": "1.2",
+		"body": []interface{}{
+			map[string]interface{}{"type": "TextBlock", "text": "observe-harness card test — click 👍", "wrap": true},
+		},
+		"actions": []interface{}{
+			map[string]interface{}{
+				"type":  "Action.Submit",
+				"title": "👍",
+				"data": map[string]interface{}{
+					"card_action":       "answer_feedback",
+					"response_event_id": "harness-" + ts(),
+					"verdict":           "up",
+				},
+			},
+		},
+	}
+	body, _ := json.Marshal(map[string]interface{}{
+		"roomId":   roomID,
+		"markdown": "Card test (fallback text for non-card clients).",
+		"attachments": []interface{}{
+			map[string]interface{}{
+				"contentType": "application/vnd.microsoft.card.adaptive",
+				"content":     card,
+			},
+		},
+	})
+	var out struct {
+		ID string `json:"id"`
+	}
+	if err := doJSON(ctx, token, http.MethodPost, "/messages", body, &out); err != nil {
+		return "", err
+	}
+	return out.ID, nil
+}
+
+// submitAttachmentAction submits a card Action.Submit against messageID — the
+// programmatic equivalent of a user clicking the button — carrying the same
+// inputs the card's data declared.
+func submitAttachmentAction(ctx context.Context, token, messageID string) error {
+	body, _ := json.Marshal(map[string]interface{}{
+		"type":      "submit",
+		"messageId": messageID,
+		"inputs": map[string]interface{}{
+			"card_action":       "answer_feedback",
+			"response_event_id": "harness-submit-" + ts(),
+			"verdict":           "up",
+		},
+	})
+	return doJSON(ctx, token, http.MethodPost, "/attachment/actions", body, nil)
 }
 
 func doJSON(ctx context.Context, token, method, path string, body []byte, out any) error {

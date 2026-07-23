@@ -721,6 +721,23 @@ func (h *WebexMessageHandler) handleActivity(ctx context.Context, activity Mercu
 	// attachmentAction:created — verb=cardAction + objectType=submit
 	if activity.Verb == "cardAction" && activity.Object.ObjectType == "submit" {
 		if h.onAttachmentActionCreated != nil {
+			// Card-action inputs (object.inputs) arrive JWE-encrypted under the
+			// activity's encryptionKeyUrl. Decrypt so Inputs is populated; on
+			// failure fall through with whatever was parsed (Inputs stays nil).
+			h.mu.RLock()
+			messageDecryptor := h.messageDecryptor
+			h.mu.RUnlock()
+			if messageDecryptor != nil {
+				decryptStart := time.Now()
+				if decrypted, err := messageDecryptor.DecryptActivity(ctx, activity); err != nil {
+					h.reportMetric("decrypt", decryptStart, false, nil)
+					h.logger.Warn(fmt.Sprintf("Failed to decrypt card-action inputs for activity %s: %v", activity.ID, err))
+				} else {
+					h.reportMetric("decrypt", decryptStart, true, nil)
+					activity = decrypted
+				}
+			}
+
 			var parentID string
 			if activity.Parent != nil {
 				parentID = activity.Parent.ID

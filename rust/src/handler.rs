@@ -623,17 +623,48 @@ impl WebexMessageHandler {
             return;
         }
 
-        // attachmentAction:created — verb=cardAction + objectType=submit
+        // attachmentAction:created — verb=cardAction + objectType=submit.
+        // object.inputs arrives as a JWE string encrypted under the activity's
+        // key (same path as message content), so decrypt before building the
+        // event. Decrypt failure is non-fatal: warn and fall through with the
+        // original activity so the event still fires (inputs empty).
         if activity.verb == "cardAction" && activity.object.object_type == "submit" {
+            let mut decryptor = MessageDecryptor::new(kms);
+            let decrypt_start = Instant::now();
+            let decrypted = match decryptor.decrypt_activity(activity).await {
+                Ok(decrypted) => {
+                    if let Some(ref callback) = metrics_callback {
+                        callback(MetricsEvent {
+                            name: "decrypt".to_string(),
+                            duration_ms: decrypt_start.elapsed().as_secs_f64() * 1000.0,
+                            success: true,
+                            metadata: None,
+                        });
+                    }
+                    decrypted
+                }
+                Err(e) => {
+                    if let Some(ref callback) = metrics_callback {
+                        callback(MetricsEvent {
+                            name: "decrypt".to_string(),
+                            duration_ms: decrypt_start.elapsed().as_secs_f64() * 1000.0,
+                            success: false,
+                            metadata: None,
+                        });
+                    }
+                    warn!("Failed to decrypt card-action inputs in activity {}: {e}", activity.id);
+                    activity.clone()
+                }
+            };
             let event = HandlerEvent::AttachmentActionCreated(AttachmentAction {
-                id: activity.id.clone(),
-                message_id: activity.parent.as_ref().map(|p| p.id.clone()).unwrap_or_default(),
-                person_id: activity.actor.id.clone(),
-                person_email: activity.actor.email_address.clone().unwrap_or_default(),
-                room_id: activity.target.id.clone(),
-                inputs: activity.object.inputs.clone().unwrap_or(serde_json::Value::Object(Default::default())),
-                created: activity.published.clone(),
-                raw: activity.clone(),
+                id: decrypted.id.clone(),
+                message_id: decrypted.parent.as_ref().map(|p| p.id.clone()).unwrap_or_default(),
+                person_id: decrypted.actor.id.clone(),
+                person_email: decrypted.actor.email_address.clone().unwrap_or_default(),
+                room_id: decrypted.target.id.clone(),
+                inputs: decrypted.object.inputs.clone().unwrap_or(serde_json::Value::Object(Default::default())),
+                created: decrypted.published.clone(),
+                raw: decrypted,
             });
             if event_tx.send(event).await.is_err() {
                 warn!("Event receiver dropped, cannot send AttachmentActionCreated event");

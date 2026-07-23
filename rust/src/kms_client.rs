@@ -149,6 +149,14 @@ impl KmsClient {
         }
     }
 
+    /// Seed a content key directly into the cache. Test-only: lets decryptor
+    /// tests drive `get_key`/`decrypt_activity` end-to-end without a live KMS
+    /// handshake (a cache hit short-circuits before any network path).
+    #[cfg(test)]
+    pub(crate) fn seed_key(&mut self, key_uri: &str, key: [u8; 32]) {
+        self.key_cache.insert(key_uri.to_string(), key);
+    }
+
     /// Get a KmsResponseHandler that can resolve pending requests from Mercury.
     ///
     /// The returned handler can be used without holding the KmsClient lock,

@@ -321,7 +321,10 @@ impl MercurySocket {
                         } else if event_type == "conversation.activity" {
                             if let Some(activity_raw) = data.get("activity") {
                                 match serde_json::from_value::<MercuryActivity>(activity_raw.clone()) {
-                                    Ok(activity) => {
+                                    Ok(mut activity) => {
+                                        // Split an encrypted inputs string out of
+                                        // `inputs` so the decryptor can decrypt it.
+                                        activity.object.finalize_inputs();
                                         debug!("Emitting activity: {}", activity.id);
                                         let _ = event_tx.send(MercuryEvent::Activity(Box::new(activity)));
                                     }

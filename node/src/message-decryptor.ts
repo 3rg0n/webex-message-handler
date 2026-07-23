@@ -66,6 +66,20 @@ export class MessageDecryptor {
         }
       }
 
+      // Decrypt inputs if it exists and is a non-empty string (JWE-encrypted card action inputs)
+      if (decryptedActivity.object.inputs && typeof decryptedActivity.object.inputs === 'string' && decryptedActivity.object.inputs.length > 0) {
+        try {
+          const result = await jose.JWE.createDecrypt(key).decrypt(decryptedActivity.object.inputs);
+          const plaintextInputs = result.payload.toString('utf8');
+          decryptedActivity.object.inputs = JSON.parse(plaintextInputs);
+        } catch (error) {
+          this.logger.warn(
+            `Failed to decrypt inputs in activity ${activity.id}: ${error instanceof Error ? error.message : String(error)}`
+          );
+          // On decrypt failure, leave inputs as encrypted string (will be handled as empty in handler)
+        }
+      }
+
       return decryptedActivity;
     } catch (error) {
       // Re-throw DecryptionError as-is, wrap other errors
