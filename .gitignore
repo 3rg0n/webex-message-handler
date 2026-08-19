@@ -21,6 +21,9 @@ go/*.exe
 # Rust
 rust/target/
 
+# Tooling output (signpost repo map — regenerable, pinned to a commit)
+.signpost/
+
 # IDE
 .vscode/
 .idea/
