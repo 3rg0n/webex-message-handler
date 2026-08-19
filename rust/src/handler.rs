@@ -519,8 +519,17 @@ impl WebexMessageHandler {
         bot_person_id: Option<&str>,
         metrics_callback: Option<Arc<dyn Fn(MetricsEvent) + Send + Sync>>,
     ) {
-        // message:created or message:updated — verb=post/update + objectType=comment
-        if (activity.verb == "post" || activity.verb == "update") && activity.object.object_type == "comment" {
+        // message:created or message:updated.
+        //   Text messages:                 verb=post/update   + objectType=comment
+        //   File-share (with/without text): verb=share/update + objectType=content
+        // Webex Mercury uses distinct verb+objectType pairs for plain
+        // messages vs. file-share messages. Without accepting verb=share
+        // AND objectType=content, every attachment message is dropped
+        // silently. See PR description for captured wire samples.
+        let is_message_activity =
+            matches!(activity.verb.as_str(), "post" | "update" | "share")
+                && matches!(activity.object.object_type.as_str(), "comment" | "content");
+        if is_message_activity {
             let mut decryptor = MessageDecryptor::new(kms);
             let decrypt_start = Instant::now();
             match decryptor.decrypt_activity(activity).await {

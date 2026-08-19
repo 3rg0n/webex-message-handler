@@ -316,6 +316,54 @@ class TestMessageHandling:
         assert msg.room_type == "group"
         assert msg.parent_id is None
 
+    async def test_handle_share_verb_emits_message_created(self):
+        """File-share activities arrive as verb=share + objectType=content."""
+        handler = _make_handler()
+        handler._message_decryptor = MagicMock()
+        activity = _make_activity(
+            verb="share",
+            object=MercuryObject(
+                id="content-789", object_type="content",
+                display_name="Here's the file",
+                content="<p>Here's the file</p>",
+                files=["https://webexapis.com/v1/contents/abc"],
+            ),
+        )
+        handler._message_decryptor.decrypt_activity = AsyncMock(return_value=activity)
+
+        messages = []
+        handler.on("message:created", lambda msg: messages.append(msg))
+
+        await handler._handle_activity(activity)
+
+        assert len(messages) == 1
+        msg = messages[0]
+        assert msg.files == ["https://webexapis.com/v1/contents/abc"]
+        assert msg.text == "Here's the file"
+
+    async def test_handle_update_verb_content_type_is_message_update(self):
+        """Editing a share (caption edit) arrives as verb=update + objectType=content."""
+        handler = _make_handler()
+        handler._message_decryptor = MagicMock()
+        activity = _make_activity(
+            verb="update",
+            object=MercuryObject(
+                id="content-789", object_type="content",
+                display_name="Revised caption",
+                content="<p>Revised caption</p>",
+                files=["https://webexapis.com/v1/contents/abc"],
+            ),
+        )
+        handler._message_decryptor.decrypt_activity = AsyncMock(return_value=activity)
+
+        updates = []
+        handler.on("message:updated", lambda msg: updates.append(msg))
+
+        await handler._handle_activity(activity)
+
+        assert len(updates) == 1
+        assert updates[0].text == "Revised caption"
+
     async def test_handle_threaded_reply(self):
         handler = _make_handler()
         handler._message_decryptor = MagicMock()

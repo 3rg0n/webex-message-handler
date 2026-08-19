@@ -620,8 +620,15 @@ func (h *WebexMessageHandler) handleActivity(ctx context.Context, activity Mercu
 	}
 	h.activityIDsMu.Unlock()
 
-	// message:created or message:updated — verb=post/update + objectType=comment
-	if (activity.Verb == "post" || activity.Verb == "update") && activity.Object.ObjectType == "comment" {
+	// message:created or message:updated.
+	//   Text messages:                 verb=post/update   + objectType=comment
+	//   File-share (with/without text): verb=share/update + objectType=content
+	// Webex Mercury uses distinct verb+objectType pairs for plain messages
+	// vs. file-share messages. Without accepting verb=share AND
+	// objectType=content, every attachment message is dropped silently.
+	// See PR description for captured wire samples.
+	if (activity.Verb == "post" || activity.Verb == "update" || activity.Verb == "share") &&
+		(activity.Object.ObjectType == "comment" || activity.Object.ObjectType == "content") {
 		h.mu.RLock()
 		messageDecryptor := h.messageDecryptor
 		h.mu.RUnlock()

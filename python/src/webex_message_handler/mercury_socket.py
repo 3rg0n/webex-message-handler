@@ -34,6 +34,7 @@ class MercurySocket:
         pong_timeout: float = 14.0,
         reconnect_backoff_max: float = 32.0,
         max_reconnect_attempts: int = 10,
+        reconnect_stability_seconds: float = 60.0,
     ) -> None:
         self._logger: Logger = logger or noop_logger  # type: ignore[assignment]
         self._ws_factory = ws_factory
@@ -41,6 +42,7 @@ class MercurySocket:
         self._pong_timeout = pong_timeout
         self._reconnect_backoff_max = reconnect_backoff_max
         self._max_reconnect_attempts = max_reconnect_attempts
+        self._reconnect_stability_seconds = reconnect_stability_seconds
 
         self._ws: InjectedWebSocket | None = None
         self._token: str | None = None
@@ -54,6 +56,7 @@ class MercurySocket:
         self._ping_task: asyncio.Task[None] | None = None
         self._read_task: asyncio.Task[None] | None = None
         self._pong_timeout_handle: asyncio.TimerHandle | None = None
+        self._stability_timer_handle: asyncio.TimerHandle | None = None
 
         # Event callbacks
         self._listeners: dict[str, list[Callable[..., Any]]] = {
@@ -110,12 +113,26 @@ class MercurySocket:
         })
         await self._ws.send_str(auth_message)
 
-        # Start read loop in background
+        # Capture the ws reference this read-loop owns so we can detect if it's
+        # been rotated out from under us (e.g. _on_pong_timeout called
+        # _close_websocket + _reconnect while this loop was still iterating).
+        # Without this, the loop's tail code below would run _handle_close
+        # against the *new* ws and clobber live state (kills its ping loop,
+        # resets _connection_ready, queues a redundant reconnect).
+        owned_ws = self._ws
+
         async def _read_loop() -> None:
-            if self._ws is None:
+            if owned_ws is None:
                 raise RuntimeError("WebSocket not initialized before starting read loop")
             try:
-                async for msg in self._ws:
+                async for msg in owned_ws:
+                    # If our ws has been rotated out from under us, stop
+                    # processing buffered messages immediately. Otherwise we
+                    # would emit stale events and ACK on the *new* socket via
+                    # _handle_activity_envelope's self._ws reference.
+                    if owned_ws is not self._ws:
+                        break
+
                     if msg.type == aiohttp.WSMsgType.TEXT:
                         raw_str = msg.data
                         self._logger.debug(f"WS message received ({len(raw_str)} bytes)")
@@ -154,8 +171,18 @@ class MercurySocket:
                 else:
                     self._emit("error", exc)
 
-            # WebSocket closed
-            close_code = self._ws.close_code if self._ws else None
+            # If our ws was already rotated (another path closed it and opened
+            # a new one), the reconnect path has already handled cleanup.
+            # Silently release our session and exit without calling
+            # _handle_close, which would otherwise operate on the new ws.
+            if owned_ws is not self._ws:
+                session = getattr(owned_ws, "_session", None)
+                if session is not None and not session.closed:
+                    with contextlib.suppress(Exception):
+                        await session.close()
+                return
+
+            close_code = owned_ws.close_code
             self._handle_close(close_code or 1000, "")
 
         self._read_task = asyncio.create_task(_read_loop())
@@ -270,6 +297,9 @@ class MercurySocket:
     def _handle_close(self, code: int, reason: str) -> None:
         self._logger.info(f"WebSocket closed with code {code}, reason: {reason}")
         self._stop_ping_loop()
+        # If we close before the stability window elapses, keep the attempts
+        # counter intact so a flap storm can eventually trip max-attempts.
+        self._cancel_stability_timer()
         self._connection_ready = False
 
         if code == 4401:
@@ -292,43 +322,80 @@ class MercurySocket:
             self._emit("disconnected", "manual")
 
     async def _reconnect(self) -> None:
+        # Single-entry guarded loop. Earlier revisions used a recursive
+        # `await self._reconnect()` on failure, but the guard below made that
+        # recursion a no-op: the inner call saw `_reconnecting=True` and
+        # returned immediately, leaving no task scheduled and the socket
+        # silently abandoned after a single failed attempt.
         if self._reconnecting:
             return
         self._reconnecting = True
         try:
-            if not self._should_reconnect:
-                return
+            while self._should_reconnect:
+                if self._reconnect_attempts >= self._max_reconnect_attempts:
+                    self._logger.error(
+                        f"Max reconnection attempts ({self._max_reconnect_attempts}) exceeded"
+                    )
+                    self._should_reconnect = False
+                    self._emit("disconnected", "max-attempts-exceeded")
+                    return
 
-            if self._reconnect_attempts >= self._max_reconnect_attempts:
-                self._logger.error(f"Max reconnection attempts ({self._max_reconnect_attempts}) exceeded")
-                self._should_reconnect = False
-                self._emit("disconnected", "max-attempts-exceeded")
-                return
+                self._reconnect_attempts += 1
+                delay = min(
+                    1.0 * math.pow(2, self._reconnect_attempts - 1),
+                    self._reconnect_backoff_max,
+                )
 
-            self._reconnect_attempts += 1
-            delay = min(1.0 * math.pow(2, self._reconnect_attempts - 1), self._reconnect_backoff_max)
+                self._logger.info(
+                    f"Reconnecting (attempt {self._reconnect_attempts}/{self._max_reconnect_attempts}) in {delay}s"
+                )
+                self._emit("reconnecting", self._reconnect_attempts)
 
-            self._logger.info(
-                f"Reconnecting (attempt {self._reconnect_attempts}/{self._max_reconnect_attempts}) in {delay}s"
-            )
-            self._emit("reconnecting", self._reconnect_attempts)
+                await asyncio.sleep(delay)
 
-            await asyncio.sleep(delay)
+                if not self._should_reconnect:
+                    return
 
-            if not self._should_reconnect:
-                return
-
-            try:
-                await self._connect_internal()
-                self._logger.info("Successfully reconnected to Mercury")
-                self._reconnect_attempts = 0
-                self._emit("connected")
-            except Exception as exc:
-                self._logger.error(f"Reconnection failed: {exc}")
-                if self._should_reconnect:
-                    await self._reconnect()
+                try:
+                    await self._connect_internal()
+                    self._logger.info("Successfully reconnected to Mercury")
+                    # Only reset the attempts counter once the connection stays up
+                    # for _reconnect_stability_seconds. A flap storm (repeated
+                    # short-lived "successful" reconnects) would otherwise reset
+                    # the counter on every cycle and never trip max-attempts,
+                    # leaving the handler stuck in an infinite reconnect loop.
+                    self._schedule_attempts_reset()
+                    self._emit("connected")
+                    return
+                except Exception as exc:
+                    self._logger.error(f"Reconnection failed: {exc}")
+                    # Fall through; loop re-checks max-attempts and backs off.
         finally:
             self._reconnecting = False
+
+    def _schedule_attempts_reset(self) -> None:
+        """Clear _reconnect_attempts only after a stability window elapses."""
+        if self._stability_timer_handle is not None:
+            self._stability_timer_handle.cancel()
+        loop = asyncio.get_running_loop()
+        self._stability_timer_handle = loop.call_later(
+            self._reconnect_stability_seconds,
+            self._on_stability_timer,
+        )
+
+    def _on_stability_timer(self) -> None:
+        self._stability_timer_handle = None
+        if self._reconnect_attempts > 0:
+            self._logger.debug(
+                f"Connection stable for {self._reconnect_stability_seconds}s, "
+                f"resetting reconnect attempts (was {self._reconnect_attempts})"
+            )
+            self._reconnect_attempts = 0
+
+    def _cancel_stability_timer(self) -> None:
+        if self._stability_timer_handle is not None:
+            self._stability_timer_handle.cancel()
+            self._stability_timer_handle = None
 
     def _stop_ping_loop(self) -> None:
         if self._ping_task and not self._ping_task.done():
@@ -363,6 +430,7 @@ class MercurySocket:
         self._logger.info("Disconnecting from Mercury")
         self._should_reconnect = False
         self._stop_ping_loop()
+        self._cancel_stability_timer()
         if self._read_task and not self._read_task.done():
             self._read_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):

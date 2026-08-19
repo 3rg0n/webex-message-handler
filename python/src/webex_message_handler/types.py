@@ -104,6 +104,12 @@ class WebexMessageHandlerConfig:
     max_reconnect_attempts: int = 10
     """Max consecutive reconnection attempts (default: 10)."""
 
+    reconnect_stability_seconds: float = 60.0
+    """How long a reconnected session must stay up before the attempts counter
+    is reset (default: 60). Prevents flap storms — where repeated short-lived
+    'successful' reconnects reset the counter each cycle — from bypassing the
+    max-attempts guard."""
+
     ignore_self_messages: bool = True
     """Automatically filter out messages sent by this bot to prevent loops (default: True)."""
 
