@@ -40,6 +40,6 @@ jobs:
         # packaging metadata 2.5. hatchling is unpinned above, so the runner
         # builds with a current hatchling that emits 2.5, and the twine 6.1.0 in
         # v1.13.0 rejected it ("'2.5' is not a valid metadata version").
-        uses: pypa/gh-action-pypi-publish@a892a5a61159132606e93a2fa6f4358831b04d26 # v1.14.2
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           packages-dir: python/dist/
