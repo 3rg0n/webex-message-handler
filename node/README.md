@@ -411,4 +411,4 @@ For advanced use cases, individual components are also exported:
 
 ## License
 
-Apache-2.0
+MIT
