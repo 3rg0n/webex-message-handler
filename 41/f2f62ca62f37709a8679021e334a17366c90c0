@@ -1,0 +1,23 @@
+docs/index.html
+  s_25ccca6093f1ae::t_88a2844871da3b 513
+node/LICENSE
+  s_25ccca6093f1ae::t_ee71713755b42d 1-21
+node/README.md
+  s_25ccca6093f1ae::t_5ffb8b7bb308b6 414
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "41f2f62ca62f37709a8679021e334a17366c90c0",
+  "prompts": {},
+  "sessions": {
+    "s_25ccca6093f1ae": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a5afcede-bc5a-454b-af42-844223f3840c",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ergon Copeland <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
