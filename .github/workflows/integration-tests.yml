@@ -30,10 +30,18 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
-          version: 9
+          # Single source of truth: the "packageManager" field in
+          # node/package.json. pnpm 11 dropped support for reading
+          # "pnpm.overrides" from package.json, and those overrides carry this
+          # package's CVE pins (lodash, brace-expansion, js-yaml, esbuild,
+          # @babel/core), so the pnpm major must stay pinned until they move to
+          # pnpm-workspace.yaml.
+          package_json_file: node/package.json
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        # Frozen: a lockfile that drifts from package.json means the overrides
+        # above silently stopped applying. Fail instead of resolving around it.
+        run: pnpm install --frozen-lockfile
 
       - name: Build
         run: pnpm build
