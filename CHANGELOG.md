@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.16] - 2026-08-19
+
+### Fixed
+- **File-share messages never delivered (#19)** — a message carrying only a file
+  (no text) arrives as `verb="share"` / `object.objectType="content"`, not the
+  `post`/`comment` pair the activity filter matched, so the handler dropped it
+  and no `message:created` fired. The filter now accepts
+  `(post|update|share)` × `(comment|content)`, so file-only shares reach the
+  callback with their attachment URLs in `files`. (all 4 languages)
+- **Python: stale read loop clobbered the rotated WebSocket (#18)** — the read
+  loop re-read `self._ws` on every iteration. After a pong timeout swapped in a
+  fresh socket, the old loop's exit path ran `_handle_close` against the **new**
+  socket: a redundant reconnect, a killed ping loop, and duplicate events. The
+  loop now owns the socket it opened, exits quietly once rotated, and closes the
+  orphaned session.
+- **Python: reconnect flap storm never tripped `max_reconnect_attempts` (#18)** —
+  the attempt counter reset on every successful connect, so a storm of
+  short-lived connections reset it each cycle and the cap never fired. The reset
+  is now deferred until the connection holds for `reconnect_stability_seconds`
+  (new config option, default `60.0`).
+- **Python: one failed reconnect left the handler in a silent hang (#18)** —
+  `_reconnect` retried by recursing into itself, but the `_reconnecting` guard
+  turned that call into a no-op. A single failure left the process alive with a
+  dead socket, no further attempts, and no `disconnected` event — nothing for a
+  supervisor to restart. `_reconnect` is now a guarded retry loop.
+
+### Added
+- **Python:** `reconnect_stability_seconds` config option (default `60.0`) — how
+  long a connection must hold before the reconnect-attempt counter resets.
+
 ## [0.6.15] - 2026-07-23
 
 ### Fixed
