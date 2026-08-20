@@ -1,5 +1,10 @@
 [build-system]
-requires = ["hatchling"]
+# Pinned exactly, not for security but for a reproducible publish. An unpinned
+# hatchling silently moved to 1.32.0, which writes Metadata-Version 2.5, and the
+# 0.6.16 PyPI upload failed twine's pre-upload check until the publish workflow
+# moved to twine 7. Bumping this is a deliberate act: rebuild and check the
+# resulting Metadata-Version against the twine in .github/workflows/publish.yml.
+requires = ["hatchling==1.32.0"]
 build-backend = "hatchling.build"
 
 [project]
