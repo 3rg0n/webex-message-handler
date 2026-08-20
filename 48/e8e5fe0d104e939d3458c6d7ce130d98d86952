@@ -1,0 +1,84 @@
+node/src/mercury-socket.ts
+  s_25ccca6093f1ae::t_c1b044679adeb4 30
+  s_25ccca6093f1ae::t_d004625d1f5720 60,67-69
+  s_25ccca6093f1ae::t_6ab3ff166dc0ea 266-268
+  s_25ccca6093f1ae::t_0e9f5892b1ceb2 338-342
+  s_25ccca6093f1ae::t_290048b96a301f 354-380
+  s_25ccca6093f1ae::t_740a6a6dfa37a8 403
+  s_25ccca6093f1ae::t_32219482859db7 41,44
+rust/src/types.rs
+  s_25ccca6093f1ae::t_96deb79c51d896 93-99
+  s_25ccca6093f1ae::t_c792c11c5bd8a2 123
+CHANGELOG.md
+  s_25ccca6093f1ae::t_98202db2879084 8-28
+go/README.md
+  s_25ccca6093f1ae::t_16aa429330edd3 173
+go/mercury_socket.go
+  s_25ccca6093f1ae::t_f860ff824cf0f1 581
+  s_25ccca6093f1ae::t_a9232bda9b8ce0 59
+  s_25ccca6093f1ae::t_b582600eb4f5c8 142-144
+  s_25ccca6093f1ae::t_494c1da1b66b70 502-506
+  s_25ccca6093f1ae::t_5b695a2f632fc6 405-407
+  s_25ccca6093f1ae::t_7394d293a8fc73 514-547
+  s_25ccca6093f1ae::t_0e7088d3c691db 27,37
+  s_25ccca6093f1ae::t_7191cb57beeef6 79-81,90
+rust/README.md
+  s_25ccca6093f1ae::t_38348500f56e97 130
+go/API.md
+  s_25ccca6093f1ae::t_366554bdb34788 38-39
+node/test/mercury-socket.spec.ts
+  s_25ccca6093f1ae::t_0876f1c28dee5f 531-543,546-559,564,566,571-573,576,590,592,597-599,602,607,615,617,624-626,632,640
+  s_25ccca6093f1ae::t_9c3adf0e935add 523-530,544-545,560-563,565,567-570,574-575,577-589,591,593-596,600-601,603-606,608-614,616,618-623,627-631,633-639,641-642
+node/src/types.ts
+  s_25ccca6093f1ae::t_b22c53e2174659 60-66
+go/mercury_socket_test.go
+  s_25ccca6093f1ae::t_b37f0eea3308e3 83-85
+  s_25ccca6093f1ae::t_2afdc402a72413 69
+  s_25ccca6093f1ae::t_5e2f7662fb471d 58-60
+  s_25ccca6093f1ae::t_e30903f237317c 295-402
+  s_25ccca6093f1ae::t_58c421ed5793c2 4-6,9-10
+rust/src/mercury_socket.rs
+  s_25ccca6093f1ae::t_21fec742d5844f 211
+  s_25ccca6093f1ae::t_a4231d4f12c0c4 284
+  s_25ccca6093f1ae::t_f972ed577429be 479-582
+  s_25ccca6093f1ae::t_622c2056065558 72,82,88
+  s_25ccca6093f1ae::t_ec923052508a6b 101-106,111-149
+  s_25ccca6093f1ae::t_20a0da60b912e5 464
+  s_25ccca6093f1ae::t_9efeed4008a1b0 51,58
+  s_25ccca6093f1ae::t_8d18ba635c2d8e 405,414-416
+node/API.md
+  s_25ccca6093f1ae::t_5736b9bdea4350 69
+rust/src/handler.rs
+  s_25ccca6093f1ae::t_e35300c3404a0f 208
+node/src/handler.ts
+  s_25ccca6093f1ae::t_8a897ff4732752 163
+node/README.md
+  s_25ccca6093f1ae::t_0e0f2796f04f67 220
+rust/API.md
+  s_25ccca6093f1ae::t_a1ed9aa4bd0d48 18
+  s_25ccca6093f1ae::t_007d0646b6b02d 118-122
+  s_25ccca6093f1ae::t_242f3e8e89f148 144
+python/API.md
+  s_25ccca6093f1ae::t_63e209f1d86f2c 67
+go/types.go
+  s_25ccca6093f1ae::t_0aa73c635c4c3f 81-87
+go/handler.go
+  s_25ccca6093f1ae::t_2d84147b8b72d5 170
+  s_25ccca6093f1ae::t_51ab179a8159ac 121-124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "48e8e5fe0d104e939d3458c6d7ce130d98d86952",
+  "prompts": {},
+  "sessions": {
+    "s_25ccca6093f1ae": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a5afcede-bc5a-454b-af42-844223f3840c",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ergon Copeland <3rg0n@users.noreply.github.com>"
+    }
+  }
+}
