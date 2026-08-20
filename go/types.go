@@ -78,6 +78,13 @@ type Config struct {
 	// MaxReconnectAttempts is the max consecutive reconnection attempts (default: 10).
 	MaxReconnectAttempts int
 
+	// ReconnectStabilitySeconds is how long a connection must hold before the
+	// reconnect-attempt counter resets (default: 60). Without this window a flap
+	// storm — repeated connections that succeed and then drop seconds later —
+	// zeroes the counter every cycle, so MaxReconnectAttempts never trips and the
+	// handler retries forever instead of surfacing max-attempts-exceeded.
+	ReconnectStabilitySeconds float64
+
 	// IgnoreSelfMessages filters out messages sent by this bot to prevent loops (default: true).
 	// Set to false explicitly via IgnoreSelfMessagesPtr if you need to receive bot's own messages.
 	IgnoreSelfMessages *bool

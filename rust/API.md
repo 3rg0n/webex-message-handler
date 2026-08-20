@@ -15,6 +15,7 @@ let handler = WebexMessageHandler::new(Config {
     pong_timeout: 14.0,         // seconds (default)
     reconnect_backoff_max: 32.0, // seconds (default)
     max_reconnect_attempts: 10,  // default
+    reconnect_stability_seconds: 60.0, // seconds (default)
 })?;
 ```
 
@@ -114,6 +115,11 @@ Fired when disconnected. Reason values:
 - `"max-attempts-exceeded"` — reconnection limit reached
 - `"reconnect-needed"` — temporary disconnect, reconnection pending
 
+On `"reconnect-needed"`, call `connect()` again. `connect()` does not clear the
+reconnect-attempt counter, so repeated short-lived connections still add up and
+eventually give you `"max-attempts-exceeded"`. The counter clears once a
+connection holds for `reconnect_stability_seconds`.
+
 ### Reconnecting(attempt)
 
 Fired when a reconnection attempt begins.
@@ -135,6 +141,7 @@ pub struct Config {
     pub pong_timeout: f64,          // default: 14.0
     pub reconnect_backoff_max: f64, // default: 32.0
     pub max_reconnect_attempts: u32, // default: 10
+    pub reconnect_stability_seconds: f64, // default: 60.0
 }
 ```
 

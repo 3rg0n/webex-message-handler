@@ -1,8 +1,13 @@
 package webexmessagehandler
 
 import (
+	"context"
+	"errors"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/coder/websocket"
 )
 
 func TestParseObjectInputsEncryptedString(t *testing.T) {
@@ -50,6 +55,9 @@ func TestMercurySocketDefaults(t *testing.T) {
 	if ms.maxReconnectAttempts != 10 {
 		t.Errorf("expected 10 max reconnect attempts, got %d", ms.maxReconnectAttempts)
 	}
+	if ms.reconnectStability != 60*time.Second {
+		t.Errorf("expected 60s reconnect stability window, got %v", ms.reconnectStability)
+	}
 }
 
 func TestMercurySocketCustomConfig(t *testing.T) {
@@ -58,6 +66,7 @@ func TestMercurySocketCustomConfig(t *testing.T) {
 		PongTimeout:          25 * time.Second,
 		ReconnectBackoffMax:  60 * time.Second,
 		MaxReconnectAttempts: 5,
+		ReconnectStability:   90 * time.Second,
 	})
 	if ms.pingInterval != 30*time.Second {
 		t.Errorf("expected 30s, got %v", ms.pingInterval)
@@ -70,6 +79,9 @@ func TestMercurySocketCustomConfig(t *testing.T) {
 	}
 	if ms.maxReconnectAttempts != 5 {
 		t.Errorf("expected 5, got %d", ms.maxReconnectAttempts)
+	}
+	if ms.reconnectStability != 90*time.Second {
+		t.Errorf("expected 90s, got %v", ms.reconnectStability)
 	}
 }
 
@@ -278,5 +290,113 @@ func TestHasEventType(t *testing.T) {
 	msg2 := map[string]interface{}{"type": "pong"}
 	if ms.hasEventType(msg2) {
 		t.Error("expected hasEventType false for pong")
+	}
+}
+
+// The stability window exists because reconnectAttempts = 0 used to fire the
+// instant a reconnect succeeded. A flap storm — connections that come up and
+// drop seconds later — zeroed the counter every cycle, so maxReconnectAttempts
+// never tripped and the socket retried forever instead of reporting
+// max-attempts-exceeded for a supervisor to act on. Mirrors
+// python/tests/test_mercury_socket.py::TestFlapStormTripsMaxAttempts.
+
+func TestStabilityWindowResetsAttempts(t *testing.T) {
+	ms := NewMercurySocket(MercurySocketConfig{ReconnectStability: 50 * time.Millisecond})
+	ms.mu.Lock()
+	ms.reconnectAttempts = 2
+	ms.mu.Unlock()
+
+	ms.scheduleAttemptsReset()
+
+	// Before the window elapses the counter is untouched.
+	time.Sleep(10 * time.Millisecond)
+	if got := ms.CurrentReconnectAttempts(); got != 2 {
+		t.Fatalf("expected attempts preserved before the window, got %d", got)
+	}
+
+	// After it, the counter clears.
+	deadline := time.Now().Add(2 * time.Second)
+	for ms.CurrentReconnectAttempts() != 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := ms.CurrentReconnectAttempts(); got != 0 {
+		t.Fatalf("expected attempts cleared after the window, got %d", got)
+	}
+}
+
+func TestFlapBeforeStabilityPreservesAttempts(t *testing.T) {
+	ms := NewMercurySocket(MercurySocketConfig{ReconnectStability: 5 * time.Second})
+	ms.mu.Lock()
+	ms.reconnectAttempts = 4
+	ms.mu.Unlock()
+	ms.scheduleAttemptsReset()
+
+	// shouldReconnect stays false, so handleClose takes the "manual" branch and
+	// does not spawn a reconnect. The stability cancel runs either way.
+	ms.handleClose(websocket.StatusNormalClosure, "flap")
+
+	if got := ms.CurrentReconnectAttempts(); got != 4 {
+		t.Errorf("expected attempts preserved across a flap, got %d", got)
+	}
+	ms.mu.RLock()
+	timer := ms.stabilityTimer
+	ms.mu.RUnlock()
+	if timer != nil {
+		t.Error("expected the pending stability reset to be cancelled")
+	}
+}
+
+func TestFlapStormAccumulatesAttempts(t *testing.T) {
+	ms := NewMercurySocket(MercurySocketConfig{
+		MaxReconnectAttempts: 3,
+		ReconnectStability:   time.Hour, // never fires within this test
+	})
+	ms.setShouldReconnect(false)
+
+	// Each cycle is what reconnect() does on a successful attempt, followed by
+	// the drop that arrives before the window elapses.
+	for cycle := 1; cycle <= 3; cycle++ {
+		ms.mu.Lock()
+		ms.reconnectAttempts++
+		ms.mu.Unlock()
+		ms.scheduleAttemptsReset()
+		ms.handleClose(websocket.StatusNormalClosure, "flap")
+
+		if got := ms.CurrentReconnectAttempts(); got != cycle {
+			t.Fatalf("cycle %d: expected attempts to accumulate to %d, got %d", cycle, cycle, got)
+		}
+	}
+}
+
+func TestReconnectTripsMaxAttempts(t *testing.T) {
+	ms := NewMercurySocket(MercurySocketConfig{
+		MaxReconnectAttempts: 3,
+		ReconnectBackoffMax:  time.Millisecond, // keeps the backoff sleeps short
+		ReconnectStability:   time.Hour,
+		WSFactory: func(_ context.Context, _ string) (WebSocket, error) {
+			return nil, errors.New("dial refused")
+		},
+	})
+	ms.baseURL = "wss://mercury.example.com/socket"
+	ms.token = "tok"
+	ms.setShouldReconnect(true)
+
+	var mu sync.Mutex
+	var reasons []string
+	ms.OnDisconnected(func(reason string) {
+		mu.Lock()
+		reasons = append(reasons, reason)
+		mu.Unlock()
+	})
+
+	ms.reconnect(context.Background())
+
+	if got := ms.CurrentReconnectAttempts(); got != 3 {
+		t.Errorf("expected the counter to stop at the 3-attempt cap, got %d", got)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(reasons) != 1 || reasons[0] != "max-attempts-exceeded" {
+		t.Errorf("expected one max-attempts-exceeded disconnect, got %v", reasons)
 	}
 }

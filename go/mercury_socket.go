@@ -24,6 +24,7 @@ type MercurySocket struct {
 	pongTimeout          time.Duration
 	reconnectBackoffMax  time.Duration
 	maxReconnectAttempts int
+	reconnectStability   time.Duration
 
 	conn              *websocket.Conn
 	token             string
@@ -33,6 +34,7 @@ type MercurySocket struct {
 	reconnecting      bool
 	reconnectAttempts int
 	pendingPongID     string
+	stabilityTimer    *time.Timer
 
 	mu       sync.RWMutex
 	cancelFn context.CancelFunc
@@ -54,6 +56,7 @@ type MercurySocketConfig struct {
 	PongTimeout          time.Duration
 	ReconnectBackoffMax  time.Duration
 	MaxReconnectAttempts int
+	ReconnectStability   time.Duration
 }
 
 // NewMercurySocket creates a new MercurySocket.
@@ -73,6 +76,9 @@ func NewMercurySocket(cfg MercurySocketConfig) *MercurySocket {
 	if cfg.MaxReconnectAttempts == 0 {
 		cfg.MaxReconnectAttempts = 10
 	}
+	if cfg.ReconnectStability == 0 {
+		cfg.ReconnectStability = 60 * time.Second
+	}
 
 	return &MercurySocket{
 		logger:               cfg.Logger,
@@ -81,6 +87,7 @@ func NewMercurySocket(cfg MercurySocketConfig) *MercurySocket {
 		pongTimeout:          cfg.PongTimeout,
 		reconnectBackoffMax:  cfg.ReconnectBackoffMax,
 		maxReconnectAttempts: cfg.MaxReconnectAttempts,
+		reconnectStability:   cfg.ReconnectStability,
 	}
 }
 
@@ -132,6 +139,9 @@ func (ms *MercurySocket) Connect(ctx context.Context, wsURL, token string) error
 	ms.token = token
 	ms.baseURL = wsURL
 	ms.setShouldReconnect(true)
+	// An explicit Connect is a fresh start, so it clears the counter outright.
+	// Only the internal reconnect path defers the reset to a stability window.
+	ms.cancelStabilityTimer()
 	ms.mu.Lock()
 	ms.reconnectAttempts = 0
 	ms.mu.Unlock()
@@ -392,6 +402,9 @@ func (ms *MercurySocket) handleActivityEnvelope(message map[string]interface{}) 
 
 func (ms *MercurySocket) handleClose(code websocket.StatusCode, reason string) {
 	ms.logger.Info(fmt.Sprintf("WebSocket closed with code %d, reason: %q", code, reason))
+	// Closing before the stability window elapses keeps the attempts counter
+	// intact, so a flap storm can eventually trip max-attempts.
+	ms.cancelStabilityTimer()
 	ms.setConnectionReady(false)
 
 	if code == 4401 {
@@ -486,13 +499,49 @@ func (ms *MercurySocket) reconnect(ctx context.Context) {
 		}
 
 		ms.logger.Info("Successfully reconnected to Mercury")
-		ms.mu.Lock()
-		ms.reconnectAttempts = 0
-		ms.mu.Unlock()
+		// Only clear the attempts counter once the connection stays up for
+		// reconnectStability. A flap storm (repeated short-lived "successful"
+		// reconnects) would otherwise reset the counter every cycle and never
+		// trip max-attempts, leaving the handler retrying forever.
+		ms.scheduleAttemptsReset()
 		if ms.onConnected != nil {
 			ms.onConnected()
 		}
 		return
+	}
+}
+
+// scheduleAttemptsReset clears reconnectAttempts once the current connection has
+// held for reconnectStability. Any earlier pending reset is replaced.
+func (ms *MercurySocket) scheduleAttemptsReset() {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+	if ms.stabilityTimer != nil {
+		ms.stabilityTimer.Stop()
+	}
+	window := ms.reconnectStability
+	ms.stabilityTimer = time.AfterFunc(window, func() {
+		ms.mu.Lock()
+		ms.stabilityTimer = nil
+		was := ms.reconnectAttempts
+		if was > 0 {
+			ms.reconnectAttempts = 0
+		}
+		ms.mu.Unlock()
+		if was > 0 {
+			ms.logger.Debug(fmt.Sprintf(
+				"Connection stable for %s, resetting reconnect attempts (was %d)", window, was))
+		}
+	})
+}
+
+// cancelStabilityTimer drops a pending attempts reset, leaving the counter as is.
+func (ms *MercurySocket) cancelStabilityTimer() {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+	if ms.stabilityTimer != nil {
+		ms.stabilityTimer.Stop()
+		ms.stabilityTimer = nil
 	}
 }
 
@@ -529,6 +578,7 @@ func (ms *MercurySocket) triggerReconnect() {
 func (ms *MercurySocket) Disconnect() {
 	ms.logger.Info("Disconnecting from Mercury")
 	ms.setShouldReconnect(false)
+	ms.cancelStabilityTimer()
 	ms.closeWebSocket()
 	ms.setConnectionReady(false)
 	if ms.onDisconnected != nil {

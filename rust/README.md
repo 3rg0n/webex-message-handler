@@ -127,6 +127,7 @@ Note: The `reqwest::Client` proxy configuration applies to HTTP traffic (device 
 | `pong_timeout` | `f64` | `14.0` | Pong response timeout in seconds |
 | `reconnect_backoff_max` | `f64` | `32.0` | Max reconnect backoff in seconds |
 | `max_reconnect_attempts` | `u32` | `10` | Max consecutive reconnection attempts |
+| `reconnect_stability_seconds` | `f64` | `60.0` | How long a connection must hold before the reconnect-attempt counter resets |
 | `event_channel_capacity` | `usize` | `1000` | Event channel capacity (bounded backpressure) |
 | `metrics_callback` | `Option<MetricsCallback>` | `None` | Optional callback for timing metrics (`connect`, `decrypt` events) |
 

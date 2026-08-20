@@ -64,6 +64,7 @@ WebexMessageHandler(config: WebexMessageHandlerConfig)
 | `pong_timeout` | `float` | No | `14.0` | How long to wait for pong before triggering reconnect. |
 | `reconnect_backoff_max` | `float` | No | `32.0` | Max backoff delay between reconnection attempts. |
 | `max_reconnect_attempts` | `int` | No | `10` | Max consecutive reconnection attempts before giving up. |
+| `reconnect_stability_seconds` | `float` | No | `60.0` | How long a connection must hold before the reconnect-attempt counter resets. Stops a flap storm from forgiving attempts forever. |
 
 ### Methods
 

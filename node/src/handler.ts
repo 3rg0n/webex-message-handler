@@ -160,6 +160,7 @@ export class WebexMessageHandler
       pongTimeout: config.pongTimeout,
       reconnectBackoffMax: config.reconnectBackoffMax,
       maxReconnectAttempts: config.maxReconnectAttempts,
+      reconnectStabilityWindow: config.reconnectStabilityWindow,
     });
 
     this._setupMercuryListeners();

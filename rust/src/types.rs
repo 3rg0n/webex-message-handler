@@ -90,6 +90,13 @@ pub struct Config {
     /// Max consecutive reconnection attempts (default: 10).
     pub max_reconnect_attempts: u32,
 
+    /// How long a connection must hold in seconds before the reconnect-attempt
+    /// counter resets (default: 60). Without this window a flap storm —
+    /// connections that succeed and then drop seconds later — zeroes the counter
+    /// every cycle, so `max_reconnect_attempts` never trips and the caller keeps
+    /// reconnecting forever instead of being told to give up.
+    pub reconnect_stability_seconds: f64,
+
     /// Automatically filter out messages sent by this bot to prevent loops (default: true).
     pub ignore_self_messages: bool,
 
@@ -113,6 +120,7 @@ impl Default for Config {
             pong_timeout: 14.0,
             reconnect_backoff_max: 32.0,
             max_reconnect_attempts: 10,
+            reconnect_stability_seconds: 60.0,
             ignore_self_messages: true,
             event_channel_capacity: 1000,
             metrics_callback: None,

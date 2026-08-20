@@ -205,6 +205,7 @@ impl WebexMessageHandler {
             Duration::from_secs_f64(config.pong_timeout),
             Duration::from_secs_f64(config.reconnect_backoff_max),
             config.max_reconnect_attempts,
+            Duration::from_secs_f64(config.reconnect_stability_seconds),
         );
 
         let (event_tx, event_rx) = mpsc::channel(config.event_channel_capacity);

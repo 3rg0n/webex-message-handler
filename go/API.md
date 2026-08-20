@@ -35,6 +35,8 @@ type Config struct {
     PongTimeout          float64 // Optional: pong timeout in seconds (default: 14)
     ReconnectBackoffMax  float64 // Optional: max reconnect backoff in seconds (default: 32)
     MaxReconnectAttempts int     // Optional: max reconnect attempts (default: 10)
+    ReconnectStabilitySeconds float64 // Optional: how long a connection must hold
+                                      // before the attempt counter resets (default: 60)
 }
 ```
 

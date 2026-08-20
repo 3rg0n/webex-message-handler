@@ -520,4 +520,124 @@ describe('MercurySocket', () => {
       expect(true).toBe(true);
     });
   });
+
+  // The stability window exists because `reconnectAttempts = 0` used to fire the
+  // instant a reconnect succeeded. A flap storm — connections that come up and
+  // drop seconds later — zeroed the counter every cycle, so
+  // maxReconnectAttempts never tripped and the socket retried forever instead of
+  // reporting max-attempts-exceeded for a supervisor to act on. Mirrors
+  // python/tests/test_mercury_socket.py::TestFlapStormTripsMaxAttempts.
+  describe('reconnect stability window', () => {
+    // These tests walk several connect cycles, so they cannot use the shared
+    // `lastMockWs`: a reconnect loop left running by an earlier test overwrites
+    // it and the wrong socket gets driven. Each test tracks its own instances.
+    const trackedFactory = () => {
+      const created: MockWebSocket[] = [];
+      return {
+        created,
+        factory: (url: string) => {
+          const ws = new MockWebSocket(url);
+          created.push(ws);
+          return ws as any;
+        },
+      };
+    };
+
+    /** Wait for the nth socket of this test to exist, then drive it to Mercury-ready. */
+    const driveReady = async (
+      created: MockWebSocket[],
+      index: number
+    ): Promise<MockWebSocket> => {
+      for (let waited = 0; created.length <= index && waited < 1000; waited += 5) {
+        await new Promise(resolve => setTimeout(resolve, 5));
+      }
+      const ws = created[index];
+      if (!ws) {
+        throw new Error(`no socket was created for connect attempt ${index}`);
+      }
+      ws.simulateOpen();
+      ws.simulateMessage(fixtures.bufferState);
+      return ws;
+    };
+
+    it('resets the attempt counter once the connection holds', async () => {
+      const { created, factory } = trackedFactory();
+      const socket = new MercurySocket({
+        wsFactory: factory,
+        maxReconnectAttempts: 5,
+        reconnectBackoffMax: 10,
+        reconnectStabilityWindow: 40,
+      });
+      const connectPromise = socket.connect(mockBaseUrl, mockToken);
+      const ws = await driveReady(created, 0);
+      await connectPromise;
+
+      ws.simulateClose(1006, 'Abnormal close');
+      await driveReady(created, 1);
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // One attempt was spent, and it is still on the books.
+      expect(socket.currentReconnectAttempts).toBe(1);
+
+      // Once the window elapses, the counter clears.
+      await new Promise(resolve => setTimeout(resolve, 80));
+      expect(socket.currentReconnectAttempts).toBe(0);
+
+      await socket.disconnect();
+    });
+
+    it('keeps the counter when the connection drops before the window', async () => {
+      const { created, factory } = trackedFactory();
+      const socket = new MercurySocket({
+        wsFactory: factory,
+        maxReconnectAttempts: 5,
+        reconnectBackoffMax: 10,
+        reconnectStabilityWindow: 60000, // never fires during this test
+      });
+      const connectPromise = socket.connect(mockBaseUrl, mockToken);
+      const ws = await driveReady(created, 0);
+      await connectPromise;
+
+      ws.simulateClose(1006, 'Abnormal close');
+      const reconnected = await driveReady(created, 1);
+      expect(socket.currentReconnectAttempts).toBe(1);
+
+      // The drop lands before the window elapses, so the attempt is not forgiven.
+      reconnected.simulateClose(1006, 'Abnormal close');
+      await driveReady(created, 2);
+
+      expect(socket.currentReconnectAttempts).toBe(2);
+
+      await socket.disconnect();
+    });
+
+    it('trips max-attempts-exceeded during a flap storm', async () => {
+      const { created, factory } = trackedFactory();
+      const socket = new MercurySocket({
+        wsFactory: factory,
+        maxReconnectAttempts: 3,
+        reconnectBackoffMax: 10,
+        reconnectStabilityWindow: 60000, // never fires during this test
+      });
+      const disconnectListener = jest.fn();
+
+      const connectPromise = socket.connect(mockBaseUrl, mockToken);
+      let ws = await driveReady(created, 0);
+      await connectPromise;
+      socket.on('disconnected', disconnectListener);
+
+      // Three cycles that each come up and drop straight away.
+      for (let cycle = 1; cycle <= 3; cycle++) {
+        ws.simulateClose(1006, 'Abnormal close');
+        ws = await driveReady(created, cycle);
+        expect(socket.currentReconnectAttempts).toBe(cycle);
+      }
+
+      // The counter is at the cap, so the next drop gives up instead of retrying.
+      ws.simulateClose(1006, 'Abnormal close');
+
+      expect(disconnectListener).toHaveBeenCalledWith('max-attempts-exceeded');
+      expect(created).toHaveLength(4);
+    });
+  });
 });

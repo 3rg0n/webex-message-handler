@@ -48,12 +48,14 @@ pub struct MercurySocket {
     pong_timeout: Duration,
     reconnect_backoff_max: Duration,
     max_reconnect_attempts: u32,
+    reconnect_stability: Duration,
 
     token: Arc<Mutex<String>>,
     base_url: Arc<Mutex<String>>,
     connected: Arc<Mutex<bool>>,
     should_reconnect: Arc<Mutex<bool>>,
     reconnect_attempts: Arc<Mutex<u32>>,
+    stability_task: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     shutdown: Arc<Notify>,
 
     event_tx: mpsc::UnboundedSender<MercuryEvent>,
@@ -67,6 +69,7 @@ impl MercurySocket {
         pong_timeout: Duration,
         reconnect_backoff_max: Duration,
         max_reconnect_attempts: u32,
+        reconnect_stability: Duration,
     ) -> Self {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
 
@@ -76,11 +79,13 @@ impl MercurySocket {
             pong_timeout,
             reconnect_backoff_max,
             max_reconnect_attempts,
+            reconnect_stability,
             token: Arc::new(Mutex::new(String::new())),
             base_url: Arc::new(Mutex::new(String::new())),
             connected: Arc::new(Mutex::new(false)),
             should_reconnect: Arc::new(Mutex::new(true)),
             reconnect_attempts: Arc::new(Mutex::new(0)),
+            stability_task: Arc::new(Mutex::new(None)),
             shutdown: Arc::new(Notify::new()),
             event_tx,
             event_rx: Arc::new(Mutex::new(Some(event_rx))),
@@ -93,12 +98,55 @@ impl MercurySocket {
     }
 
     /// Connect to Mercury WebSocket.
+    ///
+    /// The reconnect-attempt counter is not cleared on entry. A close emits
+    /// `Disconnected("reconnect-needed")`, and the caller answers it by calling
+    /// this method again, so clearing here would forgive every attempt and stop
+    /// `max_reconnect_attempts` from ever tripping during a flap storm. The
+    /// counter clears once the new connection holds for `reconnect_stability`.
     pub async fn connect(&self, ws_url: &str, token: &str) -> Result<(), WebexError> {
         *self.token.lock().await = token.to_string();
         *self.base_url.lock().await = ws_url.to_string();
         *self.should_reconnect.lock().await = true;
-        *self.reconnect_attempts.lock().await = 0;
-        self.connect_internal().await
+        self.cancel_stability_timer().await;
+        self.connect_internal().await?;
+        self.schedule_attempts_reset().await;
+        Ok(())
+    }
+
+    /// Clear `reconnect_attempts` once the current connection has held for
+    /// `reconnect_stability`. Any earlier pending reset is replaced.
+    async fn schedule_attempts_reset(&self) {
+        let attempts = self.reconnect_attempts.clone();
+        let window = self.reconnect_stability;
+        let task = tokio::spawn(async move {
+            time::sleep(window).await;
+            let mut guard = attempts.lock().await;
+            if *guard > 0 {
+                debug!(
+                    "Connection stable for {:?}, resetting reconnect attempts (was {})",
+                    window, *guard
+                );
+                *guard = 0;
+            }
+        });
+        let mut slot = self.stability_task.lock().await;
+        if let Some(previous) = slot.replace(task) {
+            previous.abort();
+        }
+    }
+
+    /// Drop a pending attempts reset, leaving the counter as is.
+    async fn cancel_stability_timer(&self) {
+        Self::cancel_stability_timer_static(&self.stability_task).await;
+    }
+
+    async fn cancel_stability_timer_static(
+        stability_task: &Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
+    ) {
+        if let Some(task) = stability_task.lock().await.take() {
+            task.abort();
+        }
     }
 
     async fn connect_internal(&self) -> Result<(), WebexError> {
@@ -160,6 +208,7 @@ impl MercurySocket {
         let connected = self.connected.clone();
         let should_reconnect = self.should_reconnect.clone();
         let reconnect_attempts = self.reconnect_attempts.clone();
+        let stability_task = self.stability_task.clone();
         let max_reconnect = self.max_reconnect_attempts;
         let backoff_max = self.reconnect_backoff_max;
         let ping_interval = self.ping_interval;
@@ -232,6 +281,7 @@ impl MercurySocket {
                             &connected,
                             &should_reconnect,
                             &reconnect_attempts,
+                            &stability_task,
                             max_reconnect,
                             backoff_max,
                             &base_url_clone,
@@ -352,6 +402,7 @@ impl MercurySocket {
         connected: &Arc<Mutex<bool>>,
         should_reconnect: &Arc<Mutex<bool>>,
         reconnect_attempts: &Arc<Mutex<u32>>,
+        stability_task: &Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
         max_reconnect: u32,
         backoff_max: Duration,
         _base_url: &Arc<Mutex<String>>,
@@ -360,6 +411,9 @@ impl MercurySocket {
     ) {
         info!("WebSocket closed with code {code}: {reason}");
         *connected.lock().await = false;
+        // Closing before the stability window elapses keeps the attempts counter
+        // intact, so a flap storm can eventually trip max-attempts.
+        Self::cancel_stability_timer_static(stability_task).await;
 
         if code == 4401 {
             error!("Mercury authorization failed");
@@ -407,6 +461,7 @@ impl MercurySocket {
         info!("Disconnecting from Mercury");
         *self.should_reconnect.lock().await = false;
         *self.connected.lock().await = false;
+        self.cancel_stability_timer().await;
         self.shutdown.notify_waiters();
         let _ = self.event_tx.send(MercuryEvent::Disconnected("client".into()));
     }
@@ -419,5 +474,109 @@ impl MercurySocket {
     /// Current reconnection attempt count.
     pub async fn current_reconnect_attempts(&self) -> u32 {
         *self.reconnect_attempts.lock().await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The stability window exists because `connect` used to zero
+    // `reconnect_attempts` on entry. The caller answers "reconnect-needed" by
+    // calling `connect` again, so a flap storm — connections that come up and
+    // drop seconds later — forgave every attempt, `max_reconnect_attempts` never
+    // tripped, and the caller reconnected forever. Mirrors
+    // python/tests/test_mercury_socket.py::TestFlapStormTripsMaxAttempts.
+
+    fn socket(max_reconnect_attempts: u32, reconnect_stability: Duration) -> MercurySocket {
+        MercurySocket::new(
+            None,
+            Duration::from_secs(15),
+            Duration::from_secs(14),
+            Duration::from_millis(1), // keeps the backoff sleeps short
+            max_reconnect_attempts,
+            reconnect_stability,
+        )
+    }
+
+    /// Run the close path the read loop runs.
+    async fn close(ms: &MercurySocket) {
+        MercurySocket::handle_close_static(
+            1006,
+            "flap",
+            &ms.connected,
+            &ms.should_reconnect,
+            &ms.reconnect_attempts,
+            &ms.stability_task,
+            ms.max_reconnect_attempts,
+            ms.reconnect_backoff_max,
+            &ms.base_url,
+            &ms.token,
+            &ms.event_tx,
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn stability_window_resets_attempts() {
+        let ms = socket(10, Duration::from_millis(50));
+        *ms.reconnect_attempts.lock().await = 2;
+        ms.schedule_attempts_reset().await;
+
+        // Before the window elapses the counter is untouched.
+        time::sleep(Duration::from_millis(10)).await;
+        assert_eq!(ms.current_reconnect_attempts().await, 2);
+
+        // After it, the counter clears.
+        time::sleep(Duration::from_millis(150)).await;
+        assert_eq!(ms.current_reconnect_attempts().await, 0);
+    }
+
+    #[tokio::test]
+    async fn flap_before_stability_preserves_attempts() {
+        let ms = socket(10, Duration::from_secs(5));
+        *ms.reconnect_attempts.lock().await = 4;
+        ms.schedule_attempts_reset().await;
+
+        // should_reconnect stays false, so the close takes the "manual" branch and
+        // does not add an attempt. The stability cancel runs either way.
+        *ms.should_reconnect.lock().await = false;
+        close(&ms).await;
+
+        assert_eq!(ms.current_reconnect_attempts().await, 4);
+        assert!(ms.stability_task.lock().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn flap_storm_trips_max_attempts() {
+        let ms = socket(3, Duration::from_secs(3600)); // window never elapses here
+        let mut rx = ms.take_event_rx().await.expect("event receiver");
+
+        // Each cycle is a connect that succeeds — scheduling a deferred reset —
+        // followed by the drop that arrives before the window elapses.
+        for cycle in 1..=3 {
+            ms.schedule_attempts_reset().await;
+            close(&ms).await;
+            assert_eq!(ms.current_reconnect_attempts().await, cycle);
+        }
+
+        // The counter is at the cap, so the next drop gives up instead of asking
+        // for another reconnect.
+        ms.schedule_attempts_reset().await;
+        close(&ms).await;
+        assert_eq!(ms.current_reconnect_attempts().await, 3);
+        assert!(!*ms.should_reconnect.lock().await);
+
+        let mut reasons = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            if let MercuryEvent::Disconnected(reason) = event {
+                reasons.push(reason);
+            }
+        }
+        assert_eq!(reasons.iter().filter(|r| *r == "reconnect-needed").count(), 3);
+        assert_eq!(
+            reasons.iter().filter(|r| *r == "max-attempts-exceeded").count(),
+            1
+        );
     }
 }
