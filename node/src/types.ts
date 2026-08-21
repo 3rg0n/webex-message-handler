@@ -57,6 +57,13 @@ export interface WebexMessageHandlerConfig {
   reconnectBackoffMax?: number;
   /** Max reconnect attempts before giving up (default: 10) */
   maxReconnectAttempts?: number;
+  /**
+   * How long a connection must hold in ms before the reconnect-attempt counter
+   * resets (default: 60000). Without this window a flap storm — connections
+   * that succeed and then drop seconds later — zeroes the counter every cycle,
+   * so `maxReconnectAttempts` never trips and the handler retries forever.
+   */
+  reconnectStabilityWindow?: number;
   /** Optional metrics callback for timing events (no overhead if not set) */
   metricsCallback?: MetricsCallback;
 }

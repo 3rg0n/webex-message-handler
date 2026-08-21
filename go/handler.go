@@ -118,6 +118,10 @@ func New(cfg Config) (*WebexMessageHandler, error) {
 	if cfg.MaxReconnectAttempts > 0 {
 		maxReconnectAttempts = cfg.MaxReconnectAttempts
 	}
+	reconnectStability := 60 * time.Second
+	if cfg.ReconnectStabilitySeconds > 0 {
+		reconnectStability = time.Duration(cfg.ReconnectStabilitySeconds * float64(time.Second))
+	}
 
 	httpClient := cfg.HTTPClient
 	if httpClient == nil {
@@ -163,6 +167,7 @@ func New(cfg Config) (*WebexMessageHandler, error) {
 		PongTimeout:          pongTimeout,
 		ReconnectBackoffMax:  reconnectBackoffMax,
 		MaxReconnectAttempts: maxReconnectAttempts,
+		ReconnectStability:   reconnectStability,
 	})
 
 	h.setupMercuryListeners()

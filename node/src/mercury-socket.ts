@@ -27,6 +27,7 @@ export interface MercurySocketOptions {
   pongTimeout?: number;
   reconnectBackoffMax?: number;
   maxReconnectAttempts?: number;
+  reconnectStabilityWindow?: number;
 }
 
 export class MercurySocket extends EventEmitter {
@@ -37,8 +38,10 @@ export class MercurySocket extends EventEmitter {
   private pongTimeout: number;
   private reconnectBackoffMax: number;
   private maxReconnectAttempts: number;
+  private reconnectStabilityWindow: number;
   private pingIntervalHandle: NodeJS.Timeout | null = null;
   private pongTimeoutHandle: NodeJS.Timeout | null = null;
+  private stabilityTimerHandle: NodeJS.Timeout | null = null;
   private pendingPongId: string | null = null;
   private shouldReconnect: boolean = true;
   private reconnectAttempts: number = 0;
@@ -54,12 +57,16 @@ export class MercurySocket extends EventEmitter {
     this.pongTimeout = options.pongTimeout || 14000;
     this.reconnectBackoffMax = options.reconnectBackoffMax || 32000;
     this.maxReconnectAttempts = options.maxReconnectAttempts || 10;
+    this.reconnectStabilityWindow = options.reconnectStabilityWindow || 60000;
   }
 
   async connect(url: string, token: string): Promise<void> {
     this.token = token;
     this.baseUrl = url;
     this.shouldReconnect = true;
+    // An explicit connect is a fresh start, so it clears the counter outright.
+    // Only the internal reconnect path defers the reset to a stability window.
+    this._cancelStabilityTimer();
     this.reconnectAttempts = 0;
 
     return this._connectInternal();
@@ -256,6 +263,9 @@ export class MercurySocket extends EventEmitter {
   private _handleClose(code: number, reason: string): void {
     this.logger.info(`WebSocket closed with code ${code}: ${reason}`);
     this._stopPingLoop();
+    // Closing before the stability window elapses keeps the attempts counter
+    // intact, so a flap storm can eventually trip max-attempts.
+    this._cancelStabilityTimer();
     this.connectionReady = false;
 
     // Handle specific close codes
@@ -325,7 +335,11 @@ export class MercurySocket extends EventEmitter {
       this._connectInternal()
         .then(() => {
           this.logger.info('Successfully reconnected to Mercury');
-          this.reconnectAttempts = 0;
+          // Only clear the attempts counter once the connection stays up for
+          // reconnectStabilityWindow. A flap storm (repeated short-lived
+          // "successful" reconnects) would otherwise reset the counter every
+          // cycle and never trip max-attempts, retrying forever.
+          this._scheduleAttemptsReset();
           this.emit('connected');
         })
         .catch((error) => {
@@ -335,6 +349,33 @@ export class MercurySocket extends EventEmitter {
           }
         });
     }, delay);
+  }
+
+  /**
+   * Clear reconnectAttempts once the current connection has held for
+   * reconnectStabilityWindow. Any earlier pending reset is replaced.
+   */
+  private _scheduleAttemptsReset(): void {
+    this._cancelStabilityTimer();
+    this.stabilityTimerHandle = setTimeout(() => {
+      this.stabilityTimerHandle = null;
+      if (this.reconnectAttempts > 0) {
+        this.logger.debug(
+          `Connection stable for ${this.reconnectStabilityWindow}ms, resetting reconnect attempts (was ${this.reconnectAttempts})`
+        );
+        this.reconnectAttempts = 0;
+      }
+    }, this.reconnectStabilityWindow);
+    // Do not hold the event loop open just to reset a counter.
+    this.stabilityTimerHandle.unref?.();
+  }
+
+  /** Drop a pending attempts reset, leaving the counter as is. */
+  private _cancelStabilityTimer(): void {
+    if (this.stabilityTimerHandle) {
+      clearTimeout(this.stabilityTimerHandle);
+      this.stabilityTimerHandle = null;
+    }
   }
 
   private _stopPingLoop(): void {
@@ -359,6 +400,7 @@ export class MercurySocket extends EventEmitter {
     this.logger.info('Disconnecting from Mercury');
     this.shouldReconnect = false;
     this._stopPingLoop();
+    this._cancelStabilityTimer();
     this._closeWebSocket();
     this.ws = null;
     this.connectionReady = false;

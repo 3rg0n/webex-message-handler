@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Go, Node, Rust: reconnect flap storm never tripped the max-attempts cap
+  (#29)** — the port of the Python 0.6.16 fix. The attempt counter reset the
+  instant a connection came up, so a storm of short-lived connections reset it
+  every cycle, the cap never fired, and the socket retried forever instead of
+  reporting `max-attempts-exceeded` for a supervisor to act on. The reset is now
+  deferred until the connection holds for a stability window, and a close before
+  the window elapses cancels the pending reset. In Rust the caller answers
+  `"reconnect-needed"` by calling `connect()` again, so `connect()` no longer
+  clears the counter either; an explicit `Connect`/`connect()` in Go and Node
+  still does, because their reconnects are internal.
+
+### Added
+- `ReconnectStabilitySeconds` (Go, `float64`, default `60`),
+  `reconnectStabilityWindow` (Node, ms, default `60000`) and
+  `reconnect_stability_seconds` (Rust, `f64`, default `60.0`) config options —
+  how long a connection must hold before the reconnect-attempt counter resets.
+  Matches Python's `reconnect_stability_seconds` from 0.6.16.
+
 ## [0.6.16] - 2026-08-19
 
 ### Fixed
